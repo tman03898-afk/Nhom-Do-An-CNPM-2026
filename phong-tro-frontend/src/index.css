@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-nest-bg text-nest-text-primary font-body antialiased leading-[1.6];
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-sans tracking-[-0.02em] font-bold;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/40 backdrop-blur-[16px] border border-white/60;
+  }
+  .glass-card {
+    @apply bg-white/60 backdrop-blur-[12px] border border-white/40 rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,31,36,0.06)];
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
