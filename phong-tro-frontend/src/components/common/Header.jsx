@@ -7,10 +7,12 @@ export default function Header() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
+  const [activeNav, setActiveNav] = useState(null);
 
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
+      if (window.scrollY < 100) setActiveNav(null);
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
@@ -24,8 +26,35 @@ export default function Header() {
     : "glass-panel sticky top-0 z-50 px-8 py-4 flex flex-col md:flex-row justify-between items-center w-full shadow-sm";
 
   const textColor = isTransparent ? "text-white" : "text-nest-primary";
-  const linkColor = isTransparent ? "text-white/90 hover:text-white" : "text-nest-text-secondary hover:text-nest-primary";
   const btnClass = "bg-nest-primary text-white";
+
+  const navItems = [
+    { id: 'phong-trong', label: 'Phòng nổi bật' },
+    { id: 'tien-ich',   label: 'Tiện ích' },
+    { id: 'quy-trinh', label: 'Quy trình' },
+    { id: 'vi-tri',    label: 'Vị trí' },
+  ];
+
+  const handleNavClick = (id) => {
+    setActiveNav(id);
+    if (location.pathname !== '/') {
+      window.location.href = `/#${id}`;
+    } else {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const getNavClass = (id) => {
+    const isActive = activeNav === id;
+    if (isTransparent) {
+      return isActive
+        ? 'text-white underline underline-offset-4 decoration-2'
+        : 'text-white/80 hover:text-white transition-colors';
+    }
+    return isActive
+      ? 'text-nest-primary font-bold underline underline-offset-4 decoration-2 decoration-nest-primary'
+      : 'text-nest-text-secondary hover:text-nest-primary transition-colors';
+  };
 
   return (
     <header className={headerClass}>
@@ -35,6 +64,7 @@ export default function Header() {
           if (location.pathname === '/') {
             e.preventDefault();
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            setActiveNav(null);
           }
         }}
         className={`${textColor} font-sans font-bold text-2xl tracking-wide flex items-center gap-2`}
@@ -42,23 +72,16 @@ export default function Header() {
         The Nest
       </Link>
       
-      <nav className={`hidden md:flex items-center gap-8 ${linkColor} text-sm font-bold`}>
-         <button onClick={() => {
-            if (location.pathname !== '/') window.location.href = '/#phong-trong';
-            else document.getElementById('phong-trong')?.scrollIntoView({ behavior: 'smooth' });
-         }} className="transition-colors">Phòng nổi bật</button>
-         <button onClick={() => {
-            if (location.pathname !== '/') window.location.href = '/#tien-ich';
-            else document.getElementById('tien-ich')?.scrollIntoView({ behavior: 'smooth' });
-         }} className="transition-colors">Tiện ích</button>
-         <button onClick={() => {
-            if (location.pathname !== '/') window.location.href = '/#quy-trinh';
-            else document.getElementById('quy-trinh')?.scrollIntoView({ behavior: 'smooth' });
-         }} className="transition-colors">Quy trình</button>
-         <button onClick={() => {
-            if (location.pathname !== '/') window.location.href = '/#vi-tri';
-            else document.getElementById('vi-tri')?.scrollIntoView({ behavior: 'smooth' });
-         }} className="transition-colors">Vị trí</button>
+      <nav className="hidden md:flex items-center gap-8 text-base font-bold">
+        {navItems.map(({ id, label }) => (
+          <button
+            key={id}
+            onClick={() => handleNavClick(id)}
+            className={getNavClass(id)}
+          >
+            {label}
+          </button>
+        ))}
       </nav>
 
       <div className="flex gap-4 items-center mt-4 md:mt-0">
@@ -73,7 +96,7 @@ export default function Header() {
             </button>
           </>
         ) : (
-          <Link to="/login" className={`${btnClass} hover:opacity-90 px-6 py-2.5 rounded-full text-sm font-semibold transition-colors shadow-lg flex items-center gap-2`}>
+          <Link to="/login" className={`${btnClass} hover:opacity-90 px-6 py-2.5 rounded-full text-base font-semibold transition-colors shadow-lg flex items-center gap-2`}>
             <User className="w-4 h-4" /> Đăng nhập
           </Link>
         )}
