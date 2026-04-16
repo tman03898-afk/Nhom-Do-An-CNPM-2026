@@ -45,7 +45,7 @@ export default function HomePage() {
         </div>
 
         {/* Floating Search Bar */}
-        <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-[90%] max-w-5xl z-20">
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-[90%] max-w-5xl z-20">
           <div className="bg-white/80 backdrop-blur-xl border border-white p-4 rounded-2xl shadow-xl flex flex-col md:flex-row gap-4 items-end">
             <CustomSelect 
               label="Loại phòng"

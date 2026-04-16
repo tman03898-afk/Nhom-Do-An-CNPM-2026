@@ -2,7 +2,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Home, Users, Receipt,
-  ClipboardList, AlertTriangle, Bell, User, 
+  ClipboardList, AlertTriangle, Bell, User,
   Leaf, ChevronLeft, ChevronRight, Search, Settings, X
 } from 'lucide-react';
 import { useState } from 'react';
@@ -16,9 +16,9 @@ export default function TenantLayout() {
     { name: 'Trang chủ', path: '/tenant/dashboard', icon: Home },
     { name: 'Hóa đơn', path: '/tenant/invoices', icon: Receipt },
     { name: 'Hợp đồng', path: '/tenant/contract', icon: ClipboardList },
-    { name: 'Báo sự cố', path: '/tenant/tickets', icon: AlertTriangle },
+    { name: 'Yêu cầu sửa chữa', path: '/tenant/tickets', icon: AlertTriangle },
     { name: 'Thông báo', path: '/tenant/notifications', icon: Bell },
-    { name: 'Cá nhân', path: '/tenant/profile', icon: User },
+    { name: 'Tài khoản', path: '/tenant/profile', icon: User },
   ];
 
   return (
@@ -66,22 +66,22 @@ export default function TenantLayout() {
 
         {/* User Profile at Bottom */}
         <div className={`mt-auto pt-6 border-t border-white/10 ${isCollapsed ? 'items-center' : 'px-2'}`}>
-           <div className={`flex items-center gap-3 bg-white/5 p-3 rounded-2xl ${isCollapsed ? 'justify-center p-2' : ''}`}>
-              <div className="w-10 h-10 rounded-full bg-[#14B8A6]/20 border border-[#14B8A6]/30 overflow-hidden shrink-0 flex items-center justify-center">
-                 <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=14B8A6&color=fff`} className="w-full h-full object-cover" />
+          <div className={`flex items-center gap-3 bg-white/5 p-3 rounded-2xl ${isCollapsed ? 'justify-center p-2' : ''}`}>
+            <div className="w-10 h-10 rounded-full bg-[#14B8A6]/20 border border-[#14B8A6]/30 overflow-hidden shrink-0 flex items-center justify-center">
+              <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=14B8A6&color=fff`} className="w-full h-full object-cover" />
+            </div>
+            {!isCollapsed && (
+              <div className="flex flex-col min-w-0">
+                <span className="text-white text-[13px] font-bold truncate">{user?.name || 'Khách thuê'}</span>
+                <span className="text-white/50 text-[11px] truncate mt-0.5">Phòng 301 - Building A</span>
               </div>
-              {!isCollapsed && (
-                <div className="flex flex-col min-w-0">
-                  <span className="text-white text-[13px] font-bold truncate">{user?.name || 'Khách thuê'}</span>
-                  <span className="text-white/50 text-[11px] truncate mt-0.5">Phòng 301 - Building A</span>
-                </div>
-              )}
-           </div>
-           {!isCollapsed && (
-             <button onClick={logout} className="w-full mt-4 text-[#D14D4D] text-[11px] font-bold uppercase tracking-wider hover:opacity-80 transition-opacity">
-               Đăng xuất
-             </button>
-           )}
+            )}
+          </div>
+          {!isCollapsed && (
+            <button onClick={logout} className="w-full mt-4 text-[#D14D4D] text-[11px] font-bold uppercase tracking-wider hover:opacity-80 transition-opacity">
+              Đăng xuất
+            </button>
+          )}
         </div>
       </aside>
 
@@ -93,20 +93,20 @@ export default function TenantLayout() {
 
           {/* User Actions */}
           <div className="flex items-center gap-5">
-             <Link to="/tenant/notifications" className="w-10 h-10 rounded-full bg-white/60 backdrop-blur-md flex items-center justify-center text-[#4A787C] hover:text-[#14B8A6] hover:bg-white hover:scale-110 transition-all shadow-sm group">
-                <Bell size={18} className="group-hover:rotate-12 transition-transform" />
-             </Link>
-             <Link to="/tenant/profile" className="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow-md cursor-pointer hover:border-[#14B8A6]/50 hover:scale-110 transition-all">
-                <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=14B8A6&color=fff`} className="w-full h-full object-cover" />
-             </Link>
+            <Link to="/tenant/notifications" className="w-10 h-10 rounded-full bg-white/60 backdrop-blur-md flex items-center justify-center text-[#4A787C] hover:text-[#14B8A6] hover:bg-white hover:scale-110 transition-all shadow-sm group">
+              <Bell size={18} className="group-hover:rotate-12 transition-transform" />
+            </Link>
+            <Link to="/tenant/profile" className="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow-md cursor-pointer hover:border-[#14B8A6]/50 hover:scale-110 transition-all">
+              <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=14B8A6&color=fff`} className="w-full h-full object-cover" />
+            </Link>
           </div>
         </header>
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto px-10 pb-10 scroll-smooth">
-           <div className="max-w-[1400px] mx-auto">
-             <Outlet />
-           </div>
+          <div className="max-w-[1400px] mx-auto">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

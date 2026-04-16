@@ -2,7 +2,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Home, Users, Receipt,
-  Wallet, Zap, Hammer, Bell, Leaf, ChevronLeft, ChevronRight, Package
+  Wallet, Zap, Hammer, Bell, Leaf, ChevronLeft, ChevronRight, Package, ClipboardList
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -15,10 +15,11 @@ export default function AdminLayout() {
     { name: 'Bảng điều khiển', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Phòng', path: '/admin/rooms', icon: Home },
     { name: 'Khách thuê', path: '/admin/tenants', icon: Users },
-    { name: 'Tài sản', path: '/admin/assets', icon: Package },
+    { name: 'Hợp đồng', path: '/admin/contracts', icon: ClipboardList },
     { name: 'Hóa đơn', path: '/admin/invoices', icon: Receipt },
     { name: 'Thanh toán', path: '/admin/payments', icon: Wallet },
-    { name: 'Dịch vụ', path: '/admin/services', icon: Zap },
+    { name: 'Dịch vụ và tiện ích', path: '/admin/services', icon: Zap },
+    { name: 'Trang thiết bị', path: '/admin/assets', icon: Package },
     { name: 'Bảo trì', path: '/admin/tickets', icon: Hammer },
     { name: 'Thông báo', path: '/admin/notifications', icon: Bell },
   ];
@@ -81,7 +82,6 @@ export default function AdminLayout() {
           {/* Top nav links */}
           <div className="flex items-center gap-8 font-bold text-[#4A787C] text-[13.5px]">
             <Link to="/admin/dashboard" className={`pb-[2px] border-b-[3px] transition-all hover:opacity-80 ${location.pathname === '/admin/dashboard' ? 'text-[#0F3A40] border-[#14B8A6]' : 'border-transparent hover:border-[#14B8A6]/30'}`}>Bảng điều khiển</Link>
-            <Link to="/admin/assets" className={`pb-[2px] border-b-[3px] transition-all hover:opacity-80 ${location.pathname === '/admin/assets' ? 'text-[#0F3A40] border-[#14B8A6]' : 'border-transparent hover:border-[#14B8A6]/30'}`}>Tài sản</Link>
             <Link to="/admin/analytics" className={`pb-[2px] border-b-[3px] transition-all hover:opacity-80 ${location.pathname === '/admin/analytics' ? 'text-[#0F3A40] border-[#14B8A6]' : 'border-transparent hover:border-[#14B8A6]/30'}`}>Phân tích</Link>
           </div>
 

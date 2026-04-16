@@ -20,6 +20,7 @@ export default function Sidebar({ role }) {
     { name: 'Tổng quan', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Quản lý Phòng', path: '/admin/rooms', icon: Home },
     { name: 'Quản lý Khách thuê', path: '/admin/tenants', icon: Users },
+    { name: 'Quản lý Hợp đồng', path: '/admin/contracts', icon: FileSignature },
     { name: 'Quản lý Hóa đơn', path: '/admin/invoices', icon: FileText },
     { name: 'Dịch vụ', path: '/admin/services', icon: Settings },
     { name: 'Bảo trì & Sự cố', path: '/admin/tickets', icon: AlertTriangle },

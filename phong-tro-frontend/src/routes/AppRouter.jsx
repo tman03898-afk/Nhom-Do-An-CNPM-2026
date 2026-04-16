@@ -25,6 +25,7 @@ import AdminTicketPage from '../pages/admin/TicketManagePage';
 import AdminNotificationPage from '../pages/admin/NotificationManagePage';
 import AnalyticsPage from '../pages/admin/AnalyticsPage';
 import AssetManagePage from '../pages/admin/AssetManagePage';
+import ContractManagePage from '../pages/admin/ContractManagePage';
 
 export default function AppRouter() {
   return (
@@ -62,6 +63,7 @@ export default function AppRouter() {
         <Route path="notifications" element={<AdminNotificationPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="assets" element={<AssetManagePage />} />
+        <Route path="contracts" element={<ContractManagePage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
       

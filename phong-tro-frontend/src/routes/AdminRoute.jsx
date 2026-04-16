@@ -6,7 +6,9 @@ export default function AdminRoute() {
   const { user } = useAuth();
 
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== 'ADMIN') return <Navigate to="/" replace />;
+  
+  // Kiểm tra quyền Admin (không phân biệt hoa thường)
+  if (user.role?.toUpperCase() !== 'ADMIN') return <Navigate to="/" replace />;
 
   return <AdminLayout />;
 }
