@@ -13,6 +13,7 @@ import TenantInvoicePage from '../pages/tenant/InvoicePage';
 import PaymentPage from '../pages/tenant/PaymentPage';
 import TenantTicketPage from '../pages/tenant/TicketPage';
 import TenantNotificationPage from '../pages/tenant/NotificationPage';
+import ProfilePage from '../pages/tenant/ProfilePage';
 
 import AdminDashboard from '../pages/admin/DashboardPage';
 import RoomManagePage from '../pages/admin/RoomManagePage';
@@ -22,6 +23,8 @@ import AdminPaymentPage from '../pages/admin/PaymentManagePage';
 import ServiceManagePage from '../pages/admin/ServiceManagePage';
 import AdminTicketPage from '../pages/admin/TicketManagePage';
 import AdminNotificationPage from '../pages/admin/NotificationManagePage';
+import AnalyticsPage from '../pages/admin/AnalyticsPage';
+import AssetManagePage from '../pages/admin/AssetManagePage';
 
 export default function AppRouter() {
   return (
@@ -43,6 +46,7 @@ export default function AppRouter() {
         <Route path="payment" element={<PaymentPage />} />
         <Route path="tickets" element={<TenantTicketPage />} />
         <Route path="notifications" element={<TenantNotificationPage />} />
+        <Route path="profile" element={<ProfilePage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
 
@@ -56,6 +60,8 @@ export default function AppRouter() {
         <Route path="services" element={<ServiceManagePage />} />
         <Route path="tickets" element={<AdminTicketPage />} />
         <Route path="notifications" element={<AdminNotificationPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="assets" element={<AssetManagePage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
       

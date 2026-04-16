@@ -30,8 +30,8 @@ export default function Sidebar({ role }) {
 
   return (
     <aside className="w-64 glass-card my-4 ml-4 flex flex-col p-4 mr-0 border-r border-nest-primary/10">
-      <div className="font-sans font-bold text-nest-text-primary text-xl mb-8 mt-2 px-2 flex items-center gap-2">
-        <span>Danh mục quản lý</span>
+      <div className="font-sans font-bold text-nest-text-primary text-xl mb-8 mt-2 px-2 flex items-center gap-2 uppercase tracking-tight">
+        <span>{role === 'admin' ? 'Admin Dashboard' : 'Tenant Dashboard'}</span>
       </div>
       <nav className="flex flex-col gap-2 flex-1">
         {links.map(link => {

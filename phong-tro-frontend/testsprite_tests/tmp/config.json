@@ -1,0 +1,17 @@
+{
+  "status": "init",
+  "scope": "codebase",
+  "type": "frontend",
+  "localEndpoint": "http://localhost:5173/",
+  "serverPort": 63990,
+  "executionArgs": {
+    "projectName": "phong-tro-frontend",
+    "projectPath": "d:\\vibe Anti\\Mau2\\phong-tro-frontend",
+    "testIds": [],
+    "additionalInstruction": "1. Login Test: Go to /login, enter a tenant email (not containing 'admin'), click 'Đăng nhập', verify redirect to /tenant/dashboard.\n2. Dashboard Test: Verify that the greeting (e.g., 'Chào buổi...') and the metrics (e.g., '4.250.000₫') are visible.\n3. Invoice Test: Go to /tenant/invoices, verify the invoice table is rendered with at least one row.\n4. Ticket Test: Go to /tenant/tickets, fill out the form (Category: Điện, Desc: Hỏng bóng đèn), click 'Gửi yêu cầu', verify it appears in the history.\n5. F5 Persistence Test: Go to /tenant/profile, reload the page using browser reload, verify current URL remains /tenant/profile and user name is visible.",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-W_U0xrtSQOY1MuoTDn_oH4M90K_Klu_98pSkaqUQbG0Fh9I4CSTJD_p08vTuvcBy6bT6AL1NgoNw57sEEo93QKzRSqqN4y4A6tGRhlNJ3frP8YGRcvchAUQijxpl2u6ynNY"
+    }
+  }
+}

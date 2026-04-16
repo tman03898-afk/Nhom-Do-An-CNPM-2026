@@ -1,19 +1,34 @@
-import { createContext, useState, useContext } from 'react';
+import { createContext, useState, useContext, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null); 
+  // Initialize state from localStorage
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem('user');
+    try {
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (e) {
+      console.error("Failed to parse user from localStorage", e);
+      return null;
+    }
+  }); 
 
   const login = (role) => {
+    let newUser;
     if (role === 'admin') {
-      setUser({ id: 1, name: 'Admin Tester', role: 'ADMIN' });
+      newUser = { id: 1, name: 'Quản trị viên', role: 'ADMIN' };
     } else {
-      setUser({ id: 2, name: 'Tenant Tester', role: 'TENANT' });
+      newUser = { id: 2, name: 'Nguyễn Văn A', role: 'TENANT' };
     }
+    
+    // Save to localStorage
+    localStorage.setItem('user', JSON.stringify(newUser));
+    setUser(newUser);
   };
 
   const logout = () => {
+    localStorage.removeItem('user');
     setUser(null);
   };
 

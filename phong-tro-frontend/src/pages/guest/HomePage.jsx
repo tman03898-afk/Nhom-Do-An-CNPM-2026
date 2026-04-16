@@ -1,11 +1,18 @@
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown } from 'lucide-react';
+import CustomSelect from '../../components/common/CustomSelect';
 
 export default function HomePage() {
+  const [roomType, setRoomType] = useState('Tất cả');
+  const [priceRange, setPriceRange] = useState('Dưới 5tr');
+  const [area, setArea] = useState('Tất cả');
+  const [furniture, setFurniture] = useState('Tất cả');
+
   const featuredRooms = [
     { id: 1, name: 'Phòng 402', price: '6.500.000', size: '25 m²', type: 'Studio', image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80', status: 'Còn phòng' },
     { id: 5, name: 'Phòng 601', price: '9.000.000', size: '40 m²', type: '2 Phòng ngủ', image: 'https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=800&q=80', status: 'Còn phòng' },
-    { id: 3, name: 'Phòng 301', price: '5.000.000', size: '20 m²', type: 'Studio', image: 'https://images.unsplash.com/photo-1493809842364-78817add7ff6?w=800&q=80', status: 'Đã cho thuê' },
+    { id: 3, name: 'Phòng 301', price: '5.000.000', size: '20 m²', type: 'Studio', image: '/rooms/room_301.png', status: 'Còn phòng' },
   ];
 
   return (
@@ -40,59 +47,39 @@ export default function HomePage() {
         {/* Floating Search Bar */}
         <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-[90%] max-w-5xl z-20">
           <div className="bg-white/80 backdrop-blur-xl border border-white p-4 rounded-2xl shadow-xl flex flex-col md:flex-row gap-4 items-end">
-            <div className="flex-1 w-full">
-              <label className="block text-[10px] font-bold text-nest-text-secondary uppercase mb-2 ml-1 tracking-wider">Loại phòng</label>
-              <div className="relative w-full">
-                <select className="w-full bg-[#D1EDF1] text-nest-text-primary px-4 py-3 pr-10 rounded-xl border-none font-medium appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#006B5F] transition-shadow duration-200">
-                  <option>Tất cả</option>
-                  <option>Studio</option>
-                  <option>1 Phòng ngủ</option>
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-nest-text-secondary flex items-center justify-center pointer-events-none">
-                  <ChevronDown className="w-5 h-5 opacity-70" />
-                </div>
-              </div>
-            </div>
-            <div className="flex-1 w-full">
-              <label className="block text-[10px] font-bold text-nest-text-secondary uppercase mb-2 ml-1 tracking-wider">Giá Thuê</label>
-              <div className="relative w-full">
-                <select className="w-full bg-[#D1EDF1] text-nest-text-primary px-4 py-3 pr-10 rounded-xl border-none font-medium appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#006B5F] transition-shadow duration-200">
-                  <option>Dưới 5tr</option>
-                  <option>5tr - 8tr</option>
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-nest-text-secondary flex items-center justify-center pointer-events-none">
-                  <ChevronDown className="w-5 h-5 opacity-70" />
-                </div>
-              </div>
-            </div>
-            <div className="flex-1 w-full">
-              <label className="block text-[10px] font-bold text-nest-text-secondary uppercase mb-2 ml-1 tracking-wider">Diện tích</label>
-              <div className="relative w-full">
-                <select className="w-full bg-[#D1EDF1] text-nest-text-primary px-4 py-3 pr-10 rounded-xl border-none font-medium appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#006B5F] transition-shadow duration-200">
-                  <option>Tất cả</option>
-                  <option>Dưới 25 m²</option>
-                  <option>Trên 25 m²</option>
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-nest-text-secondary flex items-center justify-center pointer-events-none">
-                  <ChevronDown className="w-5 h-5 opacity-70" />
-                </div>
-              </div>
-            </div>
-            <div className="flex-1 w-full">
-              <label className="block text-[10px] font-bold text-nest-text-secondary uppercase mb-2 ml-1 tracking-wider">Nội thất</label>
-              <div className="relative w-full">
-                <select className="w-full bg-[#D1EDF1] text-nest-text-primary px-4 py-3 pr-10 rounded-xl border-none font-medium appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#006B5F] transition-shadow duration-200">
-                  <option>Tất cả</option>
-                  <option>Đầy đủ</option>
-                  <option>Cơ bản</option>
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-nest-text-secondary flex items-center justify-center pointer-events-none">
-                  <ChevronDown className="w-5 h-5 opacity-70" />
-                </div>
-              </div>
-            </div>
+            <CustomSelect 
+              label="Loại phòng"
+              options={['Tất cả', 'Studio', '1 Phòng ngủ', '2 Phòng ngủ']}
+              value={roomType}
+              onChange={setRoomType}
+            />
+            <CustomSelect 
+              label="Giá Thuê"
+              options={['Dưới 5tr', '5tr - 8tr', 'Trên 8tr']}
+              value={priceRange}
+              onChange={setPriceRange}
+            />
+            <CustomSelect 
+              label="Diện tích"
+              options={['Tất cả', 'Dưới 25 m²', 'Trên 25 m²']}
+              value={area}
+              onChange={setArea}
+            />
+            <CustomSelect 
+              label="Nội thất"
+              options={['Tất cả', 'Đầy đủ', 'Cơ bản']}
+              value={furniture}
+              onChange={setFurniture}
+            />
+            
             <div className="w-full md:w-auto">
-              <button onClick={() => document.getElementById('phong-trong')?.scrollIntoView({ behavior: 'smooth' })} className="w-full bg-nest-primary hover:bg-[#0fa696] text-white px-8 py-3 rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
+              <button 
+                onClick={() => {
+                  console.log({ roomType, priceRange, area, furniture });
+                  document.getElementById('phong-trong')?.scrollIntoView({ behavior: 'smooth' });
+                }} 
+                className="w-full bg-nest-primary hover:bg-[#0fa696] text-white px-8 py-3.5 rounded-xl font-bold transition-all hover:scale-105 active:scale-95 flex justify-center items-center gap-2 shadow-lg shadow-nest-primary/20"
+              >
                 Tìm kiếm
               </button>
             </div>

@@ -1,0 +1,103 @@
+version: "2"
+type: frontend
+tech_stack:
+  - JavaScript
+  - React (Vite)
+  - Tailwind CSS
+  - Lucide Icons
+  - React Router
+routes:
+  - path: /
+    file: src/pages/LandingPage.jsx
+    auth_required: false
+    description: Public landing page for guests
+  - path: /login
+    file: src/pages/auth/LoginPage.jsx
+    auth_required: false
+    description: High-fidelity login page with mock role selection
+  - path: /tenant/dashboard
+    file: src/pages/tenant/DashboardPage.jsx
+    auth_required: true
+    description: Tenant main dashboard with metrics and greetings
+  - path: /tenant/invoices
+    file: src/pages/tenant/InvoicePage.jsx
+    auth_required: true
+    description: Tenant billing history and status tracking
+  - path: /tenant/payment
+    file: src/pages/tenant/PaymentPage.jsx
+    auth_required: true
+    description: Tenant payment workflow with QR codes and proof upload
+  - path: /tenant/contract
+    file: src/pages/tenant/ContractPage.jsx
+    auth_required: true
+    description: Tenant lease agreement and building rules
+  - path: /tenant/tickets
+    file: src/pages/tenant/TicketPage.jsx
+    auth_required: true
+    description: Tenant maintenance issue reporting
+  - path: /tenant/notifications
+    file: src/pages/tenant/NotificationPage.jsx
+    auth_required: true
+    description: Tenant notifications list
+  - path: /tenant/profile
+    file: src/pages/tenant/ProfilePage.jsx
+    auth_required: true
+    description: Tenant personal profile and account settings
+  - path: /admin/dashboard
+    file: src/pages/admin/DashboardPage.jsx
+    auth_required: true
+    description: Admin overview dashboard with business metrics
+features:
+  - name: Global Theme & Layout
+    description: Modern Teal/Mint design system with glassmorphism and responsive sidebars
+    files:
+      - src/layouts/TenantLayout.jsx
+      - src/layouts/AdminLayout.jsx
+      - src/routes/TenantRoute.jsx
+      - src/routes/AdminRoute.jsx
+    entry_route: /tenant/dashboard
+    user_interactions:
+      - Navigate via Sidebar links
+      - Collapse/Expand sidebar for focus mode
+      - Search for services in the top header
+    auth_required: true
+  - name: Tenant Financial Management
+    description: View and pay invoices via QR codes or proof uploads
+    files:
+      - src/pages/tenant/InvoicePage.jsx
+      - src/pages/tenant/PaymentPage.jsx
+    entry_route: /tenant/invoices
+    user_interactions:
+      - Filter invoices by status
+      - Click 'Thanh toán ngay' to open payment workflow
+      - Scan QR code for banking transfer
+      - Upload transaction screenshot as proof
+    auth_required: true
+  - name: Maintenance Reporting
+    description: Report property issues with descriptions and attachments
+    files:
+      - src/pages/tenant/TicketPage.jsx
+    entry_route: /tenant/tickets
+    user_interactions:
+      - Fill in issue details (Category, Description)
+      - Upload image of the problem
+      - Submit ticket and track status in history
+    auth_required: true
+  - name: Persistent Authentication
+    description: Mock authentication with localStorage state persistence
+    files:
+      - src/context/AuthContext.jsx
+      - src/pages/auth/LoginPage.jsx
+    entry_route: /login
+    user_interactions:
+      - Select role (Admin/Tenant) via hidden email logic (contains 'admin')
+      - Click 'Đăng nhập' to proceed to dashboard
+      - Refresh page (F5) and stay logged in
+    auth_required: false
+known_limitations:
+  - issue: Backend API endpoints are not yet connected
+    location: src/context/AuthContext.jsx
+    impact: All data is currently mock and does not persist to a database
+  - issue: Profile edit functionality is UI-only
+    location: src/pages/tenant/ProfilePage.jsx
+    impact: Clicking 'Chỉnh sửa' does not yet update user records

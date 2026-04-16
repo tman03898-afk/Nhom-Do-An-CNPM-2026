@@ -39,7 +39,7 @@ export default function NotificationManagePage() {
       {/* Header Section */}
       <header className="flex flex-col gap-3">
         <h1 className="text-[36px] font-sans font-bold text-[#0F3A40] tracking-tight leading-none">
-          Trung tâm Thông báo
+          Thông báo
         </h1>
         <p className="text-[15px] font-medium text-[#4A787C] leading-relaxed max-w-[600px]">
           Quản lý và gửi thông tin quan trọng đến tất cả cư dân tại The Nest Living một cách nhanh chóng và hiệu quả.
