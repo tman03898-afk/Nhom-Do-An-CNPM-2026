@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
-import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown } from 'lucide-react';
+import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown, ShieldCheck, ParkingCircle, Brush } from 'lucide-react';
 import CustomSelect from '../../components/common/CustomSelect';
 
 export default function HomePage() {
@@ -144,11 +144,7 @@ export default function HomePage() {
             {/* Left tall card */}
             <div className="bg-[#E9FBFF] p-8 md:p-12 rounded-[2.5rem] md:row-span-2 flex flex-col justify-end hover:-translate-y-2 transition-transform shadow-[0_4px_20px_rgba(0,0,0,0.03)] min-h-[380px] lg:min-h-[480px]">
               <div className="w-16 h-16 bg-white rounded-[1.2rem] flex items-center justify-center mb-8 shadow-sm">
-                <svg className="w-8 h-8 text-[#0F3A40]" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                  <path d="M12 2v20" />
-                  <path d="M4 11h8" />
-                </svg>
+                <ShieldCheck className="w-8 h-8 text-[#14B8A6]" strokeWidth={2.3} />
               </div>
               <h4 className="font-sans font-bold text-xl mb-3 text-nest-text-primary">An ninh 24/7</h4>
               <p className="text-sm text-nest-text-secondary leading-relaxed">Hệ thống camera giám sát và đội ngũ bảo vệ chuyên nghiệp, đảm bảo an toàn tuyệt đối cho bạn.</p>
@@ -158,7 +154,7 @@ export default function HomePage() {
             <div className="bg-[#E9FBFF] p-8 md:p-12 rounded-[2.5rem] md:col-span-2 hover:-translate-y-2 transition-transform shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex flex-col md:flex-row items-center justify-between gap-8 h-full min-h-[280px]">
               <div className="flex-1">
                 <div className="w-16 h-16 bg-white rounded-[1.2rem] flex items-center justify-center mb-8 shadow-sm">
-                  <Wifi className="w-8 h-8 text-[#0F3A40]" strokeWidth={2.3} />
+                  <Wifi className="w-8 h-8 text-[#14B8A6]" strokeWidth={2.3} />
                 </div>
                 <h4 className="font-sans font-bold text-xl mb-3 text-nest-text-primary">Wifi tốc độ cao</h4>
                 <p className="text-sm text-nest-text-secondary leading-relaxed max-w-sm">Đường truyền cáp quang riêng từng tầng, hỗ trợ tối đa cho việc học tập và giải trí không giới hạn.</p>
@@ -176,7 +172,7 @@ export default function HomePage() {
             {/* Bottom right 1 */}
             <div className="bg-[#E9FBFF] p-8 md:p-10 rounded-[2.5rem] hover:-translate-y-2 transition-transform shadow-[0_4px_20px_rgba(0,0,0,0.03)] h-full min-h-[260px]">
               <div className="w-16 h-16 bg-white rounded-[1.2rem] flex items-center justify-center mb-8 shadow-sm">
-                <span className="text-[#0F3A40] text-[32px] font-black uppercase tracking-tighter">P</span>
+                <ParkingCircle className="w-8 h-8 text-[#14B8A6]" strokeWidth={2.3} />
               </div>
               <h4 className="font-sans font-bold text-lg mb-2 text-nest-text-primary">Hầm đỗ xe</h4>
               <p className="text-sm text-nest-text-secondary leading-relaxed">Không gian rộng rãi, sạch sẽ với lối đi riêng tiện cho cư dân.</p>
@@ -185,13 +181,7 @@ export default function HomePage() {
             {/* Bottom right 2 */}
             <div className="bg-[#E9FBFF] p-8 md:p-10 rounded-[2.5rem] hover:-translate-y-2 transition-transform shadow-[0_4px_20px_rgba(0,0,0,0.03)] h-full min-h-[260px]">
               <div className="w-16 h-16 bg-white rounded-[1.2rem] flex items-center justify-center mb-8 shadow-sm">
-                <svg className="w-8 h-8 text-[#0F3A40]" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                  <path d="M12 3v4" />
-                  <rect width="12" height="4" x="6" y="7" rx="1" />
-                  <path d="M8 11v4" />
-                  <path d="M12 11v4" />
-                  <path d="M16 11v4" />
-                </svg>
+                <Brush className="w-8 h-8 text-[#14B8A6]" strokeWidth={2.3} />
               </div>
               <h4 className="font-sans font-bold text-lg mb-2 text-nest-text-primary">Dịch vụ vệ sinh</h4>
               <p className="text-sm text-nest-text-secondary leading-relaxed">Duy trì không gian chung luôn sạch đẹp, thường xuyên mỗi ngày.</p>
