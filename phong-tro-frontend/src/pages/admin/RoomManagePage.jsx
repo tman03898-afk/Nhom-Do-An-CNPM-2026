@@ -2,11 +2,11 @@ import { MapPin, CheckCircle2, UserCheck, BarChart3, Edit3, Trash2, ArrowUpRight
 
 export default function RoomManagePage() {
   const rooms = [
-    { id: 'P.401', type: 'STUDIO', typeColor: 'bg-[#D1EDF1]', area: '28 m²', price: '4.500.000đ', status: 'TRỐNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-    { id: 'P.205', type: 'SUITE', typeColor: 'bg-[#D1EDF1]', area: '42 m²', price: '7.200.000đ', status: 'ĐANG THUÊ', statusPill: 'bg-[#E2E8F0] text-[#64748B]', dot: 'bg-[#64748B]' },
-    { id: 'P.102', type: 'STUDIO', typeColor: 'bg-[#D1EDF1]', area: '30 m²', price: '4.800.000đ', status: 'BẢO TRÌ', statusPill: 'bg-[#FFF3E0] text-[#E68A00]', dot: 'bg-[#E68A00]' },
-    { id: 'P.512', type: 'SUITE', typeColor: 'bg-[#D1EDF1]', area: '45 m²', price: '8.000.000đ', status: 'TRỐNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-    { id: 'P.308', type: 'STUDIO', typeColor: 'bg-[#D1EDF1]', area: '32 m²', price: '5.100.000đ', status: 'ĐANG THUÊ', statusPill: 'bg-[#E2E8F0] text-[#64748B]', dot: 'bg-[#64748B]' },
+    { id: 'P.402', type: 'Gác lửng', typeColor: 'bg-nest-primary/10', area: '20 m²', price: '2.500.000đ', status: 'TRỐNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
+    { id: 'P.601', type: 'Ban công', typeColor: 'bg-nest-primary/10', area: '25 m²', price: '3.000.000đ', status: 'ĐANG THUÊ', statusPill: 'bg-slate-100 text-slate-500', dot: 'bg-slate-400' },
+    { id: 'P.301', type: 'Thường', typeColor: 'bg-nest-primary/10', area: '18 m²', price: '2.000.000đ', status: 'TRỐNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
+    { id: 'P.205', type: 'Ban công', typeColor: 'bg-nest-primary/10', area: '24 m²', price: '2.800.000đ', status: 'BẢO TRÌ', statusPill: 'bg-[#FFF3E0] text-[#E68A00]', dot: 'bg-[#E68A00]' },
+    { id: 'P.512', type: 'Gác lửng', typeColor: 'bg-nest-primary/10', area: '22 m²', price: '2.600.000đ', status: 'TRỐNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
   ];
 
   return (
@@ -14,56 +14,57 @@ export default function RoomManagePage() {
       {/* Page Header */}
       <div className="flex justify-between items-end mb-8 relative z-10">
         <div>
-          <h1 className="text-[32px] font-sans font-bold text-[#0F3A40] tracking-tight">Quản lý Phòng</h1>
-          <p className="text-[13px] font-bold text-[#4A787C] mt-2 flex items-center gap-1.5">
+          <h1 className="text-[32px] font-sans font-bold text-nest-text-primary tracking-tight">Quản lý Phòng</h1>
+          <p className="text-[13px] font-bold text-nest-text-secondary mt-2 flex items-center gap-1.5">
             <MapPin className="w-[14px] h-[14px]" /> Lâm Đồng Campus • 124 Phòng
           </p>
         </div>
         <div className="flex items-center gap-6">
-          <div className="flex bg-[#F2FCFD] rounded-full p-1 border border-[#BCE1E5]/40 shadow-sm">
-            <button className="px-5 py-2.5 rounded-full bg-white text-[#0F3A40] text-[13px] font-bold shadow-sm">Tất cả</button>
-            <button className="px-5 py-2.5 rounded-full text-[#4A787C] hover:text-[#0F3A40] text-[13px] font-bold transition-colors">Phòng Studio</button>
-            <button className="px-5 py-2.5 rounded-full text-[#4A787C] hover:text-[#0F3A40] text-[13px] font-bold transition-colors">Phòng Suite</button>
+          <div className="flex bg-white/50 backdrop-blur-md rounded-full p-1 border border-nest-primary/10 shadow-sm">
+            <button className="px-5 py-2.5 rounded-full bg-white text-nest-text-primary text-[13px] font-bold shadow-sm">Tất cả</button>
+            <button className="px-5 py-2.5 rounded-full text-nest-text-secondary hover:text-nest-text-primary text-[13px] font-bold transition-colors">Thường</button>
+            <button className="px-5 py-2.5 rounded-full text-nest-text-secondary hover:text-nest-text-primary text-[13px] font-bold transition-colors">Gác lửng</button>
+            <button className="px-5 py-2.5 rounded-full text-nest-text-secondary hover:text-nest-text-primary text-[13px] font-bold transition-colors">Ban công</button>
           </div>
-          <button className="bg-[#14B8A6] hover:bg-[#0da090] text-white px-6 py-2.5 rounded-full text-[14px] font-bold transition-colors shadow-md flex items-center gap-2">
+          <button className="bg-nest-primary hover:bg-[#0da090] text-white px-6 py-2.5 rounded-full text-[14px] font-bold transition-colors shadow-lg shadow-nest-primary/20 flex items-center gap-2">
              <Plus className="w-[18px] h-[18px]" /> Thêm phòng
           </button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 relative z-10">
-        <div className="bg-[#F2FCFD] rounded-[24px] p-6 shadow-sm border border-transparent flex justify-between items-center">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 relative z-10">
+        <div className="bg-white rounded-[24px] p-6 shadow-[0_4px_23px_rgba(15,58,64,0.06)] border border-slate-200/60 flex justify-between items-center">
            <div>
-              <p className="text-[10px] font-bold text-[#4A787C] uppercase tracking-widest mb-2">Sẵn sàng</p>
-              <h3 className="text-3xl font-bold text-[#14B8A6]">42</h3>
+              <p className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Sẵn sàng</p>
+              <h3 className="text-3xl font-bold text-nest-primary">42</h3>
            </div>
-           <div className="w-[42px] h-[42px] rounded-full bg-[#EBFDFB] text-[#14B8A6] border border-[#14B8A6]/20 flex items-center justify-center shadow-sm">
+           <div className="w-[42px] h-[42px] rounded-full bg-nest-primary/10 text-nest-primary border border-nest-primary/20 flex items-center justify-center">
               <CheckCircle2 className="w-[22px] h-[22px]" />
            </div>
         </div>
-        <div className="bg-[#F2FCFD] rounded-[24px] p-6 shadow-sm border border-transparent flex justify-between items-center">
+        <div className="bg-white rounded-[24px] p-6 shadow-[0_4px_23px_rgba(15,58,64,0.06)] border border-slate-200/60 flex justify-between items-center">
            <div>
-              <p className="text-[10px] font-bold text-[#4A787C] uppercase tracking-widest mb-2">Đang thuê</p>
-              <h3 className="text-3xl font-bold text-[#0F3A40]">78</h3>
+              <p className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Đang thuê</p>
+              <h3 className="text-3xl font-bold text-nest-text-primary">78</h3>
            </div>
-           <div className="w-[42px] h-[42px] rounded-full bg-[#E2E8F0] text-[#64748B] flex items-center justify-center">
+           <div className="w-[42px] h-[42px] rounded-full bg-gray-50 text-gray-400 flex items-center justify-center border border-gray-100">
               <UserCheck className="w-[20px] h-[20px]" />
            </div>
         </div>
-        <div className="bg-[#F2FCFD] rounded-[24px] p-6 shadow-sm border border-transparent flex justify-between items-center">
+        <div className="bg-white rounded-[24px] p-6 shadow-[0_4px_23px_rgba(15,58,64,0.06)] border border-slate-200/60 flex justify-between items-center">
            <div>
-              <p className="text-[10px] font-bold text-[#4A787C] uppercase tracking-widest mb-2">Tỉ lệ lấp đầy</p>
-              <h3 className="text-3xl font-bold text-[#0F3A40]">62%</h3>
+              <p className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Tỉ lệ lấp đầy</p>
+              <h3 className="text-3xl font-bold text-nest-text-primary">62%</h3>
            </div>
-           <div className="w-[42px] h-[42px] rounded-full bg-[#EBFDFB] text-[#0F3A40] flex items-center justify-center text-[#14B8A6] border border-[#14B8A6]/20">
+           <div className="w-[42px] h-[42px] rounded-full bg-nest-primary/10 text-nest-text-primary flex items-center justify-center text-nest-primary border border-nest-primary/20">
               <BarChart3 className="w-[20px] h-[20px]" />
            </div>
         </div>
       </div>
 
       {/* Main Table */}
-      <div className="bg-[#F2FCFD] rounded-[32px] p-8 shadow-sm mb-8">
+      <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm mb-8">
         <div className="w-full overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -125,17 +126,18 @@ export default function RoomManagePage() {
       {/* Bottom Layout sections */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Market Analysis Insight Card */}
-        <div className="bg-[#EBFDFB] rounded-[32px] p-10 flex flex-col justify-between shadow-sm border border-transparent self-stretch">
-           <div>
-              <p className="text-[11px] font-bold text-[#14B8A6] uppercase tracking-widest mb-6">Phân tích thị trường</p>
-              <h3 className="text-3xl font-bold text-[#0F3A40] leading-snug mb-5">
-                 Xu hướng tăng trưởng tháng này đang mạnh
+        <div className="bg-white rounded-[32px] p-10 flex flex-col justify-between shadow-[0_8px_30px_rgba(15,58,64,0.04)] border border-slate-200/60 self-stretch relative overflow-hidden group">
+           <div className="absolute top-0 right-0 w-32 h-32 bg-nest-primary/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+           <div className="relative z-10">
+              <p className="text-[11px] font-bold text-nest-primary uppercase tracking-widest mb-6">Phân tích thị trường</p>
+              <h3 className="text-2xl font-bold text-nest-text-primary leading-snug mb-5">
+                 Xu hướng tăng trưởng mạnh
               </h3>
-              <p className="text-[14px] text-[#4A787C] font-medium leading-relaxed">
-                 Dựa trên dữ liệu 30 ngày qua, nhu cầu tìm kiếm phòng Studio tại khu vực này đã tăng 15%. Xem xét điều chỉnh chiến lược giá cho các phòng trống.
+              <p className="text-[14px] text-nest-text-secondary font-medium leading-relaxed">
+                 Dựa trên dữ liệu 30 ngày qua, nhu cầu tìm kiếm phòng tại khu vực này đã tăng 15%. Xem xét điều chỉnh chiến lược giá cho các phòng trống.
               </p>
            </div>
-           <button className="text-[#14B8A6] hover:text-[#0da090] font-bold text-[14px] items-center gap-1.5 flex mt-10 w-fit transition-colors group">
+           <button className="text-nest-primary hover:text-[#0da090] font-bold text-[14px] items-center gap-1.5 flex mt-10 w-fit transition-colors group relative z-10">
               Xem báo cáo chi tiết <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
            </button>
         </div>

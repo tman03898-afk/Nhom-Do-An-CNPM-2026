@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Home, Users, Receipt,
   ClipboardList, AlertTriangle, Bell, User,
-  Leaf, ChevronLeft, ChevronRight, Search, Settings, X
+  Bird, ChevronLeft, ChevronRight, Search, Settings, X
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -16,7 +16,7 @@ export default function TenantLayout() {
     { name: 'Trang chủ', path: '/tenant/dashboard', icon: Home },
     { name: 'Hóa đơn', path: '/tenant/invoices', icon: Receipt },
     { name: 'Hợp đồng', path: '/tenant/contract', icon: ClipboardList },
-    { name: 'Yêu cầu sửa chữa', path: '/tenant/tickets', icon: AlertTriangle },
+    { name: 'Hỗ trợ', path: '/tenant/tickets', icon: AlertTriangle },
     { name: 'Thông báo', path: '/tenant/notifications', icon: Bell },
     { name: 'Tài khoản', path: '/tenant/profile', icon: User },
   ];
@@ -35,11 +35,16 @@ export default function TenantLayout() {
 
         {/* Logo */}
         <div className={`relative flex flex-col mb-12 ${isCollapsed ? 'items-center px-0' : 'px-2'}`}>
-          <Link to="/" className="flex items-center gap-3 font-bold text-xl text-white tracking-tight overflow-hidden">
-            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-[#1E4D54] shrink-0 shadow-inner">
-              <Leaf className="w-6 h-6 fill-current" />
+          <Link to="/" className="flex items-center gap-3 group overflow-hidden">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-nest-primary shadow-lg shadow-black/20 shrink-0 group-hover:scale-110 group-hover:rotate-6`}>
+              <Bird className="w-6 h-6 text-white" />
             </div>
-            {!isCollapsed && <div className="flex flex-col"><span className="whitespace-nowrap leading-none">The Nest Living</span><span className="text-[10px] opacity-70 mt-1 font-medium tracking-wide">TENANT DASHBOARD</span></div>}
+            {!isCollapsed && (
+              <div className="flex flex-col">
+                <span className="text-white whitespace-nowrap leading-none font-bold">The Nest Living</span>
+                <span className="text-white/60 text-[10px] opacity-70 mt-1.5 font-bold tracking-[1px] uppercase">TENANT DASHBOARD</span>
+              </div>
+            )}
           </Link>
         </div>
 
@@ -88,13 +93,24 @@ export default function TenantLayout() {
       {/* Main Container */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
         {/* Top Header */}
-        <header className="h-[90px] flex items-center justify-between px-10 shrink-0 bg-transparent z-10 relative">
-          <div className="flex-1"></div>
+        <header className="h-[88px] flex items-center justify-between px-10 shrink-0 bg-white/60 backdrop-blur-xl border-b border-nest-primary/10 shadow-[0_8px_30px_rgba(15,58,64,0.06)] z-20 relative">
+          <div className="flex items-center gap-6 flex-1">
+            <h2 className="text-[22px] font-sans font-extrabold text-[#0F3A40] tracking-tight">
+              {links.find(l => location.pathname.startsWith(l.path))?.name || 'Tổng quan'}
+            </h2>
+
+            {/* Context Pill */}
+            <div className="hidden lg:flex items-center gap-2 px-4 py-1.5 bg-nest-bg/80 backdrop-blur-md rounded-full border border-nest-primary/20 shadow-sm ml-4">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="text-[12px] font-bold text-[#4A787C]">Phòng 301 - Building A</span>
+            </div>
+          </div>
 
           {/* User Actions */}
           <div className="flex items-center gap-5">
-            <Link to="/tenant/notifications" className="w-10 h-10 rounded-full bg-white/60 backdrop-blur-md flex items-center justify-center text-[#4A787C] hover:text-[#14B8A6] hover:bg-white hover:scale-110 transition-all shadow-sm group">
-              <Bell size={18} className="group-hover:rotate-12 transition-transform" />
+            <Link to="/tenant/notifications" className="relative w-11 h-11 rounded-2xl bg-white/80 backdrop-blur-md flex items-center justify-center text-[#4A787C] hover:text-[#14B8A6] hover:bg-white hover:shadow-lg hover:shadow-nest-primary/10 transition-all border border-transparent hover:border-nest-primary/10 group">
+              <Bell size={20} className="group-hover:rotate-12 transition-transform" />
+              <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
             </Link>
             <Link to="/tenant/profile" className="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow-md cursor-pointer hover:border-[#14B8A6]/50 hover:scale-110 transition-all">
               <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=14B8A6&color=fff`} className="w-full h-full object-cover" />
@@ -103,7 +119,7 @@ export default function TenantLayout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto px-10 pb-10 scroll-smooth">
+        <main className="flex-1 overflow-y-auto px-10 pt-10 pb-10 scroll-smooth">
           <div className="max-w-[1400px] mx-auto">
             <Outlet />
           </div>

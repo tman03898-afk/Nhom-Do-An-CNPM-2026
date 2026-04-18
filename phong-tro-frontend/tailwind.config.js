@@ -9,12 +9,12 @@ export default {
       colors: {
         'nest-primary': '#14B8A6',
         'nest-primary-container': '#006b5f',
-        'nest-bg': '#CFE8EA',
-        'nest-surface': '#edfcff',
-        'nest-surface-low': '#daf9ff',
+        'nest-bg': '#F5FDFF',
+        'nest-surface': '#F0FBFA',
+        'nest-surface-low': '#E6F8F7',
         'nest-surface-lowest': '#ffffff',
         'nest-text-primary': '#0F3A40',
-        'nest-text-secondary': '#4A787C',
+        'nest-text-secondary': '#5A8B91',
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', 'sans-serif'],

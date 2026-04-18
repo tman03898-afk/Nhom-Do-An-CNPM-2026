@@ -41,7 +41,7 @@ export default function RoomDetailPage() {
             <div className="text-4xl md:text-5xl font-sans font-bold text-[#14B8A6]">2.500.000đ</div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y border-[#CFE8EA]/80 mb-10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y border-nest-surface-low mb-10">
             <div>
               <div className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-wider mb-2">Diện tích</div>
               <div className="flex items-center gap-2 font-bold text-nest-text-primary text-base"><Ruler className="w-5 h-5 text-[#14B8A6]" /> 20 m²</div>
@@ -89,7 +89,7 @@ export default function RoomDetailPage() {
           <div className="bg-white/40 backdrop-blur-[16px] border border-white/60 rounded-[2.5rem] p-8">
             <h3 className="font-sans font-bold text-lg text-nest-text-primary mb-6">Liên hệ xem phòng</h3>
 
-            <div className="bg-[#CFE8EA]/60 p-4 rounded-2xl flex items-center gap-4 mb-4 border border-white/60">
+            <div className="bg-nest-surface-low p-4 rounded-2xl flex items-center gap-4 mb-4 border border-white/60">
               <div className="w-10 h-10 bg-[#14B8A6] rounded-full flex items-center justify-center text-white shrink-0 shadow-sm">
                 <Phone className="w-5 h-5" />
               </div>
@@ -118,7 +118,7 @@ export default function RoomDetailPage() {
             </div>
             <div className="flex items-start gap-2">
               <MapPin className="w-4 h-4 text-[#14B8A6] shrink-0 fill-[#14B8A6]/20 mt-0.5" />
-              <span className="text-[13px] font-bold text-nest-text-primary leading-[1.6]">Quận 3, Thành phố Hồ Chí Minh, Việt Nam</span>
+              <span className="text-[13px] font-bold text-nest-text-primary leading-[1.6]">Thủ Đức, Thành phố Hồ Chí Minh, Việt Nam</span>
             </div>
           </div>
         </div>

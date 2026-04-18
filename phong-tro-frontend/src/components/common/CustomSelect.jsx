@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-export default function CustomSelect({ label, options, value, onChange }) {
+export default function CustomSelect({ label, options, value, onChange, icon: Icon }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -24,13 +24,14 @@ export default function CustomSelect({ label, options, value, onChange }) {
       <div className="relative w-full">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`w-full bg-[#D1EDF1] text-nest-text-primary px-4 py-3 pr-10 rounded-xl border-none font-medium text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-nest-primary-container transition-all duration-300 shadow-sm hover:shadow-md ${
-            isOpen ? 'ring-2 ring-nest-primary-container' : ''
+          className={`w-full bg-nest-surface-low text-nest-text-primary px-4 py-3 pr-10 rounded-xl border-none font-medium text-left flex items-center gap-3 focus:outline-none focus:ring-2 focus:ring-nest-primary/20 transition-all duration-300 shadow-sm hover:shadow-md ${
+            isOpen ? 'ring-2 ring-nest-primary/30' : ''
           }`}
         >
-          <span className="truncate">{value}</span>
+          {Icon && <Icon className="w-4 h-4 text-nest-primary/70 shrink-0" />}
+          <span className="truncate flex-1">{value}</span>
           <ChevronDown
-            className={`w-5 h-5 opacity-70 transition-transform duration-500 ${
+            className={`w-4 h-4 opacity-50 transition-transform duration-500 absolute right-4 ${
               isOpen ? 'rotate-180' : ''
             }`}
           />
