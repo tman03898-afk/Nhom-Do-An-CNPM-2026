@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
-import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown, ShieldCheck, ParkingCircle, Brush } from 'lucide-react';
+import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown, ShieldCheck, ParkingCircle, BrushCleaning } from 'lucide-react';
 import CustomSelect from '../../components/common/CustomSelect';
 
 export default function HomePage() {
@@ -181,7 +181,7 @@ export default function HomePage() {
             {/* Bottom right 2 */}
             <div className="bg-[#E9FBFF] p-8 md:p-10 rounded-[2.5rem] hover:-translate-y-2 transition-transform shadow-[0_4px_20px_rgba(0,0,0,0.03)] h-full min-h-[260px]">
               <div className="w-16 h-16 bg-white rounded-[1.2rem] flex items-center justify-center mb-8 shadow-sm">
-                <Brush className="w-8 h-8 text-[#14B8A6]" strokeWidth={2.3} />
+                <BrushCleaning className="w-8 h-8 text-[#14B8A6]" strokeWidth={2.3} />
               </div>
               <h4 className="font-sans font-bold text-lg mb-2 text-nest-text-primary">Dịch vụ vệ sinh</h4>
               <p className="text-sm text-nest-text-secondary leading-relaxed">Duy trì không gian chung luôn sạch đẹp, thường xuyên mỗi ngày.</p>
