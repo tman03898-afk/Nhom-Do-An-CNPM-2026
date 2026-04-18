@@ -32,11 +32,11 @@ export default function HomePage() {
 
         <div className="relative z-10 max-w-7xl mx-auto px-8 w-full pt-12">
           <div className="max-w-2xl">
-            <h1 className="text-5xl md:text-6xl font-sans font-bold text-white leading-[1.1] mb-6">
-              Nâng Tầm Trải Nghiệm <br />Sống Sinh Viên
+            <h1 className="text-5xl md:text-6xl font-sans font-bold text-white leading-[1.2] tracking-tight mb-6">
+              Nâng Tầm Trải Nghiệm <br />Sống Hiện Đại
             </h1>
             <p className="text-lg text-white/90 mb-10 font-body leading-relaxed max-w-xl">
-              Không gian sống đẳng cấp, tiện nghi tối đa, kiến tạo cộng đồng trí thức trong lòng thành phố
+              Hơn cả một nơi ở, chúng tôi xây dựng mạng lưới cư dân tri thức, nơi giao thoa của những tư duy hiện đại và lối sống năng động
             </p>
             <button onClick={() => document.getElementById('phong-trong')?.scrollIntoView({ behavior: 'smooth' })} className="inline-flex items-center gap-2 bg-nest-primary hover:bg-[#0fa696] text-white px-8 py-4 rounded-full font-semibold transition-all shadow-[0_0_20px_rgba(20,184,166,0.4)] hover:shadow-[0_0_30px_rgba(20,184,166,0.6)]">
               Khám phá phòng ngay <ChevronDown className="w-5 h-5 animate-bounce" />
@@ -216,7 +216,7 @@ export default function HomePage() {
             {[
               { no: '01', badge: 'Bước 1', title: 'Tìm phòng', desc: 'Dạo quanh danh sách phòng với đầy đủ hình ảnh thực tế, diện tích, mức giá và tiện nghi. Lọc theo đúng nhu cầu của bạn.', color: 'from-[#CCFBF1] to-[#B2EBF2]' },
               { no: '02', badge: 'Bước 2', title: 'Liên hệ & Đặt lịch', desc: 'Gửi tin nhắn Zalo hoặc gọi hotline 24/7. Đội ngũ tư vấn sẽ hỗ trợ bạn đặt lịch xem phòng trực tiếp ngay hôm nay.', color: 'from-[#D1FAE5] to-[#A7F3D0]' },
-              { no: '03', badge: 'Bước 3', title: 'Nhận tài khoản', desc: 'Ký hợp đồng điện tử nhanh chóng và nhận tài khoản cư dân để quản lý hóa đơn và yêu cầu hỗ trợ mọi nơi mọi lúc.', color: 'from-[#FEF3C7] to-[#FDE68A]' },
+              { no: '03', badge: 'Bước 3', title: 'Nhận tài khoản', desc: 'Ký hợp đồng và nhận tài khoản cư dân để quản lý hóa đơn và yêu cầu hỗ trợ mọi nơi mọi lúc.', color: 'from-[#FEF3C7] to-[#FDE68A]' },
             ].map((step, idx) => (
               <div key={idx} className="relative bg-white rounded-[2rem] p-8 md:p-10 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-white/80 hover:-translate-y-2 transition-all duration-300 group overflow-hidden">
                 <div className={`absolute -top-8 -right-8 w-36 h-36 rounded-full bg-gradient-to-br ${step.color} opacity-50 group-hover:opacity-70 transition-opacity`}></div>
