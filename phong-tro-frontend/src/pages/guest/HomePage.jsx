@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown, ShieldCheck, ParkingCircle, BrushCleaning, Maximize, Armchair } from 'lucide-react';
 import CustomSelect from '../../components/common/CustomSelect';
 
@@ -8,6 +8,20 @@ export default function HomePage() {
   const [priceRange, setPriceRange] = useState('Dưới 5tr');
   const [area, setArea] = useState('Tất cả');
   const [furniture, setFurniture] = useState('Tất cả');
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  const heroSlides = [
+    { src: '/images/home/mezzanine.png', alt: 'Không gian sống hiện đại' },
+    { src: '/images/home/workspace.png', alt: 'Góc làm việc tri thức' },
+    { src: '/images/home/balcony.png', alt: 'Ban công thoáng đãng' },
+  ];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   const featuredRooms = [
     { id: 1, name: 'Phòng 402', price: '2.500.000', size: '20 m²', category: 'Phòng gác lửng', tag: 'Thêm không gian, thêm riêng tư', furniture: 'Đầy đủ', image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80', status: 'Còn phòng' },
@@ -19,15 +33,38 @@ export default function HomePage() {
     <div className="w-full">
       {/* Hero Section */}
       <section className="relative h-[85vh] min-h-[650px] w-full flex items-center">
-        {/* Background Image */}
-        <div className="absolute inset-0 z-0">
-          <img
-            src="https://images.unsplash.com/photo-1554995207-c18c203602cb?q=80&w=2000"
-            alt="Hero Background"
-            className="w-full h-full object-cover"
-          />
+        {/* Background Slider */}
+        <div className="absolute inset-0 z-0 overflow-hidden">
+          {heroSlides.map((slide, index) => (
+            <div
+              key={index}
+              className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
+                index === currentSlide ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              <img
+                src={slide.src}
+                alt={slide.alt}
+                className={`w-full h-full object-cover transition-transform duration-[5000ms] ease-linear ${
+                  index === currentSlide ? 'scale-110' : 'scale-100'
+                }`}
+              />
+            </div>
+          ))}
           <div className="absolute inset-0 bg-[#0F3A40]/50 mix-blend-multiply"></div>
           <div className="absolute inset-0 bg-gradient-to-r from-[#0F3A40]/80 to-transparent"></div>
+          
+          {/* Slider Indicators */}
+          <div className="absolute bottom-12 left-8 md:left-24 flex gap-2 z-20">
+            {heroSlides.map((_, i) => (
+              <div 
+                key={i} 
+                className={`h-1 rounded-full transition-all duration-300 ${
+                  i === currentSlide ? 'w-8 bg-[#14B8A6]' : 'w-4 bg-white/30'
+                }`}
+              />
+            ))}
+          </div>
         </div>
 
         <div className="relative z-10 max-w-7xl mx-auto px-8 w-full pt-12">
