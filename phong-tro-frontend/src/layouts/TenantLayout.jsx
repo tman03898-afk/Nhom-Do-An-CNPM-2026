@@ -93,7 +93,7 @@ export default function TenantLayout() {
       {/* Main Container */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
         {/* Top Header */}
-        <header className="h-[88px] flex items-center justify-between px-10 shrink-0 bg-white/60 backdrop-blur-xl border-b border-nest-primary/10 shadow-[0_8px_30px_rgba(15,58,64,0.06)] z-20 relative">
+        <header className="h-[88px] flex items-center justify-between px-10 shrink-0 bg-white/90 backdrop-blur-2xl border-b border-nest-primary/10 shadow-[0_8px_30px_rgba(15,58,64,0.06)] z-20 relative">
           <div className="flex items-center gap-6 flex-1">
             <h2 className="text-[22px] font-sans font-extrabold text-[#0F3A40] tracking-tight">
               {links.find(l => location.pathname.startsWith(l.path))?.name || 'Tổng quan'}

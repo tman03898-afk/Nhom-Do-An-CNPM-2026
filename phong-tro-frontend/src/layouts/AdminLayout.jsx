@@ -78,7 +78,7 @@ export default function AdminLayout() {
       {/* Main Container */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
         {/* Top Navbar */}
-        <header className="h-[88px] flex items-center justify-between px-10 shrink-0 bg-white/60 backdrop-blur-xl border-b border-nest-primary/10 shadow-[0_8px_30px_rgba(15,58,64,0.06)] z-20 relative">
+        <header className="h-[88px] flex items-center justify-between px-10 shrink-0 bg-white/90 backdrop-blur-2xl border-b border-nest-primary/10 shadow-[0_8px_30px_rgba(15,58,64,0.06)] z-20 relative">
           {/* Top nav links / Breadcrumbs style */}
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 px-1.5 py-1.5 bg-nest-bg/80 backdrop-blur-md rounded-[20px] border border-nest-primary/20 shadow-sm">

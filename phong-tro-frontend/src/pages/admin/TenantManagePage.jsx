@@ -87,7 +87,7 @@ export default function TenantManagePage() {
       {/* Bottom Layout Sections */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Flash Actions */}
-        <div className="lg:col-span-4 bg-white rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 relative overflow-hidden flex flex-col justify-between">
+        <div className="lg:col-span-4 bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm relative overflow-hidden flex flex-col justify-between mb-8">
           <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-nest-primary/5 rounded-full blur-2xl pointer-events-none"></div>
 
           <div className="relative z-10 mb-8">
@@ -95,21 +95,21 @@ export default function TenantManagePage() {
             <p className="text-[12px] text-nest-text-secondary font-medium">Quản lý khách thuê và cài đặt</p>
           </div>
           <div className="flex flex-col gap-3 relative z-10">
-            <button className="w-full bg-slate-50 hover:bg-nest-primary/5 flex items-center justify-between p-4 rounded-2xl transition-all group border border-transparent hover:border-nest-primary/20">
+            <button className="w-full bg-nest-bg/50 hover:bg-nest-primary/10 flex items-center justify-between p-4 rounded-2xl transition-all group border border-slate-200/50 hover:border-nest-primary/30 shadow-sm hover:shadow-md">
               <div className="flex items-center gap-4">
                 <Key className="w-5 h-5 text-nest-primary" />
                 <span className="font-bold text-nest-text-primary text-[14px]">Tạo tài khoản đăng nhập</span>
               </div>
               <ChevronRight className="w-4 h-4 text-nest-text-secondary group-hover:text-nest-primary transition-colors" />
             </button>
-            <button className="w-full bg-slate-50 hover:bg-nest-primary/5 flex items-center justify-between p-4 rounded-2xl transition-all group border border-transparent hover:border-nest-primary/20">
+            <button className="w-full bg-nest-bg/50 hover:bg-nest-primary/10 flex items-center justify-between p-4 rounded-2xl transition-all group border border-slate-200/50 hover:border-nest-primary/30 shadow-sm hover:shadow-md">
               <div className="flex items-center gap-4">
                 <DoorOpen className="w-5 h-5 text-nest-primary" />
                 <span className="font-bold text-nest-text-primary text-[14px]">Gán phòng (Assign)</span>
               </div>
               <ChevronRight className="w-4 h-4 text-nest-text-secondary group-hover:text-nest-primary transition-colors" />
             </button>
-            <button className="w-full bg-slate-50 hover:bg-red-50 flex items-center justify-between p-4 rounded-2xl transition-all group border border-transparent hover:border-red-100">
+            <button className="w-full bg-red-50/30 hover:bg-red-50 flex items-center justify-between p-4 rounded-2xl transition-all group border border-red-100/50 hover:border-red-200 shadow-sm hover:shadow-md">
               <div className="flex items-center gap-4">
                 <CalendarX className="w-5 h-5 text-red-500" />
                 <span className="font-bold text-nest-text-primary text-[14px]">Kết thúc hợp đồng</span>
