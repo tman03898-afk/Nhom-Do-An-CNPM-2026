@@ -40,8 +40,7 @@ phong-tro-frontend/
 │   │   ├── common/
 │   │   │   ├── Header.jsx
 │   │   │   ├── Footer.jsx
-│   │   │   ├── Sidebar.jsx
-│   │   │   └── LoadingSpinner.jsx
+│   │   │   └── CustomSelect.jsx
 │   │   ├── room/
 │   │   │   ├── RoomCard.jsx
 │   │   │   ├── RoomFilter.jsx
@@ -80,25 +79,15 @@ phong-tro-frontend/
 │   │   ├── TenantRoute.jsx      # Route cần đăng nhập (tenant)
 │   │   └── AdminRoute.jsx       # Route cần đăng nhập (admin)
 │   │
-│   ├── services/                # Gọi API backend
-│   │   ├── authService.js
-│   │   ├── roomService.js
-│   │   ├── invoiceService.js
-│   │   ├── contractService.js
-│   │   ├── ticketService.js
-│   │   └── notificationService.js
+│   ├── services/                # [Sẵn sàng cho phát triển]
 │   │
-│   ├── hooks/                   # Custom hooks
-│   │   ├── useAuth.js           # Hook xử lý đăng nhập
-│   │   └── useRoom.js           # Hook xử lý phòng
+│   ├── hooks/                   # [Sẵn sàng cho phát triển]
 │   │
 │   ├── context/                 # Global state
-│   │   └── AuthContext.jsx      # Lưu thông tin user đăng nhập
+│   │   ├── AuthContext.jsx      # Lưu thông tin user đăng nhập
+│   │   └── ToastContext.jsx     # Xử lý thông báo toast
 │   │
-│   ├── utils/                   # Hàm tiện ích
-│   │   ├── formatCurrency.js    # Format 3000000 → 3.000.000đ
-│   │   ├── formatDate.js        # Format ngày tháng
-│   │   └── constants.js         # Các hằng số dùng chung
+│   ├── utils/                   # [Sẵn sàng cho phát triển]
 │   │
 │   ├── App.jsx
 │   ├── main.jsx
