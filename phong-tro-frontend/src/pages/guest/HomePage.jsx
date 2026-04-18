@@ -204,9 +204,9 @@ export default function HomePage() {
           {/* Steps Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 mb-12">
             {[
-              { no: '01', badge: 'Bước 1', title: 'Tìm phòng', desc: 'Dạo quanh danh sách phòng với đầy đủ hình ảnh thực tế, diện tích, mức giá và tiện nghi. Lọc theo đúng nhu cầu của bạn.', color: 'from-[#CCFBF1] to-[#B2EBF2]' },
-              { no: '02', badge: 'Bước 2', title: 'Liên hệ & Đặt lịch', desc: 'Gửi tin nhắn Zalo hoặc gọi hotline 24/7. Đội ngũ tư vấn sẽ hỗ trợ bạn đặt lịch xem phòng trực tiếp ngay hôm nay.', color: 'from-[#D1FAE5] to-[#A7F3D0]' },
-              { no: '03', badge: 'Bước 3', title: 'Nhận tài khoản', desc: 'Ký hợp đồng và nhận tài khoản cư dân để quản lý hóa đơn và yêu cầu hỗ trợ mọi nơi mọi lúc.', color: 'from-[#FEF3C7] to-[#FDE68A]' },
+              { no: '01', badge: 'Bước 1', title: 'Khám Phá Không Gian', desc: 'Trải nghiệm trực quan qua hệ thống hình ảnh thực tế và thông số chi tiết. Bộ lọc thông minh giúp bạn tìm thấy "tổ ấm" lý tưởng chỉ trong vài giây.', color: 'from-[#CCFBF1] to-[#B2EBF2]' },
+              { no: '02', badge: 'Bước 2', title: 'Kết Nối & Trải Nghiệm', desc: 'Tương tác tức thì qua Zalo hoặc Hotline 24/7. Đội ngũ hỗ trợ luôn sẵn sàng đồng hành cùng bạn trải nghiệm thực tế không gian sống.', color: 'from-[#D1FAE5] to-[#A7F3D0]' },
+              { no: '03', badge: 'Bước 3', title: 'Khởi Đầu Sống Chất', desc: 'Tận hưởng đặc quyền cư dân với tài khoản riêng biệt. Quản lý hóa đơn, hợp đồng và gửi yêu cầu hỗ trợ ngay trên ứng dụng mọi lúc, mọi nơi.', color: 'from-[#FEF3C7] to-[#FDE68A]' },
             ].map((step, idx) => (
               <div key={idx} className="relative bg-white rounded-[2rem] p-8 md:p-10 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-white/80 hover:-translate-y-2 transition-all duration-300 group overflow-hidden">
                 <div className={`absolute -top-8 -right-8 w-36 h-36 rounded-full bg-gradient-to-br ${step.color} opacity-50 group-hover:opacity-70 transition-opacity`}></div>
@@ -221,10 +221,10 @@ export default function HomePage() {
           {/* Bottom Photo Strip */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {[
-              { src: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=600&q=80', label: 'Phòng khách' },
-              { src: 'https://images.unsplash.com/photo-1484154218962-a197022b5858?w=600&q=80', label: 'Phòng bếp' },
-              { src: 'https://images.unsplash.com/photo-1560448204-603b3fc33ddc?w=600&q=80', label: 'Phòng ngủ' },
-              { src: 'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?w=600&q=80', label: 'Không gian chung' },
+              { src: '/images/home/workspace.png', label: 'Góc làm việc tri thức' },
+              { src: '/images/home/mezzanine.png', label: 'Không gian nghỉ ngơi' },
+              { src: '/images/home/kitchenette.png', label: 'Khu vực nấu nướng' },
+              { src: '/images/home/balcony.png', label: 'Ban công thoáng đãng' },
             ].map((photo, i) => (
               <div key={i} className="relative h-40 md:h-52 rounded-[1.5rem] overflow-hidden group cursor-pointer">
                 <img src={photo.src} alt={photo.label} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
