@@ -40,7 +40,8 @@ phong-tro-frontend/
 │   │   ├── common/
 │   │   │   ├── Header.jsx
 │   │   │   ├── Footer.jsx
-│   │   │   └── CustomSelect.jsx
+│   │   │   ├── CustomSelect.jsx
+│   │   │   └── ScrollToTop.jsx
 │   │   ├── room/
 │   │   │   ├── RoomCard.jsx
 │   │   │   ├── RoomFilter.jsx
