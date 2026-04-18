@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
-import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown, ShieldCheck, ParkingCircle, BrushCleaning } from 'lucide-react';
+import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown, ShieldCheck, ParkingCircle, BrushCleaning, Maximize, Armchair } from 'lucide-react';
 import CustomSelect from '../../components/common/CustomSelect';
 
 export default function HomePage() {
@@ -10,9 +10,9 @@ export default function HomePage() {
   const [furniture, setFurniture] = useState('Tất cả');
 
   const featuredRooms = [
-    { id: 1, name: 'Phòng 402', price: '2.500.000', size: '25 m²', type: 'Studio', image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80', status: 'Còn phòng' },
-    { id: 5, name: 'Phòng 601', price: '3.000.000', size: '40 m²', type: '2 Phòng ngủ', image: 'https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=800&q=80', status: 'Còn phòng' },
-    { id: 3, name: 'Phòng 301', price: '2.000.000', size: '20 m²', type: 'Studio', image: '/rooms/room_301.png', status: 'Còn phòng' },
+    { id: 1, name: 'Phòng 402', price: '2.500.000', size: '20 m²', category: 'Phòng gác lửng', tag: 'Thêm không gian, thêm riêng tư', furniture: 'Đầy đủ', image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80', status: 'Còn phòng' },
+    { id: 5, name: 'Phòng 601', price: '3.000.000', size: '25 m²', category: 'Phòng ban công', tag: 'View thoáng, đón nắng tự nhiên', furniture: 'Đầy đủ', image: 'https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=800&q=80', status: 'Còn phòng' },
+    { id: 3, name: 'Phòng 301', price: '2.000.000', size: '18 m²', category: 'Phòng thường', tag: 'Gọn gàng & Tiết kiệm', furniture: 'Cơ bản', image: '/rooms/room_301.png', status: 'Còn phòng' },
   ];
 
   return (
@@ -49,25 +49,25 @@ export default function HomePage() {
           <div className="bg-white/80 backdrop-blur-xl border border-white p-4 rounded-2xl shadow-xl flex flex-col md:flex-row gap-4 items-end">
             <CustomSelect
               label="Loại phòng"
-              options={['Tất cả', 'Studio', '1 Phòng ngủ', '2 Phòng ngủ']}
+              options={['Tất cả', 'Phòng thường', 'Phòng gác lửng', 'Phòng ban công']}
               value={roomType}
               onChange={setRoomType}
             />
             <CustomSelect
               label="Giá Thuê"
-              options={['Dưới 5tr', '5tr - 8tr', 'Trên 8tr']}
+              options={['Tất cả', 'Dưới 2tr', '2tr - 2.5tr', '2.5tr - 3tr', 'Trên 3tr']}
               value={priceRange}
               onChange={setPriceRange}
             />
             <CustomSelect
               label="Diện tích"
-              options={['Tất cả', 'Dưới 25 m²', 'Trên 25 m²']}
+              options={['Tất cả', 'Dưới 25 m²', '25 m² - 30 m²', '30 m² - 35 m²', 'Trên 35 m²']}
               value={area}
               onChange={setArea}
             />
             <CustomSelect
               label="Nội thất"
-              options={['Tất cả', 'Đầy đủ', 'Cơ bản']}
+              options={['Tất cả', 'Cơ bản', 'Đầy đủ']}
               value={furniture}
               onChange={setFurniture}
             />
@@ -109,22 +109,42 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className="p-4 flex-1 flex flex-col bg-white rounded-b-[1.75rem] mx-1 mb-1 mt-[-10px] z-10 shadow-sm relative">
-                  <div className="flex justify-between items-start mb-1">
-                    <h3 className="text-lg font-sans font-bold text-nest-text-primary">{room.name}</h3>
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 className="text-lg font-sans font-bold text-nest-text-primary mb-0.5">{room.name}</h3>
+                      <p className="text-[11px] text-[#14B8A6] font-medium italic">{room.tag}</p>
+                    </div>
                     <div className="text-right">
-                      <div className="font-sans font-bold text-[#14B8A6] text-base">{room.price}</div>
-                      <div className="text-[11px] text-nest-text-secondary">vnđ/tháng</div>
+                      <div className="font-sans font-bold text-nest-text-primary text-base">{room.price}</div>
+                      <div className="text-[10px] text-nest-text-secondary uppercase tracking-wider">vnđ / tháng</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-nest-text-secondary mb-4">
-                    <span className="bg-[#EBF9F7] text-[#006B5F] px-2 py-0.5 rounded-full font-medium">{room.type}</span>
-                    <span>•</span>
-                    <span>{room.size}</span>
+
+                  {/* 4 Basic Info Grid */}
+                  <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-5 mt-2 pt-3 border-t border-gray-50">
+                    <div className="flex items-center gap-2 text-nest-text-secondary">
+                      <div className="w-7 h-7 bg-[#F0FBFA] rounded-lg flex items-center justify-center shrink-0">
+                        <Maximize className="w-3.5 h-3.5 text-[#14B8A6]" />
+                      </div>
+                      <span className="text-xs font-medium">{room.size}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-nest-text-secondary">
+                      <div className="w-7 h-7 bg-[#F0FBFA] rounded-lg flex items-center justify-center shrink-0">
+                        <Armchair className="w-3.5 h-3.5 text-[#14B8A6]" />
+                      </div>
+                      <span className="text-xs font-medium">Nội thất: {room.furniture}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-nest-text-secondary col-span-2">
+                      <div className="w-7 h-7 bg-[#F0FBFA] rounded-lg flex items-center justify-center shrink-0">
+                        <MapPin className="w-3.5 h-3.5 text-[#14B8A6]" />
+                      </div>
+                      <span className="text-xs font-medium truncate">{room.category}</span>
+                    </div>
                   </div>
 
                   <div className="mt-auto">
-                    <Link to={`/rooms/${room.id}`} className={`block w-full py-2.5 rounded-xl text-center text-sm font-bold transition-colors ${room.status === 'Còn phòng' ? 'border border-[#14B8A6] text-[#14B8A6] hover:bg-[#CFE8EA]' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
-                      {room.status === 'Còn phòng' ? 'Xem phòng' : 'Đã cho thuê'}
+                    <Link to={`/rooms/${room.id}`} className={`block w-full py-2.5 rounded-xl text-center text-sm font-bold transition-all ${room.status === 'Còn phòng' ? 'bg-nest-primary text-white hover:bg-[#0fa696] hover:scale-[1.02]' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                      {room.status === 'Còn phòng' ? 'Xem chi tiết' : 'Đã cho thuê'}
                     </Link>
                   </div>
                 </div>
