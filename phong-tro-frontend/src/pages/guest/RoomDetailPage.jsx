@@ -7,19 +7,19 @@ export default function RoomDetailPage() {
   return (
     <div className="max-w-7xl mx-auto px-8 w-full pb-24">
       {/* Images Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-10 md:h-[550px]">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-10 md:h-[450px]">
         {/* Left large image */}
-        <div className="md:col-span-5 h-[300px] md:h-full rounded-[2rem] overflow-hidden">
+        <div className="md:col-span-5 h-[250px] md:h-full rounded-[2rem] overflow-hidden">
           <img src="https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=1000&q=80" alt="Room View" className="w-full h-full object-cover" />
         </div>
         {/* Right images column */}
-        <div className="md:col-span-7 flex flex-col gap-4">
+        <div className="md:col-span-7 flex flex-col gap-3">
           {/* Top half horizontal image */}
-          <div className="h-[200px] md:h-[267px] rounded-[2rem] overflow-hidden">
+          <div className="h-[180px] md:h-[217px] rounded-[2rem] overflow-hidden">
             <img src="https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1000&q=80" alt="Bedroom" className="w-full h-full object-cover" />
           </div>
           {/* Bottom half 2 images */}
-          <div className="grid grid-cols-2 gap-4 flex-1 h-[150px] md:h-[267px]">
+          <div className="grid grid-cols-2 gap-3 flex-1 h-[140px] md:h-[217px]">
             <div className="rounded-[2rem] overflow-hidden">
               <img src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=500&q=80" alt="Kitchen" className="w-full h-full object-cover" />
             </div>
@@ -34,10 +34,7 @@ export default function RoomDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left main info */}
         <div className="lg:col-span-2 bg-white/40 backdrop-blur-[16px] border border-white/60 rounded-[3rem] p-8 md:p-12">
-          <div className="inline-block px-4 py-1.5 bg-[#14B8A6]/10 text-[#0f8b7d] rounded-full text-[10px] font-bold tracking-widest uppercase mb-6 border border-[#14B8A6]/20">
-            PHÒNG CAO CẤP
-          </div>
-          <h1 className="text-4xl md:text-[2.75rem] font-sans font-bold text-nest-text-primary mb-8 leading-[1.1]">Phòng 402 — Skyline View</h1>
+          <h1 className="text-4xl md:text-[2.75rem] font-sans font-bold text-nest-text-primary mb-8 leading-[1.1]">Phòng 402</h1>
 
           <div className="mb-10">
             <div className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-wider mb-2">Giá Thuê Tháng</div>
@@ -90,7 +87,7 @@ export default function RoomDetailPage() {
         {/* Right Sidebar */}
         <div className="space-y-6">
           <div className="bg-white/40 backdrop-blur-[16px] border border-white/60 rounded-[2.5rem] p-8">
-            <h3 className="font-sans font-bold text-lg text-nest-text-primary mb-6">Liên hệ đặt phòng</h3>
+            <h3 className="font-sans font-bold text-lg text-nest-text-primary mb-6">Liên hệ xem phòng</h3>
 
             <div className="bg-[#CFE8EA]/60 p-4 rounded-2xl flex items-center gap-4 mb-4 border border-white/60">
               <div className="w-10 h-10 bg-[#14B8A6] rounded-full flex items-center justify-center text-white shrink-0 shadow-sm">
@@ -107,12 +104,12 @@ export default function RoomDetailPage() {
             </button>
 
             <p className="text-[11px] text-nest-text-secondary text-center leading-relaxed">
-              Phản hồi nhanh trong vòng 15 phút từ 08:00 đến 21:00 mỗi ngày.
+              Phản hồi nhanh trong vòng 5 phút từ 08:00 đến 21:00 mỗi ngày.
             </p>
           </div>
 
           <div className="bg-white/40 backdrop-blur-[16px] border border-white/60 rounded-[2.5rem] p-8">
-            <h3 className="font-bold text-[11px] text-nest-text-secondary uppercase tracking-wider mb-5">Vị trí căn hộ</h3>
+            <h3 className="font-bold text-[11px] text-nest-text-secondary uppercase tracking-wider mb-5">Vị trí</h3>
             <div className="rounded-[1.5rem] overflow-hidden mb-5 bg-[#14B8A6]/10 border border-[#14B8A6]/20 shadow-inner h-32 relative group cursor-pointer">
               <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?w=500&q=80" alt="Map" className="w-full h-full object-cover mix-blend-luminosity opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" />
               <div className="absolute inset-0 flex flex-col items-center justify-center">
