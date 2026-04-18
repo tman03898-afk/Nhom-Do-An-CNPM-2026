@@ -10,9 +10,9 @@ export default function HomePage() {
   const [furniture, setFurniture] = useState('Tất cả');
 
   const featuredRooms = [
-    { id: 1, name: 'Phòng 402', price: '6.500.000', size: '25 m²', type: 'Studio', image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80', status: 'Còn phòng' },
-    { id: 5, name: 'Phòng 601', price: '9.000.000', size: '40 m²', type: '2 Phòng ngủ', image: 'https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=800&q=80', status: 'Còn phòng' },
-    { id: 3, name: 'Phòng 301', price: '5.000.000', size: '20 m²', type: 'Studio', image: '/rooms/room_301.png', status: 'Còn phòng' },
+    { id: 1, name: 'Phòng 402', price: '2.500.000', size: '25 m²', type: 'Studio', image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80', status: 'Còn phòng' },
+    { id: 5, name: 'Phòng 601', price: '3.000.000', size: '40 m²', type: '2 Phòng ngủ', image: 'https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=800&q=80', status: 'Còn phòng' },
+    { id: 3, name: 'Phòng 301', price: '2.000.000', size: '20 m²', type: 'Studio', image: '/rooms/room_301.png', status: 'Còn phòng' },
   ];
 
   return (
@@ -39,7 +39,7 @@ export default function HomePage() {
               Không gian sống đẳng cấp, tiện nghi tối đa, kiến tạo cộng đồng trí thức trong lòng thành phố
             </p>
             <button onClick={() => document.getElementById('phong-trong')?.scrollIntoView({ behavior: 'smooth' })} className="inline-flex items-center gap-2 bg-nest-primary hover:bg-[#0fa696] text-white px-8 py-4 rounded-full font-semibold transition-all shadow-[0_0_20px_rgba(20,184,166,0.4)] hover:shadow-[0_0_30px_rgba(20,184,166,0.6)]">
-              Khám phá phòng ngay <ArrowRight className="w-5 h-5" />
+              Khám phá phòng ngay <ChevronDown className="w-5 h-5 animate-bounce" />
             </button>
           </div>
         </div>
@@ -47,37 +47,37 @@ export default function HomePage() {
         {/* Floating Search Bar */}
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-[90%] max-w-5xl z-20">
           <div className="bg-white/80 backdrop-blur-xl border border-white p-4 rounded-2xl shadow-xl flex flex-col md:flex-row gap-4 items-end">
-            <CustomSelect 
+            <CustomSelect
               label="Loại phòng"
               options={['Tất cả', 'Studio', '1 Phòng ngủ', '2 Phòng ngủ']}
               value={roomType}
               onChange={setRoomType}
             />
-            <CustomSelect 
+            <CustomSelect
               label="Giá Thuê"
               options={['Dưới 5tr', '5tr - 8tr', 'Trên 8tr']}
               value={priceRange}
               onChange={setPriceRange}
             />
-            <CustomSelect 
+            <CustomSelect
               label="Diện tích"
               options={['Tất cả', 'Dưới 25 m²', 'Trên 25 m²']}
               value={area}
               onChange={setArea}
             />
-            <CustomSelect 
+            <CustomSelect
               label="Nội thất"
               options={['Tất cả', 'Đầy đủ', 'Cơ bản']}
               value={furniture}
               onChange={setFurniture}
             />
-            
+
             <div className="w-full md:w-auto">
-              <button 
+              <button
                 onClick={() => {
                   console.log({ roomType, priceRange, area, furniture });
                   document.getElementById('phong-trong')?.scrollIntoView({ behavior: 'smooth' });
-                }} 
+                }}
                 className="w-full bg-nest-primary hover:bg-[#0fa696] text-white px-8 py-3.5 rounded-xl font-bold transition-all hover:scale-105 active:scale-95 flex justify-center items-center gap-2 shadow-lg shadow-nest-primary/20"
               >
                 Tìm kiếm
