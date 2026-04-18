@@ -28,66 +28,70 @@ export default function TenantManagePage() {
   return (
     <div className="w-full max-w-[1200px] mx-auto mt-2 px-4 pb-12">
       {/* Page Header */}
-      <div className="flex justify-between items-end mb-8 relative z-10">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-8 relative z-10">
         <div>
-          <h1 className="text-[32px] font-sans font-bold text-nest-text-primary tracking-tight leading-none">Quản lý Khách thuê</h1>
+          <h1 className="text-2xl sm:text-[32px] font-sans font-bold text-nest-text-primary tracking-tight leading-none">Quản lý Khách thuê</h1>
         </div>
-        <button className="bg-nest-primary hover:bg-[#0da090] text-white px-6 py-2.5 rounded-full text-[14px] font-bold transition-colors shadow-lg shadow-nest-primary/20 flex items-center gap-2">
+        <button className="w-full sm:w-auto bg-nest-primary hover:bg-[#0da090] text-white px-6 py-2.5 rounded-full text-[14px] font-bold transition-colors shadow-lg shadow-nest-primary/20 flex items-center justify-center gap-2">
           <UserPlus className="w-[18px] h-[18px]" /> Thêm khách
         </button>
       </div>
 
       {/* Main Table Area (Premium White Layout) */}
-      <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm mb-8">
-        {/* Header Row */}
-        <div className="flex text-[10px] font-bold text-nest-text-secondary tracking-widest uppercase px-6 mb-6">
-          <div className="w-[30%]">Họ và tên</div>
-          <div className="w-[20%]">Số điện thoại</div>
-          <div className="w-[15%]">Phòng</div>
-          <div className="w-[25%] pl-4">Trạng thái hợp đồng</div>
-          <div className="w-[10%] text-center">Thao tác</div>
-        </div>
-
-        {/* Rows */}
-        <div className="flex flex-col gap-4">
-          {tenants.map((tenant, idx) => (
-            <div key={idx} className="bg-white rounded-full flex items-center px-6 py-4 shadow-[0_2px_10px_rgba(0,31,36,0.02)] hover:shadow-md transition-shadow border border-slate-100/80">
-              <div className="w-[30%] flex items-center gap-4">
-                <div className={`w-[46px] h-[46px] rounded-full ${tenant.avatarBg} ${tenant.avatarColor} flex items-center justify-center font-bold text-[16px]`}>
-                  {tenant.avatarText}
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-bold text-nest-text-primary text-[15px]">{tenant.name}</span>
-                  <span className="text-nest-text-secondary text-[12px] font-medium leading-tight">{tenant.email}</span>
-                </div>
-              </div>
-              <div className="w-[20%]">
-                <span className="font-bold text-nest-text-primary text-[14px]">{tenant.phone}</span>
-              </div>
-              <div className="w-[15%]">
-                <span className={`bg-nest-primary/5 ${tenant.roomColor} border-[0.5px] border-nest-primary/10 px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase`}>
-                  {tenant.room}
-                </span>
-              </div>
-              <div className="w-[25%] pl-4">
-                <div className={`${tenant.statusPill} inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[12px] font-bold tracking-wide`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${tenant.dot}`}></span>
-                  {tenant.status}
-                </div>
-              </div>
-              <div className="w-[10%] flex items-center justify-center gap-4 text-nest-text-secondary">
-                <button className="hover:text-nest-primary transition-colors"><Pencil className="w-4 h-4" /></button>
-                <button className="hover:text-nest-text-primary transition-colors"><MoreVertical className="w-5 h-5" /></button>
-              </div>
+      <div className="bg-white/80 rounded-[32px] p-4 sm:p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm mb-8 overflow-hidden">
+        <div className="overflow-x-auto custom-scrollbar">
+          <div className="min-w-[800px]">
+            {/* Header Row */}
+            <div className="flex text-[10px] font-bold text-nest-text-secondary tracking-widest uppercase px-6 mb-6">
+              <div className="w-[30%]">Họ và tên</div>
+              <div className="w-[20%]">Số điện thoại</div>
+              <div className="w-[15%]">Phòng</div>
+              <div className="w-[25%] pl-4">Trạng thái hợp đồng</div>
+              <div className="w-[10%] text-center">Thao tác</div>
             </div>
-          ))}
+
+            {/* Rows */}
+            <div className="flex flex-col gap-4 pb-2">
+              {tenants.map((tenant, idx) => (
+                <div key={idx} className="bg-white rounded-full flex items-center px-6 py-4 shadow-[0_2px_10px_rgba(0,31,36,0.02)] hover:shadow-md transition-shadow border border-slate-100/80">
+                  <div className="w-[30%] flex items-center gap-4">
+                    <div className={`w-[46px] h-[46px] rounded-full ${tenant.avatarBg} ${tenant.avatarColor} flex items-center justify-center font-bold text-[16px]`}>
+                      {tenant.avatarText}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-nest-text-primary text-[15px]">{tenant.name}</span>
+                      <span className="text-nest-text-secondary text-[12px] font-medium leading-tight">{tenant.email}</span>
+                    </div>
+                  </div>
+                  <div className="w-[20%]">
+                    <span className="font-bold text-nest-text-primary text-[14px]">{tenant.phone}</span>
+                  </div>
+                  <div className="w-[15%]">
+                    <span className={`bg-nest-primary/5 ${tenant.roomColor} border-[0.5px] border-nest-primary/10 px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase`}>
+                      {tenant.room}
+                    </span>
+                  </div>
+                  <div className="w-[25%] pl-4">
+                    <div className={`${tenant.statusPill} inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[12px] font-bold tracking-wide`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${tenant.dot}`}></span>
+                      {tenant.status}
+                    </div>
+                  </div>
+                  <div className="w-[10%] flex items-center justify-center gap-4 text-nest-text-secondary">
+                    <button className="hover:text-nest-primary transition-colors"><Pencil className="w-4 h-4" /></button>
+                    <button className="hover:text-nest-text-primary transition-colors"><MoreVertical className="w-5 h-5" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Bottom Layout Sections */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Flash Actions */}
-        <div className="lg:col-span-4 bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm relative overflow-hidden flex flex-col justify-between mb-8">
+        <div className="lg:col-span-4 bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm relative overflow-hidden flex flex-col justify-between">
           <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-nest-primary/5 rounded-full blur-2xl pointer-events-none"></div>
 
           <div className="relative z-10 mb-8">
@@ -120,28 +124,31 @@ export default function TenantManagePage() {
         </div>
 
         {/* Composite Statistics */}
-        <div className="lg:col-span-8 bg-white rounded-[32px] p-10 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 flex items-center">
-          <div className="flex-1 flex flex-col justify-center border-r border-slate-100 pr-8">
-            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-3">Tổng khách thuê</p>
-            <h2 className="text-5xl font-bold text-nest-primary mb-3">1,284</h2>
-            <div className="flex items-center gap-2 text-nest-primary font-bold text-[12px] bg-nest-primary/10 w-fit px-3 py-1.5 rounded-full shadow-sm">
-              <TrendingUp className="w-3.5 h-3.5" /> +12% Tháng này
+        <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Stat 1 */}
+          <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm flex flex-col justify-center items-center text-center h-full">
+            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-4">Tổng khách thuê</p>
+            <h2 className="text-4xl font-extrabold text-nest-primary mb-4 tracking-tight">1,284</h2>
+            <div className="flex items-center gap-2 text-nest-primary font-bold text-[11px] bg-nest-primary/10 px-3 py-1.5 rounded-full">
+              <TrendingUp className="w-3 h-3" /> +12%
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col justify-center border-r border-slate-100 px-10">
-            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-3">Sắp hết hạn</p>
-            <h2 className="text-5xl font-bold text-amber-500 mb-3">42</h2>
-            <p className="text-[12px] font-medium text-nest-text-secondary leading-snug">
-              Yêu cầu gia hạn ngay lập tức
+          {/* Stat 2 */}
+          <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm flex flex-col justify-center items-center text-center h-full">
+            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-4">Sắp hết hạn</p>
+            <h2 className="text-4xl font-extrabold text-amber-500 mb-4 tracking-tight">42</h2>
+            <p className="text-[11px] font-medium text-amber-600/80 leading-snug">
+              Yêu cầu gia hạn
             </p>
           </div>
 
-          <div className="flex-1 flex flex-col justify-center pl-10">
-            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-3">Chờ cấp quyền</p>
-            <h2 className="text-5xl font-bold text-nest-text-primary mb-3">18</h2>
-            <p className="text-[12px] font-medium text-nest-text-secondary leading-snug">
-              Đang chờ thiết lập<br />ứng dụng
+          {/* Stat 3 */}
+          <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm flex flex-col justify-center items-center text-center h-full">
+            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-4">Chờ cấp quyền</p>
+            <h2 className="text-4xl font-extrabold text-nest-text-primary mb-4 tracking-tight">18</h2>
+            <p className="text-[11px] font-medium text-nest-text-secondary leading-snug">
+              Đang thiết lập
             </p>
           </div>
         </div>

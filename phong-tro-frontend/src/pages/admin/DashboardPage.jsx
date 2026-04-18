@@ -132,7 +132,7 @@ export default function DashboardPage() {
          {/* Main Content Grid: Chart & Activities */}
          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 px-4 mb-12">
             {/* Chart Section (Left) */}
-            <div className="lg:col-span-8 bg-white/80 rounded-[2.5rem] p-9 shadow-[0_8px_30px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm">
+            <div className="lg:col-span-8 bg-white/80 rounded-[2.5rem] p-5 sm:p-9 shadow-[0_8px_30px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm">
                <div className="flex justify-between items-start mb-12">
                   <div>
                      <h3 className="text-xl font-bold text-nest-text-primary">Doanh thu hàng tháng</h3>
@@ -141,13 +141,13 @@ export default function DashboardPage() {
                   <div className="flex bg-nest-bg/50 backdrop-blur-sm rounded-full p-1 border border-nest-primary/10 shadow-sm">
                      <button
                         onClick={() => setActiveTab('revenue')}
-                        className={`px-5 py-2 rounded-full text-[12px] font-bold shadow-sm transition-all duration-300 ${activeTab === 'revenue' ? 'bg-white text-nest-text-primary' : 'text-nest-text-secondary hover:text-nest-text-primary'}`}
+                        className={`px-3 sm:px-5 py-2 rounded-full text-[11px] sm:text-[12px] font-bold shadow-sm transition-all duration-300 ${activeTab === 'revenue' ? 'bg-white text-nest-text-primary' : 'text-nest-text-secondary hover:text-nest-text-primary'}`}
                      >
                         Doanh thu
                      </button>
                      <button
                         onClick={() => setActiveTab('cost')}
-                        className={`px-5 py-2 rounded-full text-[12px] font-bold shadow-sm transition-all duration-300 ${activeTab === 'cost' ? 'bg-white text-nest-text-primary' : 'text-nest-text-secondary hover:text-nest-text-primary'}`}
+                        className={`px-3 sm:px-5 py-2 rounded-full text-[11px] sm:text-[12px] font-bold shadow-sm transition-all duration-300 ${activeTab === 'cost' ? 'bg-white text-nest-text-primary' : 'text-nest-text-secondary hover:text-nest-text-primary'}`}
                      >
                         Chi phí
                      </button>
@@ -207,7 +207,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Recent Activity (Right) */}
-            <div className="lg:col-span-4 bg-white/80 rounded-[2.5rem] p-9 shadow-[0_8px_30px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm">
+            <div className="lg:col-span-4 bg-white/80 rounded-[2.5rem] p-5 sm:p-9 shadow-[0_8px_30px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm">
                <h3 className="text-xl font-bold text-nest-text-primary mb-8">Hoạt động gần đây</h3>
                <div className="space-y-7">
                   <div className="flex gap-5 items-start hover:bg-nest-bg/60 p-3 -m-3 rounded-2xl transition-all cursor-pointer group">
