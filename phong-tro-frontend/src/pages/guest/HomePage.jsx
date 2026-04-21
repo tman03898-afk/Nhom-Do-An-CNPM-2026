@@ -5,7 +5,7 @@ import CustomSelect from '../../components/common/CustomSelect';
 
 export default function HomePage() {
   const [roomType, setRoomType] = useState('Tất cả');
-  const [priceRange, setPriceRange] = useState('Dưới 5tr');
+  const [priceRange, setPriceRange] = useState('Tất cả');
   const [area, setArea] = useState('Tất cả');
   const [furniture, setFurniture] = useState('Tất cả');
   const [currentSlide, setCurrentSlide] = useState(0);
