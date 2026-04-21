@@ -39,7 +39,7 @@ export default function CustomSelect({ label, options, value, onChange, icon: Ic
 
         {/* Dropdown Menu */}
         {isOpen && (
-          <div className="absolute top-full left-0 right-0 mt-2 bg-white/80 backdrop-blur-xl border border-white shadow-2xl rounded-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="py-2 max-h-60 overflow-y-auto custom-scrollbar">
               {options.map((option) => (
                 <button
