@@ -1,17 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { 
   Receipt, QrCode, Download, Upload, 
   Send, ChevronLeft, ChevronRight, Info,
   CheckCircle2, Copy, Leaf
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 
 export default function PaymentPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { addToast } = useToast();
+  const { token } = useAuth();
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
+  const [invoices, setInvoices] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -28,13 +36,153 @@ export default function PaymentPage() {
     addToast('Đã sao chép nội dung chuyển khoản!');
   };
 
-  const handleSubmit = () => {
+  useEffect(() => {
+    const run = async () => {
+      if (!token) return;
+      setIsLoading(true);
+      const [invoiceResult, paymentResult] = await Promise.allSettled([
+        apiFetch('/tenant/invoices', { token }),
+        apiFetch('/tenant/payments', { token }),
+      ]);
+
+      if (invoiceResult.status === 'fulfilled') {
+        setInvoices(invoiceResult.value?.invoices || []);
+      } else {
+        setInvoices([]);
+      }
+
+      if (paymentResult.status === 'fulfilled') {
+        setPayments(paymentResult.value?.payments || []);
+      } else {
+        // Keep payment list optional: invoice payment flow must still work
+        // even if payment-history endpoint has temporary issues.
+        setPayments([]);
+      }
+
+      setIsLoading(false);
+    };
+    run();
+  }, [token]);
+
+  const invoiceToPay = useMemo(() => {
+    const requestedId = Number(searchParams.get('invoiceId'));
+    if (Number.isInteger(requestedId) && requestedId > 0) {
+      const found = invoices.find((i) => Number(i.invoice_id) === requestedId);
+      if (found) return found;
+    }
+
+    const unpaid = invoices.find((i) => String(i.status || '').toUpperCase() !== 'PAID');
+    if (unpaid) return unpaid;
+
+    return invoices[0] || null;
+  }, [invoices, searchParams]);
+
+  const isPaid = String(invoiceToPay?.status || '').toUpperCase() === 'PAID';
+  const needsPayment = Boolean(invoiceToPay) && !isPaid;
+  const latestPaymentForInvoice = useMemo(() => {
+    if (!invoiceToPay) return null;
+    const invoiceId = Number(invoiceToPay.invoice_id);
+    return payments.find((p) => Number(p.invoice_id) === invoiceId) || null;
+  }, [payments, invoiceToPay]);
+  const latestPaymentStatus = String(latestPaymentForInvoice?.status || '').toUpperCase();
+  const isPendingApproval = latestPaymentStatus === 'PENDING';
+
+  const formatMoney = (v) => Number(v || 0).toLocaleString('vi-VN');
+  const formatDueDate = (d) => {
+    if (!d) return null;
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return null;
+    return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
+  };
+
+  const dueLabel = needsPayment ? formatDueDate(invoiceToPay?.due_date) : null;
+
+  const transferContent = useMemo(() => {
+    if (!invoiceToPay) return 'THE_NEST_PAYMENT';
+    const m = String(invoiceToPay.period_month || '').padStart(2, '0');
+    const y = String(invoiceToPay.period_year || '');
+    const room = invoiceToPay.room_number ? String(invoiceToPay.room_number) : 'ROOM';
+    return `INV${invoiceToPay.invoice_id}_${room}_${m}${y}`;
+  }, [invoiceToPay]);
+
+  const qrUrl = useMemo(() => {
+    const amount = Number(invoiceToPay?.total_amount || 0);
+    const data = `${transferContent}_${amount}`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data)}`;
+  }, [invoiceToPay, transferContent]);
+
+  const handleSubmit = async () => {
+    if (!invoiceToPay) {
+      addToast('Không có hóa đơn để thanh toán.', 'error');
+      return;
+    }
+    if (isPaid) {
+      addToast('Hóa đơn này đã được thanh toán.', 'success');
+      navigate('/tenant/invoices');
+      return;
+    }
     if (!uploadedFile) {
       addToast('Vui lòng tải lên ảnh minh chứng thanh toán!', 'error');
       return;
     }
-    addToast('Minh chứng đã được gửi! Chúng tôi sẽ xác nhận trong vòng 2-4h.');
-    setTimeout(() => navigate('/tenant/invoices'), 2000);
+
+    try {
+      setIsSubmitting(true);
+      
+      // Upload file trước để lấy URL
+      const formData = new FormData();
+      formData.append('proof', uploadedFile);
+      
+      const uploadResponse = await fetch('http://localhost:5000/api/tenant/payments/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+      
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json();
+        throw new Error(errorData.message || 'Upload failed');
+      }
+      
+      const uploadResult = await uploadResponse.json();
+      
+      // Gửi payment confirmation với URL từ upload
+      await apiFetch('/tenant/payments', {
+        token,
+        method: 'POST',
+        body: {
+          invoice_id: invoiceToPay.invoice_id,
+          amount: Number(invoiceToPay.total_amount || 0),
+          method: 'BANK_TRANSFER',
+          proof_url: uploadResult.file_url,
+          note: `Proof file: ${uploadedFile?.name || 'uploaded'}`,
+        },
+      });
+      
+      addToast('Minh chứng đã được gửi! Chúng tôi sẽ xác nhận sớm.');
+      setTimeout(() => navigate('/tenant/invoices'), 1200);
+    } catch (e) {
+      addToast(e?.message || 'Không thể gửi xác nhận thanh toán.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFileChange = (file) => {
+    if (!file) return;
+    if (!String(file.type || '').startsWith('image/')) {
+      addToast('Chỉ chấp nhận file ảnh JPG/PNG/WebP.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      addToast('Ảnh vượt quá 5MB. Vui lòng chọn ảnh nhỏ hơn.', 'error');
+      return;
+    }
+
+    setUploadedFile(file);
+    addToast('Đã nhận ảnh minh chứng!');
   };
 
   return (
@@ -65,37 +213,55 @@ export default function PaymentPage() {
                 </div>
 
                 <div className="space-y-5">
-                   <div className="flex justify-between items-center bg-[#F2FCFD]/50 p-4 rounded-2xl border border-[#BCE1E5]/20">
-                      <span className="text-[14px] font-medium text-[#4A787C]">Tiền phòng (Tháng 10)</span>
-                      <span className="text-[15px] font-bold text-[#0F3A40]">5.500.000₫</span>
-                   </div>
-                   
-                   <div className="px-4 space-y-4">
-                      <div className="flex justify-between items-center text-[13.5px]">
-                         <span className="text-[#82ABB0] font-medium">Điện (245 kWh × 3,500đ)</span>
-                         <span className="text-[#0F3A40] font-bold">857,500₫</span>
+                   {isLoading ? (
+                      <div className="py-6 text-center text-[13px] font-bold text-[#82ABB0]">Đang tải hóa đơn...</div>
+                   ) : !invoiceToPay ? (
+                      <div className="py-6 text-center text-[13px] font-bold text-[#82ABB0]">
+                        Không có hóa đơn cần thanh toán.
                       </div>
-                      <div className="flex justify-between items-center text-[13.5px]">
-                         <span className="text-[#82ABB0] font-medium">Nước (4 người × 100,000đ)</span>
-                         <span className="text-[#0F3A40] font-bold">400,000₫</span>
-                      </div>
-                      <div className="flex justify-between items-center text-[13.5px]">
-                         <span className="text-[#82ABB0] font-medium">Internet (Gói High-Speed)</span>
-                         <span className="text-[#0F3A40] font-bold">250,000₫</span>
-                      </div>
-                   </div>
+                   ) : (
+                      <>
+                        <div className="flex justify-between items-center bg-[#F2FCFD]/50 p-4 rounded-2xl border border-[#BCE1E5]/20">
+                           <span className="text-[14px] font-medium text-[#4A787C]">
+                             Tiền phòng (Tháng {String(invoiceToPay.period_month).padStart(2, '0')}/{invoiceToPay.period_year})
+                           </span>
+                           <span className="text-[15px] font-bold text-[#0F3A40]">{formatMoney(invoiceToPay.rent_amount)}₫</span>
+                        </div>
+                        
+                        <div className="px-4 space-y-4">
+                           <div className="flex justify-between items-center text-[13.5px]">
+                              <span className="text-[#82ABB0] font-medium">Điện</span>
+                              <span className="text-[#0F3A40] font-bold">{formatMoney(invoiceToPay.electricity_amount)}₫</span>
+                           </div>
+                           <div className="flex justify-between items-center text-[13.5px]">
+                              <span className="text-[#82ABB0] font-medium">Nước</span>
+                              <span className="text-[#0F3A40] font-bold">{formatMoney(invoiceToPay.water_amount)}₫</span>
+                           </div>
+                           <div className="flex justify-between items-center text-[13.5px]">
+                              <span className="text-[#82ABB0] font-medium">Dịch vụ khác</span>
+                              <span className="text-[#0F3A40] font-bold">{formatMoney(invoiceToPay.other_fees_amount)}₫</span>
+                           </div>
+                        </div>
 
-                   <div className="pt-8 border-t border-[#BCE1E5]/30">
-                      <div className="flex justify-between items-end">
-                         <div>
-                            <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wider mb-1">TỔNG CỘNG</p>
-                            <h2 className="text-[32px] font-bold text-[#0F3A40]">7.007.500₫</h2>
-                         </div>
-                         <div className="bg-[#EBFDFB] text-[#14B8A6] text-[10px] font-bold px-3 py-1.5 rounded-lg mb-2">
-                            HẠN: 05/11/2023
-                         </div>
-                      </div>
-                   </div>
+                        <div className="pt-8 border-t border-[#BCE1E5]/30">
+                           <div className="flex justify-between items-end">
+                              <div>
+                                 <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wider mb-1">TỔNG CỘNG</p>
+                                 <h2 className="text-[32px] font-bold text-[#0F3A40]">{formatMoney(invoiceToPay.total_amount)}₫</h2>
+                              </div>
+                              {needsPayment && dueLabel ? (
+                                <div className="bg-[#FFF3E0] text-[#E68A00] text-[10px] font-bold px-3 py-1.5 rounded-lg mb-2">
+                                   HẠN: {dueLabel}
+                                </div>
+                              ) : isPaid ? (
+                                <div className="bg-[#EBFDFB] text-[#14B8A6] text-[10px] font-bold px-3 py-1.5 rounded-lg mb-2">
+                                   ĐÃ THANH TOÁN
+                                </div>
+                              ) : null}
+                           </div>
+                        </div>
+                      </>
+                   )}
                 </div>
              </div>
 
@@ -132,7 +298,7 @@ export default function PaymentPage() {
                    <div className="bg-white p-6 rounded-[32px] shadow-2xl relative mb-8 group">
                       <div className="w-[200px] h-[200px] bg-slate-100 rounded-2xl flex items-center justify-center overflow-hidden relative">
                          <img 
-                            src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=TN402_T10_2023_7007500" 
+                            src={qrUrl}
                             alt="QR Payment" 
                             className="w-full h-full p-2"
                          />
@@ -156,10 +322,10 @@ export default function PaymentPage() {
                       <div className="bg-white/40 p-1.5 pl-5 rounded-2xl flex items-center justify-between border border-white">
                          <div className="flex flex-col">
                             <span className="text-[10px] font-bold text-[#82ABB0] uppercase tracking-tight leading-none mb-1">NỘI DUNG CHUYỂN KHOẢN</span>
-                            <span className="text-[14px] font-bold text-[#0F3A40]">TN402_T10_2023</span>
+                            <span className="text-[14px] font-bold text-[#0F3A40]">{transferContent}</span>
                          </div>
                          <button 
-                            onClick={() => handleCopy('TN402_T10_2023')}
+                            onClick={() => handleCopy(transferContent)}
                             className="p-3 bg-white text-[#14B8A6] rounded-xl hover:bg-[#14B8A6] hover:text-white transition-all shadow-sm"
                          >
                             <Copy size={16} />
@@ -185,7 +351,7 @@ export default function PaymentPage() {
                    <h3 className="text-xl font-bold text-[#0F3A40]">Tải lên minh chứng</h3>
                 </div>
 
-                <div 
+                <div
                   className={`relative h-[220px] rounded-[32px] border-2 border-dashed transition-all flex flex-col items-center justify-center p-8 text-center ${
                     dragActive ? 'border-[#14B8A6] bg-[#EAF7F8]' : 'border-[#BCE1E5]/50 bg-[#F2FCFD]/40 hover:border-[#14B8A6]/50 hover:bg-[#F2FCFD]/60'
                   }`}
@@ -196,12 +362,11 @@ export default function PaymentPage() {
                     e.preventDefault();
                     setDragActive(false);
                     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                      setUploadedFile(e.dataTransfer.files[0]);
-                      addToast('Đã nhận ảnh minh chứng!');
+                      handleFileChange(e.dataTransfer.files[0]);
                     }
                   }}
                 >
-                   <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => setUploadedFile(e.target.files[0])} />
+                   <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleFileChange(e.target.files?.[0])} />
                    
                    {uploadedFile ? (
                       <div className="flex flex-col items-center">
@@ -209,7 +374,7 @@ export default function PaymentPage() {
                             <CheckCircle2 size={32} />
                          </div>
                          <p className="text-[14px] font-bold text-[#0F3A40] mb-1">{uploadedFile.name}</p>
-                         <p className="text-[12px] text-[#82ABB0]">Đã sẵn sàng tải lên</p>
+                         <p className="text-[12px] text-[#82ABB0]">Đã sẵn sàng gửi admin duyệt</p>
                       </div>
                    ) : (
                       <>
@@ -226,10 +391,24 @@ export default function PaymentPage() {
 
                 <button 
                   onClick={handleSubmit}
-                  className="w-full mt-8 py-5 rounded-[24px] bg-[#0F3A40] hover:bg-[#1F545B] text-white font-bold text-[16px] shadow-xl shadow-[#0F3A40]/10 transition-all flex items-center justify-center gap-3"
+                  disabled={!invoiceToPay || isPaid || isPendingApproval || isSubmitting}
+                  className={`w-full mt-8 py-5 rounded-[24px] font-bold text-[16px] shadow-xl transition-all flex items-center justify-center gap-3 ${
+                    !invoiceToPay || isPaid || isPendingApproval || isSubmitting
+                      ? 'bg-slate-200 text-slate-500 cursor-not-allowed shadow-transparent'
+                      : 'bg-[#0F3A40] hover:bg-[#1F545B] text-white shadow-[#0F3A40]/10'
+                  }`}
                 >
-                   Gửi xác nhận thanh toán <Send size={18} />
+                   {isPaid ? 'Hóa đơn đã thanh toán'
+                     : isPendingApproval ? 'Đang chờ admin xác nhận'
+                     : isSubmitting ? 'Đang gửi minh chứng...'
+                     : 'Gửi xác nhận thanh toán'} <Send size={18} />
                 </button>
+
+                {isPendingApproval ? (
+                  <p className="text-center mt-4 text-[12px] font-semibold text-[#E68A00]">
+                    Minh chứng đã gửi, vui lòng chờ admin duyệt để hóa đơn được xác thực thành công.
+                  </p>
+                ) : null}
                 
                 <p className="text-center mt-6 text-[11px] font-medium text-[#82ABB0] leading-relaxed max-w-[500px] mx-auto">
                    Bằng cách nhấn xác nhận, bạn đồng ý với các điều khoản thanh toán của The Nest Living. 

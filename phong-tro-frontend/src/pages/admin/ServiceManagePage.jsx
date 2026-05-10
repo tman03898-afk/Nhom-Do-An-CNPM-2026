@@ -1,50 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Zap, Droplet, Wifi, Trash2, Save, Plus, X,
   Settings2, User, Hash, Box, Info
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 
 export default function ServiceManagePage() {
   const { addToast } = useToast();
+  const { token } = useAuth();
 
-  const [services, setServices] = useState([
-    {
-      id: 'dien',
-      title: 'Giá điện',
-      desc: 'Đơn giá áp dụng theo số ký (kWh)',
-      icon: 'Zap',
-      method: 'meter', // Theo chỉ số
-      value: '3500'
-    },
-    {
-      id: 'nuoc',
-      title: 'Giá nước',
-      desc: 'Đơn giá áp dụng theo khối (m³)',
-      icon: 'Droplet',
-      method: 'meter', // Theo chỉ số
-      value: '25000'
-    },
-    {
-      id: 'wifi',
-      title: 'Wifi',
-      desc: 'Phí trọn gói hàng tháng',
-      icon: 'Wifi',
-      method: 'fixed', // Cố định
-      value: '100000'
-    },
-    {
-      id: 'rac',
-      title: 'Rác',
-      desc: 'Phí thu gom rác định kỳ',
-      icon: 'Trash2',
-      method: 'fixed', // Cố định
-      value: '50000'
-    }
-  ]);
+  const [services, setServices] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isAdding, setIsAdding] = useState(false);
   const [newSvc, setNewSvc] = useState({ title: '', desc: '', value: '', method: 'fixed' });
+  const [dirtyIds, setDirtyIds] = useState(() => new Set());
 
   const getIcon = (name) => {
     switch (name) {
@@ -55,6 +27,54 @@ export default function ServiceManagePage() {
       default: return <Settings2 className="w-6 h-6" />;
     }
   };
+
+  const toUiMethod = (unit) => {
+    if (unit === 'kWh' || unit === 'm3' || unit === 'm³') return 'meter';
+    if (unit === 'person') return 'person';
+    return 'fixed';
+  };
+
+  const fromUi = (svc) => {
+    const method = svc.method;
+    let unit = 'month';
+    if (method === 'meter') unit = 'kWh';
+    if (method === 'person') unit = 'person';
+    if (method === 'fixed') unit = 'month';
+    return {
+      name: svc.title,
+      unit,
+      price: Number(svc.value || 0),
+      is_active: true,
+    };
+  };
+
+  const refresh = async () => {
+    if (!token) return;
+    setIsLoading(true);
+    try {
+      const data = await apiFetch('/admin/services', { token });
+      const mapped = (data.services || []).map((s) => ({
+        id: String(s.service_id),
+        service_id: s.service_id,
+        title: s.name,
+        desc: s.unit ? `Đơn vị: ${s.unit}` : '',
+        icon: 'Settings2',
+        method: toUiMethod(s.unit),
+        value: String(s.price ?? ''),
+      }));
+      setServices(mapped);
+      setDirtyIds(new Set());
+    } catch (e) {
+      setServices([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const getMethodLabel = (method) => {
     switch (method) {
@@ -86,19 +106,40 @@ export default function ServiceManagePage() {
       addToast('Vui lòng điền tên và đơn giá dịch vụ!', 'error');
       return;
     }
-    const id = Date.now().toString();
-    setServices([...services, { ...newSvc, id, icon: 'Settings2' }]);
-    setNewSvc({ title: '', desc: '', value: '', method: 'fixed' });
-    setIsAdding(false);
-    addToast('Đã thêm dịch vụ phát sinh mới!');
+    const run = async () => {
+      if (!token) return;
+      await apiFetch('/admin/services', { token, method: 'POST', body: fromUi(newSvc) });
+      setNewSvc({ title: '', desc: '', value: '', method: 'fixed' });
+      setIsAdding(false);
+      addToast('Đã thêm dịch vụ mới!');
+      await refresh();
+    };
+    run().catch((e) => addToast(e.message || 'Không thể thêm dịch vụ', 'error'));
   };
 
   const handleUpdate = (id, field, val) => {
     setServices(services.map(s => s.id === id ? { ...s, [field]: val } : s));
+    setDirtyIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
   };
 
   const handleSaveAll = () => {
-    addToast('Đã lưu toàn bộ thay đổi hệ thống!');
+    const run = async () => {
+      if (!token) return;
+      const dirty = Array.from(dirtyIds);
+      for (const id of dirty) {
+        const svc = services.find((s) => s.id === id);
+        if (!svc?.service_id) continue;
+        const payload = fromUi(svc);
+        await apiFetch(`/admin/services/${svc.service_id}`, { token, method: 'PUT', body: payload });
+      }
+      addToast('Đã lưu toàn bộ thay đổi hệ thống!');
+      await refresh();
+    };
+    run().catch((e) => addToast(e.message || 'Không thể lưu thay đổi', 'error'));
   };
 
   return (
@@ -180,7 +221,11 @@ export default function ServiceManagePage() {
 
         {/* Configuration Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-          {services.map((svc) => (
+          {isLoading ? (
+            <div className="col-span-full text-center text-[#4A787C] font-medium py-10">Đang tải dịch vụ...</div>
+          ) : services.length === 0 ? (
+            <div className="col-span-full text-center text-[#4A787C] font-medium py-10">Chưa có dịch vụ nào.</div>
+          ) : services.map((svc) => (
             <div key={svc.id} className="bg-white rounded-[40px] p-8 shadow-[0_4px_25px_rgba(15,58,64,0.06)] border border-[#BCE1E5]/20 hover:border-[#14B8A6]/40 transition-all group relative overflow-hidden">
               <button
                 onClick={() => handleDelete(svc.id)}

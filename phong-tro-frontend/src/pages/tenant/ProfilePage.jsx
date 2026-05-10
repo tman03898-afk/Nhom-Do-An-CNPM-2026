@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { 
   Camera, Phone, Mail, CreditCard, 
   Calendar, PhoneCall, MessageCircle, 
@@ -8,7 +8,36 @@ import {
 import { useAuth } from '../../context/AuthContext';
 
 export default function ProfilePage() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const [tenantProfile, setTenantProfile] = useState(null);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!token) return;
+      try {
+        const response = await fetch(`${API_BASE_URL}/tenant/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (!response.ok || !data?.ok) return;
+        setTenantProfile(data.tenant);
+      } catch (error) {
+        setTenantProfile(null);
+      }
+    };
+
+    fetchProfile();
+  }, [API_BASE_URL, token]);
+
+  const view = useMemo(() => {
+    return {
+      fullName: tenantProfile?.full_name || user?.full_name || user?.name || 'Khách thuê',
+      email: tenantProfile?.email || user?.email || '—',
+      phone: tenantProfile?.phone || '—',
+      roomNumber: tenantProfile?.room_number || '—',
+    };
+  }, [tenantProfile, user]);
 
   const settingsItems = [
     {
@@ -68,11 +97,11 @@ export default function ProfilePage() {
          <div className="relative flex flex-col gap-2">
             <span className="text-[12px] font-bold text-[#1E4D54]/60 uppercase tracking-[0.2em]">CƯ DÂN CAO CẤP</span>
             <h1 className="text-[48px] font-sans font-extrabold text-[#1E4D54] tracking-tight leading-none mb-2">
-               {user?.name || 'Nguyễn Văn A'}
+               {view.fullName}
             </h1>
             <div className="flex items-center gap-4">
                <div className="bg-white/40 backdrop-blur-md px-4 py-1.5 rounded-full flex items-center gap-2 border border-white/30 shadow-sm">
-                  <span className="text-[13px] font-bold text-[#1E4D54]/60 tracking-wider">ID: TN-8829</span>
+                  <span className="text-[13px] font-bold text-[#1E4D54]/60 tracking-wider">Phòng: {view.roomNumber}</span>
                </div>
                <div className="bg-white/40 backdrop-blur-md px-4 py-1.5 rounded-full flex items-center gap-2 border border-white/30 shadow-sm">
                   <BadgeCheck size={16} className="text-[#14B8A6] fill-[#14B8A6]/10" />
@@ -97,7 +126,7 @@ export default function ProfilePage() {
                   </div>
                   <div>
                      <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-widest mb-1.5">SỐ ĐIỆN THOẠI</p>
-                     <p className="text-[16px] font-bold text-[#0F3A40]">090 123 4567</p>
+                     <p className="text-[16px] font-bold text-[#0F3A40]">{view.phone}</p>
                   </div>
                </div>
 
@@ -107,7 +136,7 @@ export default function ProfilePage() {
                   </div>
                   <div>
                      <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-widest mb-1.5">EMAIL CÁ NHÂN</p>
-                     <p className="text-[16px] font-bold text-[#0F3A40]">an.nguyen@gmail.com</p>
+                     <p className="text-[16px] font-bold text-[#0F3A40]">{view.email}</p>
                   </div>
                </div>
 

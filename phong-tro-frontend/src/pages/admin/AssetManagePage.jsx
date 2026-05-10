@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { 
   Plus, Package, Refrigerator, Bed, Shirt, Snowflake, 
   Search, Filter, Download, MoreVertical, Edit3, Trash2, 
@@ -7,71 +7,75 @@ import {
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 
 const assetStats = [
-  { label: 'TỔNG TÀI SẢN', value: '1,248', detail: '+12% so với tháng trước', icon: <Package className="w-5 h-5" />, color: 'text-[#14B8A6]', bg: 'bg-[#EBFDFB]' },
-  { label: 'CẦN BẢO TRÌ', value: '24', detail: '3 trường hợp khẩn cấp', icon: <AlertTriangle className="w-5 h-5" />, color: 'text-[#D14D4D]', bg: 'bg-[#FFF0F0]' },
-  { label: 'GIÁ TRỊ TỒN KHO', value: '4.2B', detail: 'VND (Khấu hao ước tính)', icon: <TrendingUp className="w-5 h-5" />, color: 'text-[#3B82F6]', bg: 'bg-[#EBF4FF]' },
-  { label: 'MỚI TRANG BỊ', value: '156', detail: 'Trong 30 ngày qua', icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-[#E68A00]', bg: 'bg-[#FFF3E0]' },
-];
-
-const maintenanceData = [
-  { month: 'Th1', cost: 120 },
-  { month: 'Th2', cost: 150 },
-  { month: 'Th3', cost: 180 },
-  { month: 'Th4', cost: 140 },
-  { month: 'Th5', cost: 210 },
-  { month: 'Th6', cost: 250 },
-];
-
-const assets = [
-  {
-    id: 1,
-    name: 'Điều hòa Daikin Inverter 1.5 HP',
-    description: 'SN: DK-2023-88912',
-    room: 'P.402 - Studio',
-    date: '12/04/2023',
-    status: 'MỚI',
-    statusColor: 'bg-[#EBFDFB] text-[#14B8A6]',
-    value: '12.500.000 đ',
-    icon: <Snowflake className="w-4 h-4" />
-  },
-  {
-    id: 2,
-    name: 'Tủ lạnh Samsung Bespoke',
-    description: 'SN: SS-B-99210',
-    room: 'P.205 - Premium Suite',
-    date: '20/01/2023',
-    status: 'TỐT',
-    statusColor: 'bg-[#EBFDFB] text-[#14B8A6]',
-    value: '24.800.000 đ',
-    icon: <Refrigerator className="w-4 h-4" />
-  },
-  {
-    id: 3,
-    name: 'Giường gỗ Sồi cao cấp 1m8',
-    description: 'ID: FUR-W-015',
-    room: 'P.101 - Master Suite',
-    date: '15/06/2021',
-    status: 'CẦN BẢO TRÌ',
-    statusColor: 'bg-[#FFF3E0] text-[#E68A00]',
-    value: '8.200.000 đ',
-    icon: <Bed className="w-4 h-4" />
-  },
-  {
-    id: 4,
-    name: 'Tủ quần áo gỗ Công nghiệp 3 cánh',
-    description: 'ID: FUR-W-104',
-    room: 'P.303 - Studio',
-    date: '10/02/2024',
-    status: 'MỚI',
-    statusColor: 'bg-[#EBFDFB] text-[#14B8A6]',
-    value: '5.400.000 đ',
-    icon: <Shirt className="w-4 h-4" />
-  }
+  { label: 'TỔNG TÀI SẢN', value: '—', detail: 'Đang cập nhật', icon: <Package className="w-5 h-5" />, color: 'text-[#14B8A6]', bg: 'bg-[#EBFDFB]' },
+  { label: 'CẦN BẢO TRÌ', value: '—', detail: 'Đang cập nhật', icon: <AlertTriangle className="w-5 h-5" />, color: 'text-[#D14D4D]', bg: 'bg-[#FFF0F0]' },
+  { label: 'GIÁ TRỊ TỒN KHO', value: '—', detail: 'Đang cập nhật', icon: <TrendingUp className="w-5 h-5" />, color: 'text-[#3B82F6]', bg: 'bg-[#EBF4FF]' },
+  { label: 'MỚI TRANG BỊ', value: '—', detail: 'Đang cập nhật', icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-[#E68A00]', bg: 'bg-[#FFF3E0]' },
 ];
 
 export default function AssetManagePage() {
+  const { token } = useAuth();
+  const [assets, setAssets] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ room_id: '', name: '', quantity: 1, status: 'OK', note: '' });
+
+  const refresh = async () => {
+    if (!token) return;
+    setIsLoading(true);
+    try {
+      const [a, r] = await Promise.all([apiFetch('/admin/assets', { token }), apiFetch('/rooms', { token })]);
+      setAssets(a.assets || []);
+      setRooms(r.rooms || []);
+    } catch (e) {
+      setAssets([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  const stats = useMemo(() => {
+    const total = assets.length;
+    const needMaint = assets.filter((a) => a.status === 'MAINTENANCE' || a.status === 'BROKEN').length;
+    const ok = assets.filter((a) => a.status === 'OK').length;
+    return { total, needMaint, ok };
+  }, [assets]);
+
+  const assetStats = useMemo(() => ([
+    { label: 'TỔNG TÀI SẢN', value: String(stats.total), detail: 'Đang sử dụng', icon: <Package className="w-5 h-5" />, color: 'text-[#14B8A6]', bg: 'bg-[#EBFDFB]' },
+    { label: 'CẦN BẢO TRÌ', value: String(stats.needMaint), detail: 'BROKEN/MAINTENANCE', icon: <AlertTriangle className="w-5 h-5" />, color: 'text-[#D14D4D]', bg: 'bg-[#FFF0F0]' },
+    { label: 'GIÁ TRỊ TỒN KHO', value: '—', detail: 'Chưa tính', icon: <TrendingUp className="w-5 h-5" />, color: 'text-[#3B82F6]', bg: 'bg-[#EBF4FF]' },
+    { label: 'MỚI TRANG BỊ', value: String(stats.ok), detail: 'OK', icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-[#E68A00]', bg: 'bg-[#FFF3E0]' },
+  ]), [stats]);
+
+  const handleCreate = async () => {
+    if (!token) return;
+    await apiFetch('/admin/assets', {
+      token,
+      method: 'POST',
+      body: {
+        room_id: createForm.room_id ? Number(createForm.room_id) : null,
+        name: createForm.name,
+        quantity: Number(createForm.quantity || 1),
+        status: createForm.status,
+        note: createForm.note || null,
+      },
+    });
+    setIsCreateOpen(false);
+    setCreateForm({ room_id: '', name: '', quantity: 1, status: 'OK', note: '' });
+    await refresh();
+  };
+
   return (
     <div className="w-full max-w-[1400px] mx-auto pb-12">
       {/* Header section */}
@@ -80,7 +84,7 @@ export default function AssetManagePage() {
           <h1 className="text-[32px] font-bold text-[#0F3A40] leading-none mb-3">Quản lý Tài sản</h1>
           <p className="text-[#4A787C] font-medium text-[14px]">Theo dõi và cập nhật danh mục thiết bị, nội thất trong hệ thống The Nest Living.</p>
         </div>
-        <button className="flex items-center gap-2 bg-[#14B8A6] hover:bg-[#0da090] text-white px-6 py-3 rounded-full text-[14px] font-bold transition-all shadow-lg shadow-[#14B8A6]/20">
+        <button onClick={() => setIsCreateOpen(true)} className="flex items-center gap-2 bg-[#14B8A6] hover:bg-[#0da090] text-white px-6 py-3 rounded-full text-[14px] font-bold transition-all shadow-lg shadow-[#14B8A6]/20">
           <Plus className="w-5 h-5" /> Thêm tài sản mới
         </button>
       </div>
@@ -149,40 +153,36 @@ export default function AssetManagePage() {
               </tr>
             </thead>
             <tbody>
-              {assets.map((asset) => (
-                <tr key={asset.id} className="group border-b border-[#BCE1E5]/20 last:border-0 hover:bg-[#F2FCFD]/50 transition-colors">
-                  <td className="py-5 px-2">
-                    <div className="flex items-center gap-4">
-                      <div className="w-9 h-9 bg-[#EBFDFB] rounded-xl flex items-center justify-center text-[#14B8A6] shrink-0 border border-[#14B8A6]/10">
-                        {asset.icon}
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-bold text-[#0F3A40] text-[14px] leading-tight mb-0.5">{asset.name}</span>
-                        <span className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-tight">{asset.description}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-5 px-2">
-                    <span className="text-[13px] font-bold text-[#4A787C]">{asset.room}</span>
-                  </td>
-                  <td className="py-5 px-2">
-                    <span className="text-[13px] font-medium text-[#0F3A40]">{asset.date}</span>
-                  </td>
-                  <td className="py-5 px-2">
-                    <span className={`px-3 py-1.5 rounded-[10px] text-[10px] font-extrabold tracking-widest uppercase ${asset.statusColor}`}>
-                      {asset.status}
-                    </span>
-                  </td>
-                  <td className="py-5 px-2 font-bold text-[#0F3A40] text-[14px]">
-                    {asset.value}
-                  </td>
-                  <td className="py-5 px-2 text-right relative">
-                    <button className="p-2 text-[#82ABB0] hover:text-[#0F3A40] hover:bg-white rounded-xl transition-all">
-                      <MoreVertical size={18} />
-                    </button>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-[13px] font-medium text-[#4A787C]">Đang tải dữ liệu tài sản...</td>
+                </tr>
+              ) : assets.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-[13px] font-medium text-[#4A787C]">
+                    Chưa có dữ liệu tài sản.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                assets.map((a) => (
+                  <tr key={a.asset_id} className="border-b border-[#BCE1E5]/30 last:border-0 hover:bg-white/40 transition-colors">
+                    <td className="py-5 px-2 font-bold text-[#0F3A40]">{a.name}</td>
+                    <td className="py-5 px-2 font-bold text-[#0F3A40]">{a.room_number || '—'}</td>
+                    <td className="py-5 px-2 text-[13px] font-medium text-[#4A787C]">—</td>
+                    <td className="py-5 px-2">
+                      <span className="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase inline-block">
+                        {a.status}
+                      </span>
+                    </td>
+                    <td className="py-5 px-2 font-bold text-[#0F3A40]">—</td>
+                    <td className="py-5 px-2 text-right">
+                      <button className="p-2 rounded-xl text-[#82ABB0] hover:text-[#0F3A40] hover:bg-[#F2FCFD] transition-all">
+                        <MoreVertical size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -208,42 +208,8 @@ export default function AssetManagePage() {
           <p className="text-[13px] text-[#4A787C] font-medium mb-8">
             Tăng 15% so với kỳ trước do lịch bảo trì định kỳ điều hòa tập trung vào tháng này.
           </p>
-          <div className="flex-1 min-h-[250px] w-full mt-auto">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={maintenanceData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#BCE1E5" opacity={0.3} />
-                <XAxis 
-                  dataKey="month" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#82ABB0', fontSize: 12, fontWeight: 700 }}
-                  dy={10}
-                />
-                <YAxis axisLine={false} tickLine={false} hide={true} />
-                <Tooltip 
-                  cursor={{ fill: '#F2FCFD', radius: 10 }}
-                  contentStyle={{ 
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)', 
-                    borderRadius: '16px', 
-                    border: '1px solid #BCE1E5',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                  }}
-                />
-                <Bar 
-                  dataKey="cost" 
-                  radius={[10, 10, 10, 10]} 
-                  barSize={40}
-                >
-                  {maintenanceData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={index === maintenanceData.length - 1 ? '#14B8A6' : '#BCE1E5'} 
-                      fillOpacity={index === maintenanceData.length - 1 ? 1 : 0.6}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="flex-1 min-h-[250px] w-full mt-auto flex items-center justify-center rounded-[28px] bg-white/60 border border-white/60 text-[#4A787C] font-medium">
+            Đang cập nhật dữ liệu bảo trì
           </div>
         </div>
 
@@ -251,24 +217,8 @@ export default function AssetManagePage() {
         <div className="lg:col-span-2 bg-[#F2FCFD] border border-[#BCE1E5]/30 rounded-[40px] p-8 shadow-sm flex flex-col h-full">
           <h3 className="text-[18px] font-bold text-[#0F3A40] mb-8">Tài sản mới nhất</h3>
           <div className="space-y-4 flex-1">
-            <div className="bg-white rounded-[24px] p-4 flex items-center gap-4 border border-white shadow-sm hover:shadow-md transition-shadow">
-               <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-inner shrink-0">
-                  <img src="https://images.unsplash.com/photo-1594404341020-431268383f94?w=400&q=80" alt="Washing Machine" className="w-full h-full object-cover" />
-               </div>
-               <div className="flex flex-col">
-                  <h4 className="text-[13px] font-bold text-[#0F3A40] mb-0.5">Máy giặt LG TurboWash</h4>
-                  <p className="text-[11px] text-[#82ABB0] font-medium">Đã thêm vào P.501 • 2 giờ trước</p>
-               </div>
-            </div>
-
-            <div className="bg-white rounded-[24px] p-4 flex items-center gap-4 border border-white shadow-sm hover:shadow-md transition-shadow">
-               <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-inner shrink-0">
-                  <img src="https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400&q=80" alt="Sofa" className="w-full h-full object-cover" />
-               </div>
-               <div className="flex flex-col">
-                  <h4 className="text-[13px] font-bold text-[#0F3A40] mb-0.5">Sofa Modular Grey</h4>
-                  <p className="text-[11px] text-[#82ABB0] font-medium">Đã thêm vào P.202 • 1 ngày trước</p>
-               </div>
+            <div className="bg-white rounded-[24px] p-8 border border-white shadow-sm text-center text-[#4A787C] font-medium">
+              Chưa có dữ liệu tài sản mới. (Đã xoá dữ liệu demo)
             </div>
           </div>
           <button className="mt-8 text-[13px] font-bold text-[#14B8A6] hover:underline flex items-center gap-2 group justify-center">
@@ -276,6 +226,74 @@ export default function AssetManagePage() {
           </button>
         </div>
       </div>
+
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-xl bg-white rounded-[32px] p-7 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-[#0F3A40]">Thêm tài sản</h3>
+              <button onClick={() => setIsCreateOpen(false)} className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500">
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <select
+                value={createForm.room_id}
+                onChange={(e) => setCreateForm((p) => ({ ...p, room_id: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+              >
+                <option value="">Chọn phòng (tùy chọn)</option>
+                {rooms.map((r) => (
+                  <option key={r.room_id} value={r.room_id}>
+                    #{r.room_id} - {r.room_number}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={createForm.name}
+                onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                placeholder="Tên tài sản"
+              />
+              <input
+                type="number"
+                value={createForm.quantity}
+                onChange={(e) => setCreateForm((p) => ({ ...p, quantity: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                placeholder="Số lượng"
+              />
+              <select
+                value={createForm.status}
+                onChange={(e) => setCreateForm((p) => ({ ...p, status: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+              >
+                <option value="OK">OK</option>
+                <option value="BROKEN">BROKEN</option>
+                <option value="MAINTENANCE">MAINTENANCE</option>
+                <option value="LOST">LOST</option>
+              </select>
+              <input
+                type="text"
+                value={createForm.note}
+                onChange={(e) => setCreateForm((p) => ({ ...p, note: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                placeholder="Ghi chú"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setIsCreateOpen(false)} className="px-6 py-3 rounded-full font-bold text-[#4A787C] hover:text-[#0F3A40]">
+                Hủy
+              </button>
+              <button onClick={handleCreate} className="px-8 py-3 rounded-full bg-[#14B8A6] hover:bg-[#0da090] text-white font-bold shadow-lg shadow-[#14B8A6]/20">
+                Tạo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

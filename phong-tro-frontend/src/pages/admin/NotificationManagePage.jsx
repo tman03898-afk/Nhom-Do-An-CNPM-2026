@@ -1,38 +1,80 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Megaphone, Send, Paperclip, MoreVertical, TrendingUp, Bell } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 
 export default function NotificationManagePage() {
-  const notifications = [
-    {
-      id: 1,
-      time: '2 GIỜ TRƯỚC',
-      audience: 'TOÀN BỘ TÒA NHÀ',
-      title: 'Thông báo bảo trì thang máy tòa A',
-      content: 'Chúng tôi xin thông báo lịch bảo trì định kỳ cho thang máy tại tòa nhà A vào sáng thứ 7 tuần này. Mong cư dân sắp xếp thời gian di chuyển...',
-      status: 'active',
-    },
-    {
-      id: 2,
-      time: 'HÔM QUA',
-      audience: 'TẦNG 5 & 6',
-      title: 'Nhắc nhở thanh toán tiền phòng tháng 10',
-      content: 'Kính gửi quý cư dân, vui lòng hoàn tất các hóa đơn dịch vụ và tiền phòng trước ngày 05/10 để tránh các khoản phí chậm trễ phát sinh...',
-      status: 'inactive',
-    },
-    {
-      id: 3,
-      time: '01/10/2023',
-      audience: 'TẤT CẢ NGƯỜI DÙNG',
-      title: 'Chào mừng cư dân mới đến với The Nest Living',
-      content: 'The Nest hân hoan chào đón 15 cư dân mới gia nhập cộng đồng của chúng ta trong tháng này. Hãy cùng tham gia buổi tiệc trà vào tối nay...',
-      status: 'inactive',
-    }
-  ];
+  const { token } = useAuth();
+  const [notifications, setNotifications] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [isSending, setIsSending] = useState(false);
 
   const stats = [
     { label: 'TỶ LỆ XEM', value: '88%', trend: '+4.2%', color: 'text-[#14B8A6]', bg: 'bg-[#EBFDFB]', borderColor: 'border-[#0F3A40]' },
     { label: 'THÔNG BÁO/THÁNG', value: '24', trend: 'ổn định', color: 'text-[#4A787C]', bg: 'bg-[#F2FCFD]', borderColor: 'border-[#14B8A6]' },
     { label: 'PHẢN HỒI CƯ DÂN', value: '156', trend: '+12', color: 'text-[#14B8A6]', bg: 'bg-[#EBFDFB]', borderColor: 'border-[#0F3A40]' }
   ];
+
+  const refresh = async () => {
+    if (!token) return;
+    setIsLoading(true);
+    try {
+      const data = await apiFetch('/admin/notifications', { token });
+      setNotifications(data.notifications || []);
+    } catch (e) {
+      setNotifications([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /** Vào trang thông báo → đánh dấu đã đọc (badge/chuông về 0) → làm mới danh sách. */
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await apiFetch('/admin/notifications/mark-all-read', { token, method: 'POST' });
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled) {
+        window.dispatchEvent(new Event('admin-nav-badges-refresh'));
+        await refresh();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  const send = async () => {
+    if (!token) return;
+    if (!title.trim()) return;
+    setIsSending(true);
+    try {
+      await apiFetch('/admin/notifications', { token, method: 'POST', body: { title: title.trim(), body: body.trim() || null } });
+      setTitle('');
+      setBody('');
+      await refresh();
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const uiNotifs = useMemo(() => {
+    return notifications.map((n) => ({
+      id: n.notification_id,
+      time: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : '',
+      audience: n.user_id ? `USER #${n.user_id}` : '—',
+      title: n.title,
+      content: n.body || '',
+      status: n.is_read ? 'inactive' : 'active',
+    }));
+  }, [notifications]);
 
   return (
     <div className="w-full max-w-[1200px] mx-auto mt-2 px-4 pb-12 flex flex-col gap-10">
@@ -65,6 +107,8 @@ export default function NotificationManagePage() {
                 <input
                   type="text"
                   placeholder="Nhập tiêu đề ngắn gọn..."
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-[#D7F2F5]/40 rounded-2xl px-6 py-4 text-[#0F3A40] font-bold text-[14px] outline-none border border-transparent focus:border-[#14B8A6]/40 transition-colors placeholder-[#82ABB0]"
                 />
               </div>
@@ -74,14 +118,21 @@ export default function NotificationManagePage() {
                 <textarea
                   rows={6}
                   placeholder="Viết nội dung thông báo tại đây..."
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
                   className="w-full bg-[#D7F2F5]/40 rounded-3xl px-6 py-5 text-[#0F3A40] font-medium text-[14px] outline-none border border-transparent focus:border-[#14B8A6]/40 transition-colors placeholder-[#82ABB0] resize-none leading-relaxed"
                 />
               </div>
             </div>
 
             <div className="flex gap-4 mt-auto pt-4 items-center">
-              <button className="flex-1 bg-[#0F3A40] hover:bg-[#1F545B] text-white py-4 rounded-full text-[15px] font-bold transition-all shadow-md flex items-center justify-center gap-3">
-                <Send className="w-5 h-5 text-[#14B8A6]" /> Gửi thông báo
+              <button
+                type="button"
+                onClick={send}
+                disabled={isSending}
+                className="flex-1 bg-[#0F3A40] hover:bg-[#1F545B] disabled:opacity-70 text-white py-4 rounded-full text-[15px] font-bold transition-all shadow-md flex items-center justify-center gap-3"
+              >
+                <Send className="w-5 h-5 text-[#14B8A6]" /> {isSending ? 'Đang gửi...' : 'Gửi thông báo'}
               </button>
               <button className="w-[56px] h-[56px] rounded-full bg-white text-[#4A787C] flex items-center justify-center shadow-sm border border-[#BCE1E5]/30 hover:bg-[#EBFDFB] hover:text-[#14B8A6] transition-all">
                 <Paperclip className="w-5 h-5" />
@@ -101,7 +152,15 @@ export default function NotificationManagePage() {
           </div>
 
           <div className="flex flex-col gap-4">
-            {notifications.map((notif) => (
+            {isLoading ? (
+              <div className="bg-white rounded-[24px] p-6 border border-white shadow-sm text-center text-[#4A787C] font-medium">
+                Đang tải thông báo...
+              </div>
+            ) : uiNotifs.length === 0 ? (
+              <div className="bg-white rounded-[24px] p-6 border border-white shadow-sm text-center text-[#4A787C] font-medium">
+                Chưa có thông báo nào.
+              </div>
+            ) : uiNotifs.map((notif) => (
               <div key={notif.id} className="bg-white rounded-[24px] p-6 shadow-[0_4px_20px_rgba(15,58,64,0.02)] border-2 border-[#14B8A6]/20 flex flex-col gap-3 group relative transition-all">
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2 overflow-hidden">

@@ -1,10 +1,166 @@
 /* DashboardPage.jsx */
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Banknote, BedDouble, Building, FileText, CalendarClock, Wrench, CheckCircle2, UserPlus, ArrowRight } from 'lucide-react';
+import {
+   Banknote,
+   BedDouble,
+   Building,
+   FileText,
+   CalendarClock,
+   Wrench,
+   CheckCircle2,
+   UserPlus,
+   ArrowRight,
+   Users,
+   CreditCard,
+   Phone,
+} from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
+
+function isUnpaidInvoiceStatus(status) {
+   const s = String(status ?? '').toUpperCase();
+   return s !== 'PAID' && s !== 'CANCELLED';
+}
 
 export default function DashboardPage() {
    const [activeTab, setActiveTab] = useState('revenue');
+   const { token } = useAuth();
+   const [rooms, setRooms] = useState([]);
+   const [overview, setOverview] = useState(null);
+   const [invoices, setInvoices] = useState([]);
+   const [tickets, setTickets] = useState([]);
+   const [contracts, setContracts] = useState([]);
+   const [tenants, setTenants] = useState([]);
+
+   useEffect(() => {
+      const fetchRooms = async () => {
+         try {
+            const data = await apiFetch('/rooms', { token });
+            setRooms(data.rooms || []);
+         } catch (error) {
+            setRooms([]);
+         }
+      };
+      fetchRooms();
+   }, [token]);
+
+   useEffect(() => {
+      const run = async () => {
+         if (!token) return;
+         try {
+            const [ov, inv, tk, con, tn] = await Promise.all([
+               apiFetch('/admin/analytics/overview', { token }),
+               apiFetch('/admin/invoices', { token }),
+               apiFetch('/admin/tickets', { token }),
+               apiFetch('/admin/contracts', { token }),
+               apiFetch('/admin/tenants', { token }),
+            ]);
+            setOverview(ov.overview || null);
+            setInvoices(inv.invoices || []);
+            setTickets(tk.tickets || []);
+            setContracts(con.contracts || []);
+            setTenants(tn.tenants || []);
+         } catch (e) {
+            setOverview(null);
+            setInvoices([]);
+            setTickets([]);
+            setContracts([]);
+            setTenants([]);
+         }
+      };
+      run();
+   }, [token]);
+
+   const expiringContractsSoon = useMemo(() => {
+      const now = new Date();
+      const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      return contracts.filter(
+         (c) => c.status === 'ACTIVE' && c.end_date && new Date(c.end_date) <= in30Days
+      ).length;
+   }, [contracts]);
+
+   /** Ghép tenant + phòng + hợp đồng ACTIVE + hóa đơn chưa trả (giống góc nhìn tenant). */
+   const tenantSnapshots = useMemo(() => {
+      const roomById = new Map(
+         rooms.map((r) => [Number(r.room_id), r])
+      );
+      return tenants.map((t) => {
+         const tenantId = Number(t.tenant_id);
+         const roomFromList = t.room_id != null ? roomById.get(Number(t.room_id)) : null;
+         const roomNumber = t.room_number || roomFromList?.room_number || '—';
+         const maxTenants = roomFromList?.max_tenants ?? '—';
+
+         const activeForTenant = contracts.filter(
+            (c) => Number(c.tenant_id) === tenantId && c.status === 'ACTIVE'
+         );
+         const contract =
+            activeForTenant.sort(
+               (a, b) => new Date(b.end_date || 0) - new Date(a.end_date || 0)
+            )[0] || null;
+
+         const tenantInvoices = invoices.filter((i) => Number(i.tenant_id) === tenantId);
+         const unpaid = tenantInvoices.filter((i) => isUnpaidInvoiceStatus(i.status));
+         const amountDue = unpaid.reduce((sum, i) => sum + Number(i.total_amount || 0), 0);
+         const nextDue = unpaid
+            .filter((i) => i.due_date)
+            .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0];
+
+         const fmt = (d) => {
+            if (!d) return '—';
+            const x = new Date(d);
+            return Number.isNaN(x.getTime()) ? String(d) : x.toLocaleDateString('vi-VN');
+         };
+
+         return {
+            tenant_id: tenantId,
+            full_name: t.full_name || '—',
+            email: t.email || '',
+            phone: t.phone || '',
+            room_number: roomNumber,
+            max_tenants: maxTenants,
+            contract_start: contract?.start_date,
+            contract_end: contract?.end_date,
+            contract_label:
+               contract?.start_date && contract?.end_date
+                  ? `${fmt(contract.start_date)} → ${fmt(contract.end_date)}`
+                  : '—',
+            amount_due: amountDue,
+            unpaid_count: unpaid.length,
+            next_due_label: nextDue?.due_date ? fmt(nextDue.due_date) : '—',
+         };
+      });
+   }, [tenants, rooms, contracts, invoices]);
+
+   const sortedTenantSnapshots = useMemo(() => {
+      return [...tenantSnapshots].sort(
+         (a, b) =>
+            b.amount_due - a.amount_due ||
+            String(a.room_number).localeCompare(String(b.room_number), 'vi')
+      );
+   }, [tenantSnapshots]);
+
+   const roomStats = useMemo(() => {
+      const total = rooms.length;
+      const rented = rooms.filter((r) => r.status === 'RENTED').length;
+      const available = rooms.filter((r) => r.status === 'AVAILABLE').length;
+      return { total, rented, available };
+   }, [rooms]);
+
+   const invoiceStats = useMemo(() => {
+      const unpaid = invoices.filter((i) => i.status !== 'PAID' && i.status !== 'CANCELLED').length;
+      return { unpaid };
+   }, [invoices]);
+
+   const ticketStats = useMemo(() => {
+      const open = tickets.filter((t) => t.status === 'OPEN').length;
+      return { open };
+   }, [tickets]);
+
+   const totalRevenue = useMemo(() => {
+      const paid = invoices.filter((i) => i.status === 'PAID');
+      return paid.reduce((sum, i) => sum + Number(i.total_amount || 0), 0);
+   }, [invoices]);
 
    return (
       <div className="w-full max-w-[1200px] mx-auto mt-2">
@@ -31,7 +187,7 @@ export default function DashboardPage() {
                </div>
                <div>
                   <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Tổng doanh thu tháng</p>
-                  <h3 className="text-2xl font-bold text-nest-text-primary">245.5M ₫</h3>
+                  <h3 className="text-2xl font-bold text-nest-text-primary">{Number(totalRevenue || 0).toLocaleString('vi-VN')}đ</h3>
                   <Link to="/admin/payments" className="mt-4 text-[11px] font-bold text-nest-primary flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                      Xem chi tiết <ArrowRight size={12} />
                   </Link>
@@ -48,7 +204,7 @@ export default function DashboardPage() {
                </div>
                <div>
                   <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Số phòng đang thuê</p>
-                  <h3 className="text-2xl font-bold text-nest-text-primary">42 phòng</h3>
+                  <h3 className="text-2xl font-bold text-nest-text-primary">{roomStats.rented} phòng</h3>
                   <Link to="/admin/rooms" className="mt-4 text-[11px] font-bold text-nest-primary flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                      Xem chi tiết <ArrowRight size={12} />
                   </Link>
@@ -65,7 +221,7 @@ export default function DashboardPage() {
                </div>
                <div>
                   <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Số phòng trống</p>
-                  <h3 className="text-2xl font-bold text-nest-text-primary">8 phòng</h3>
+                  <h3 className="text-2xl font-bold text-nest-text-primary">{roomStats.available} phòng</h3>
                   <Link to="/admin/rooms" className="mt-4 text-[11px] font-bold text-nest-primary flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                      Xem chi tiết <ArrowRight size={12} />
                   </Link>
@@ -82,7 +238,7 @@ export default function DashboardPage() {
                <div className="flex justify-between items-end">
                   <div>
                      <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Hóa đơn chưa thanh toán</p>
-                     <h3 className="text-2xl font-bold text-nest-text-primary">12 hóa đơn</h3>
+                     <h3 className="text-2xl font-bold text-nest-text-primary">{invoiceStats.unpaid} hóa đơn</h3>
                      <Link to="/admin/invoices" className="mt-4 text-[11px] font-bold text-nest-primary flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                         Xem chi tiết <ArrowRight size={12} />
                      </Link>
@@ -102,7 +258,7 @@ export default function DashboardPage() {
                </div>
                <div>
                   <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Hợp đồng sắp hết hạn</p>
-                  <h3 className="text-2xl font-bold text-nest-text-primary">5 hợp đồng</h3>
+                  <h3 className="text-2xl font-bold text-nest-text-primary">{expiringContractsSoon} hợp đồng</h3>
                   <Link to="/admin/tenants" className="mt-4 text-[11px] font-bold text-nest-primary flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                      Xem chi tiết <ArrowRight size={12} />
                   </Link>
@@ -120,11 +276,106 @@ export default function DashboardPage() {
                <div>
                   <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Yêu cầu bảo trì mới</p>
                   <h3 className="text-2xl font-bold text-nest-text-primary flex items-baseline gap-2">
-                     3 <span className="text-[12px] font-bold text-nest-text-secondary tracking-wide">Phiếu chờ xử lý</span>
+                     {ticketStats.open} <span className="text-[12px] font-bold text-nest-text-secondary tracking-wide">Phiếu chờ xử lý</span>
                   </h3>
                   <Link to="/admin/tickets" className="mt-4 text-[11px] font-bold text-nest-primary flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                      Xem chi tiết <ArrowRight size={12} />
                   </Link>
+               </div>
+            </div>
+         </div>
+
+         {/* Khách thuê — thông tin tổng hợp (phòng, HĐ, nợ) */}
+         <div className="px-4 mb-8">
+            <div className="bg-white/80 rounded-[2rem] p-6 sm:p-8 shadow-[0_4px_23px_rgba(15,58,64,0.06)] border border-slate-200/60 backdrop-blur-sm">
+               <div className="flex flex-wrap justify-between items-end gap-4 mb-6">
+                  <div>
+                     <h3 className="text-xl font-bold text-nest-text-primary flex items-center gap-2">
+                        <Users className="w-5 h-5 text-nest-primary" />
+                        Khách thuê hiện tại
+                     </h3>
+                     <p className="text-[13px] text-nest-text-secondary mt-1.5 font-medium max-w-xl">
+                        Phòng đang ở, thời hạn hợp đồng đang hiệu lực và các khoản hóa đơn chưa thanh toán.
+                     </p>
+                  </div>
+                  <Link
+                     to="/admin/tenants"
+                     className="text-[13px] font-bold text-nest-primary hover:underline inline-flex items-center gap-1 shrink-0"
+                  >
+                     Quản lý khách thuê <ArrowRight size={14} />
+                  </Link>
+               </div>
+               <div className="w-full overflow-x-auto -mx-1">
+                  <table className="w-full text-left border-collapse min-w-[860px]">
+                     <thead>
+                        <tr className="text-[10px] font-bold text-[#82ABB0] tracking-widest uppercase border-b border-[#BCE1E5]/40">
+                           <th className="pb-4 px-2">Khách thuê</th>
+                           <th className="pb-4 px-2">Liên hệ</th>
+                           <th className="pb-4 px-2 text-center">Phòng</th>
+                           <th className="pb-4 px-2 text-center">Số người (max)</th>
+                           <th className="pb-4 px-2">Hợp đồng</th>
+                           <th className="pb-4 px-2 text-right">Tiền cần thanh toán</th>
+                           <th className="pb-4 px-2 text-center">HĐ chưa trả</th>
+                           <th className="pb-4 px-2">Hạn gần nhất</th>
+                        </tr>
+                     </thead>
+                     <tbody>
+                        {sortedTenantSnapshots.length === 0 ? (
+                           <tr>
+                              <td colSpan={8} className="py-10 text-center text-[13px] font-medium text-nest-text-secondary">
+                                 Chưa có khách thuê hoặc đang tải dữ liệu…
+                              </td>
+                           </tr>
+                        ) : (
+                           sortedTenantSnapshots.map((row) => (
+                              <tr
+                                 key={row.tenant_id}
+                                 className="border-b border-[#BCE1E5]/30 last:border-0 hover:bg-nest-bg/40 transition-colors"
+                              >
+                                 <td className="py-4 px-2">
+                                    <span className="font-bold text-nest-text-primary text-[14px]">{row.full_name}</span>
+                                 </td>
+                                 <td className="py-4 px-2">
+                                    <div className="flex flex-col gap-0.5 text-[12px]">
+                                       {row.email ? (
+                                          <span className="text-nest-text-secondary font-medium">{row.email}</span>
+                                       ) : null}
+                                       {row.phone ? (
+                                          <span className="text-[#82ABB0] font-medium flex items-center gap-1">
+                                             <Phone className="w-3 h-3 shrink-0" /> {row.phone}
+                                          </span>
+                                       ) : null}
+                                       {!row.email && !row.phone ? (
+                                          <span className="text-[#82ABB0]">—</span>
+                                       ) : null}
+                                    </div>
+                                 </td>
+                                 <td className="py-4 px-2 text-center font-bold text-nest-text-primary">
+                                    {row.room_number !== '—' ? `Phòng ${row.room_number}` : '—'}
+                                 </td>
+                                 <td className="py-4 px-2 text-center text-[13px] font-bold text-[#4A787C]">
+                                    {row.max_tenants === '—' ? '—' : row.max_tenants}
+                                 </td>
+                                 <td className="py-4 px-2 text-[12px] font-medium text-[#4A787C] whitespace-nowrap">
+                                    {row.contract_label}
+                                 </td>
+                                 <td className="py-4 px-2 text-right">
+                                    <span className="font-bold text-nest-text-primary text-[14px] inline-flex items-center gap-1 justify-end">
+                                       <CreditCard className="w-3.5 h-3.5 text-nest-primary shrink-0" />
+                                       {Number(row.amount_due || 0).toLocaleString('vi-VN')}đ
+                                    </span>
+                                 </td>
+                                 <td className="py-4 px-2 text-center font-bold text-[#0F3A40]">
+                                    {row.unpaid_count}
+                                 </td>
+                                 <td className="py-4 px-2 text-[13px] font-medium text-[#4A787C]">
+                                    {row.next_due_label}
+                                 </td>
+                              </tr>
+                           ))
+                        )}
+                     </tbody>
+                  </table>
                </div>
             </div>
          </div>
@@ -215,8 +466,8 @@ export default function DashboardPage() {
                         <UserPlus className="w-5 h-5 text-nest-text-primary" />
                      </div>
                      <div className="mt-0.5">
-                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Khách thuê mới chuyển vào P.402</h4>
-                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">2 giờ trước</p>
+                     <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đang cập nhật hoạt động</h4>
+                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">—</p>
                      </div>
                   </div>
                   <div className="flex gap-5 items-start hover:bg-white/60 p-3 -m-3 rounded-2xl transition-all cursor-pointer group">
@@ -224,8 +475,8 @@ export default function DashboardPage() {
                         <Wrench className="w-5 h-5 text-orange-600" />
                      </div>
                      <div className="mt-0.5">
-                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Hoàn thành bảo trì: Điều hòa P.205</h4>
-                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">Hôm qua</p>
+                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đang cập nhật hoạt động</h4>
+                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">—</p>
                      </div>
                   </div>
                   <div className="flex gap-5 items-start hover:bg-white/60 p-3 -m-3 rounded-2xl transition-all cursor-pointer group">
@@ -233,8 +484,8 @@ export default function DashboardPage() {
                         <CheckCircle2 className="w-5 h-5 text-nest-primary" />
                      </div>
                      <div className="mt-0.5">
-                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đã nhận thanh toán thuê: Căn 12A</h4>
-                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">2 ngày trước</p>
+                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đang cập nhật hoạt động</h4>
+                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">—</p>
                      </div>
                   </div>
                   <div className="flex gap-5 items-start hover:bg-white/60 p-3 -m-3 rounded-2xl transition-all cursor-pointer group">
@@ -242,8 +493,8 @@ export default function DashboardPage() {
                         <BedDouble className="w-5 h-5 text-gray-500" />
                      </div>
                      <div className="mt-0.5">
-                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Phòng 301 đã được đặt lịch xem</h4>
-                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">3 ngày trước</p>
+                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đang cập nhật hoạt động</h4>
+                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">—</p>
                      </div>
                   </div>
                </div>

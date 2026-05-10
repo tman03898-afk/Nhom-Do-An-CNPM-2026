@@ -1,12 +1,78 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
    ClipboardList, Download, MessageSquare,
    Calendar, CreditCard, ShieldCheck,
    Trash2, Home, CheckCircle2, ChevronRight, SearchX, Search, X
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
+
+function formatDate(value) {
+   if (!value) return '—';
+   const date = new Date(value);
+   if (Number.isNaN(date.getTime())) return '—';
+   return date.toLocaleDateString('vi-VN');
+}
+
+function formatMoney(value) {
+   if (value === null || value === undefined) return '—';
+   const num = Number(value);
+   if (Number.isNaN(num)) return '—';
+   return `${num.toLocaleString('vi-VN')}đ`;
+}
 
 export default function ContractPage() {
    const [searchQuery, setSearchQuery] = useState('');
+   const { token } = useAuth();
+   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+   const [tenantProfile, setTenantProfile] = useState(null);
+   const [contract, setContract] = useState(null);
+
+   useEffect(() => {
+      const fetchTenant = async () => {
+         if (!token) return;
+         try {
+            const response = await fetch(`${API_BASE_URL}/tenant/me`, {
+               headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await response.json();
+            if (response.ok && data?.ok) setTenantProfile(data.tenant);
+         } catch (error) {
+            setTenantProfile(null);
+         }
+      };
+      fetchTenant();
+   }, [API_BASE_URL, token]);
+
+   useEffect(() => {
+      const fetchContract = async () => {
+         if (!token) return;
+         try {
+            const data = await apiFetch('/tenant/contract', { token });
+            setContract(data?.contract || null);
+         } catch (error) {
+            setContract(null);
+         }
+      };
+      fetchContract();
+   }, [token]);
+
+   const roomNumber = useMemo(
+      () => contract?.room_number || tenantProfile?.room_number || '—',
+      [contract, tenantProfile]
+   );
+   const startDate = useMemo(() => formatDate(contract?.start_date), [contract]);
+   const endDate = useMemo(() => formatDate(contract?.end_date), [contract]);
+   const rentPrice = useMemo(() => formatMoney(contract?.rent_price), [contract]);
+   const deposit = useMemo(() => formatMoney(contract?.deposit), [contract]);
+   const contractStatus = useMemo(() => {
+      const status = contract?.status;
+      if (!status) return 'Đang cập nhật';
+      if (status === 'ACTIVE') return 'Đang hiệu lực';
+      if (status === 'EXPIRED') return 'Hết hạn';
+      if (status === 'TERMINATED') return 'Đã thanh lý';
+      return status;
+   }, [contract]);
    const rules = [
       {
          id: 1,
@@ -68,11 +134,11 @@ export default function ContractPage() {
                      </div>
                      <div>
                         <h2 className="text-[24px] font-bold text-[#0F3A40]">Khu trọ The Nest</h2>
-                        <p className="text-[#82ABB0] font-medium text-[15px]">P.302 • Tầng 3 • Tòa A</p>
+                        <p className="text-[#82ABB0] font-medium text-[15px]">{roomNumber !== '—' ? `${roomNumber}` : '—'}</p>
                      </div>
                   </div>
                   <div className="bg-[#EBFDFB] text-[#14B8A6] text-[11px] font-extrabold px-5 py-2 rounded-full tracking-widest uppercase border border-[#14B8A6]/20 shadow-sm">
-                     Đang hiệu lực
+                     {contractStatus}
                   </div>
                </div>
 
@@ -80,19 +146,19 @@ export default function ContractPage() {
                <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-16">
                   <div className="flex flex-col gap-1.5">
                      <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">NGÀY BẮT ĐẦU</p>
-                     <p className="text-[18px] font-bold text-[#0F3A40]">15/09/2023</p>
+                     <p className="text-[18px] font-bold text-[#0F3A40]">{startDate}</p>
                   </div>
                   <div className="flex flex-col gap-1.5">
                      <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">NGÀY KẾT THÚC</p>
-                     <p className="text-[18px] font-bold text-[#0F3A40]">15/09/2024</p>
+                     <p className="text-[18px] font-bold text-[#0F3A40]">{endDate}</p>
                   </div>
                   <div className="flex flex-col gap-1.5">
                      <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">TIỀN THUÊ</p>
-                     <p className="text-[18px] font-bold text-[#14B8A6]">7.500.000₫</p>
+                     <p className="text-[18px] font-bold text-[#14B8A6]">{rentPrice}</p>
                   </div>
                   <div className="flex flex-col gap-1.5">
                      <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">TIỀN CỌC</p>
-                     <p className="text-[18px] font-bold text-[#0F3A40]">15.000.000₫</p>
+                     <p className="text-[18px] font-bold text-[#0F3A40]">{deposit}</p>
                   </div>
                </div>
 

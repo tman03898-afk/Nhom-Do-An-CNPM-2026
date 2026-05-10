@@ -1,20 +1,117 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Wallet, Image as ImageIcon, ArrowRight } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { apiFetch, resolveBackendAssetUrl } from '../../lib/api';
+
+function normalizePaymentStatus(s) {
+   return String(s ?? '').trim().toUpperCase();
+}
 
 export default function PaymentManagePage() {
-   const pendingApprovals = [
-      { name: 'Trần Thế Vinh', room: 'Phòng 402', desc: 'Hóa đơn T9', amount: '4.500.000' },
-      { name: 'Lê Thị Mai', room: 'Phòng 201', desc: 'Phí dịch vụ', amount: '1.250.000' },
-      { name: 'Hoàng Nam', room: 'Phòng 505', desc: 'Đặt cọc', amount: '6.000.000' },
-      { name: 'Phạm Anh', room: 'Phòng 103', desc: 'Hóa đơn T9', amount: '3.800.000' },
-   ];
+   const { token } = useAuth();
+   const { addToast } = useToast();
+   const [payments, setPayments] = useState([]);
+   const [isLoading, setIsLoading] = useState(false);
+   const [actionLoadingId, setActionLoadingId] = useState(null);
+   const [previewImage, setPreviewImage] = useState('');
+   const recentTransactionsRef = useRef(null);
 
-   const transactions = [
-      { id: '#TN-92831', avatarBg: 'bg-[#0F3A40]', name: 'Nguyễn Bảo An', room: 'Phòng 301', date: '12/09/2023', amount: '5.200.000đ', method: 'Chuyển khoản', status: 'THÀNH CÔNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-      { id: '#TN-92822', avatarBg: 'bg-[#0F3A40]', name: 'Lê Thu Thảo', room: 'Phòng 404', date: '11/09/2023', amount: '4.150.000đ', method: 'Chuyển khoản', status: 'THÀNH CÔNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-      { id: '#TN-92815', avatarBg: 'bg-[#0F3A40]', name: 'Vũ Minh Hiếu', room: 'Phòng 102', date: '10/09/2023', amount: '3.900.000đ', method: 'Ví điện tử', status: 'THÀNH CÔNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-      { id: '#TN-92799', avatarBg: 'bg-[#0F3A40]', name: 'Đặng Mỹ Linh', room: 'Phòng 205', date: '09/09/2023', amount: '4.500.000đ', method: 'Chuyển khoản', status: 'THẤT BẠI', statusPill: 'bg-[#FFF0F0] text-[#D14D4D]', dot: 'bg-[#D14D4D]' },
-      { id: '#TN-92780', avatarBg: 'bg-[#0F3A40]', name: 'Phạm Hoàng Đăng', room: 'Phòng 403', date: '08/09/2023', amount: '5.800.000đ', method: 'Chuyển khoản', status: 'THÀNH CÔNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-   ];
+   const refresh = async () => {
+      if (!token) return;
+      setIsLoading(true);
+      try {
+         const data = await apiFetch('/admin/payments', { token });
+         setPayments(data.payments || []);
+      } catch (e) {
+         setPayments([]);
+      } finally {
+         setIsLoading(false);
+      }
+   };
+
+   useEffect(() => {
+      refresh();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [token]);
+
+   const pendingApprovals = useMemo(
+      () =>
+         payments
+            .filter((p) => normalizePaymentStatus(p.status) === 'PENDING')
+            .sort((a, b) => Number(b.payment_id || 0) - Number(a.payment_id || 0)),
+      [payments]
+   );
+
+   /** Sau khi duyệt/từ chối: không còn PENDING → hiển thị ở “Giao dịch gần đây”, mới nhất trước. */
+   const transactions = useMemo(() => {
+      const list = payments.filter((p) => normalizePaymentStatus(p.status) !== 'PENDING');
+      const sortKey = (p) => {
+         const raw = p.paid_at || p.updated_at || p.created_at;
+         const t = raw ? new Date(raw).getTime() : 0;
+         return Number.isFinite(t) ? t : 0;
+      };
+      return [...list].sort((a, b) => sortKey(b) - sortKey(a));
+   }, [payments]);
+
+   const formatMoney = (value) => {
+      const n = Number(value || 0);
+      return Number.isFinite(n) ? n.toLocaleString('vi-VN') : '0';
+   };
+
+   const methodLabel = (m) => {
+      const v = String(m || '').toUpperCase();
+      if (v === 'BANK_TRANSFER') return 'Chuyển khoản';
+      if (v === 'CASH') return 'Tiền mặt';
+      if (v === 'ZALO_PAY') return 'ZaloPay';
+      if (v === 'MOMO') return 'MoMo';
+      return v || 'Khác';
+   };
+
+   const statusUi = (s) => {
+      const v = String(s || '').toUpperCase();
+      if (v === 'APPROVED') {
+         return { label: 'APPROVED', pill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' };
+      }
+      if (v === 'REJECTED') {
+         return { label: 'REJECTED', pill: 'bg-[#FFF0F0] text-[#D14D4D]', dot: 'bg-[#D14D4D]' };
+      }
+      return { label: 'PENDING', pill: 'bg-[#FFF3E0] text-[#E68A00]', dot: 'bg-[#E68A00]' };
+   };
+
+   const handleApprove = async (paymentId) => {
+      if (!token) return;
+      setActionLoadingId(paymentId);
+      try {
+         await apiFetch(`/admin/payments/${paymentId}/approve`, { token, method: 'POST' });
+         addToast('Đã duyệt thanh toán thành công!', 'success');
+         await refresh();
+         setTimeout(() => {
+            recentTransactionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+         }, 350);
+      } catch (e) {
+         addToast(e?.message || 'Không thể duyệt thanh toán.', 'error');
+      } finally {
+         setActionLoadingId(null);
+      }
+   };
+
+   const handleReject = async (paymentId) => {
+      if (!token) return;
+      setActionLoadingId(paymentId);
+      try {
+         await apiFetch(`/admin/payments/${paymentId}/reject`, { token, method: 'POST' });
+         addToast('Đã từ chối thanh toán!', 'success');
+         await refresh();
+         setTimeout(() => {
+            recentTransactionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+         }, 350);
+      } catch (e) {
+         addToast(e?.message || 'Không thể từ chối thanh toán.', 'error');
+      } finally {
+         setActionLoadingId(null);
+      }
+   };
 
    return (
       <div className="w-full max-w-[1200px] mx-auto mt-2 px-4 pb-32 relative flex flex-col gap-10">
@@ -25,12 +122,22 @@ export default function PaymentManagePage() {
                   {/* <p className="text-[10px] font-bold text-[#14B8A6] uppercase tracking-widest mb-1.5 leading-none">Chờ xử lý</p> */}
                   <h1 className="text-[32px] font-sans font-bold text-[#0F3A40] tracking-tight leading-none">Duyệt thanh toán</h1>
                </div>
-               <span className="text-[13px] font-medium text-[#4A787C]">Hiện có <span className="font-bold text-[#14B8A6]">04</span> yêu cầu mới</span>
+               <span className="text-[13px] font-medium text-[#4A787C]">
+                  Hiện có <span className="font-bold text-[#14B8A6]">{pendingApprovals.length}</span> yêu cầu mới
+               </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-               {pendingApprovals.map((item, idx) => (
-                  <div key={idx} className="bg-[#F2FCFD] rounded-[32px] p-6 shadow-sm border border-transparent flex flex-col">
+               {isLoading ? (
+                  <div className="col-span-full bg-[#F2FCFD] rounded-[32px] p-8 border border-transparent text-[#4A787C] font-medium">
+                     Đang tải dữ liệu thanh toán...
+                  </div>
+               ) : pendingApprovals.length === 0 ? (
+                  <div className="col-span-full bg-[#F2FCFD] rounded-[32px] p-8 border border-transparent text-[#4A787C] font-medium">
+                     Chưa có yêu cầu duyệt nào. Khách gửi minh chứng thanh toán sẽ hiển thị tại đây.
+                  </div>
+               ) : pendingApprovals.map((item) => (
+                  <div key={item.payment_id} className="bg-[#F2FCFD] rounded-[32px] p-6 shadow-sm border border-transparent flex flex-col">
                      <div className="flex justify-between items-start mb-6">
                         <div className="w-10 h-10 rounded-[12px] bg-[#DDF5F7] flex items-center justify-center text-[#14B8A6]">
                            <Wallet className="w-5 h-5" />
@@ -41,24 +148,43 @@ export default function PaymentManagePage() {
                      </div>
 
                      <div className="mb-6">
-                        <h3 className="text-[18px] font-bold text-[#0F3A40]">{item.name}</h3>
-                        <p className="text-[13px] text-[#4A787C] font-medium mt-1">{item.room} &bull; {item.desc}</p>
+                        <h3 className="text-[18px] font-bold text-[#0F3A40]">{item.full_name || '—'}</h3>
+                        <p className="text-[13px] text-[#4A787C] font-medium mt-1">
+                           {item.room_number ? `Phòng ${item.room_number}` : '—'} &bull; HĐ #{item.invoice_id}
+                        </p>
                      </div>
 
                      <div className="mb-6">
-                        <h2 className="text-[28px] font-bold text-[#0F3A40] leading-none">{item.amount} <span className="text-[12px] text-[#4A787C] font-bold">VND</span></h2>
+                        <h2 className="text-[28px] font-bold text-[#0F3A40] leading-none">
+                           {formatMoney(item.amount)} <span className="text-[12px] text-[#4A787C] font-bold">VND</span>
+                        </h2>
                      </div>
 
-                     <button className="w-full bg-white hover:bg-[#EBFDFB] flex items-center justify-center gap-2 py-3 rounded-2xl shadow-sm text-[13px] font-bold text-[#0F3A40] transition-colors mb-4 border border-[#BCE1E5]/30">
+                     <button
+                        type="button"
+                        onClick={() => item.proof_url && setPreviewImage(String(item.proof_url))}
+                        disabled={!item.proof_url}
+                        className="w-full bg-white hover:bg-[#EBFDFB] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 py-3 rounded-2xl shadow-sm text-[13px] font-bold text-[#0F3A40] transition-colors mb-4 border border-[#BCE1E5]/30"
+                     >
                         <ImageIcon className="w-4 h-4 text-[#14B8A6]" /> Minh chứng chuyển khoản
                      </button>
 
                      <div className="grid grid-cols-2 gap-3 mt-auto">
-                        <button className="bg-[#14B8A6] hover:bg-[#0da090] text-white py-2.5 rounded-full text-[13px] font-bold transition-colors shadow-md">
-                           Duyệt
+                        <button
+                           type="button"
+                           disabled={actionLoadingId === item.payment_id}
+                           onClick={() => handleApprove(item.payment_id)}
+                           className="bg-[#14B8A6] hover:bg-[#0da090] disabled:opacity-70 text-white py-2.5 rounded-full text-[13px] font-bold transition-colors shadow-md"
+                        >
+                           {actionLoadingId === item.payment_id ? 'Đang duyệt...' : 'Duyệt'}
                         </button>
-                        <button className="bg-transparent border border-[#FFD9D9] hover:bg-[#FFF0F0] text-[#D14D4D] py-2.5 rounded-full text-[13px] font-bold transition-colors">
-                           Từ chối
+                        <button
+                           type="button"
+                           disabled={actionLoadingId === item.payment_id}
+                           onClick={() => handleReject(item.payment_id)}
+                           className="bg-transparent border border-[#FFD9D9] hover:bg-[#FFF0F0] disabled:opacity-70 text-[#D14D4D] py-2.5 rounded-full text-[13px] font-bold transition-colors"
+                        >
+                           {actionLoadingId === item.payment_id ? 'Đang xử lý...' : 'Từ chối'}
                         </button>
                      </div>
                   </div>
@@ -67,13 +193,13 @@ export default function PaymentManagePage() {
          </section>
 
          {/* Middle Section: Recent Transactions */}
-         <section>
+         <section ref={recentTransactionsRef} id="admin-recent-transactions">
             <div className="flex justify-between items-end mb-6 relative z-10">
                <div>
                   <p className="text-[10px] font-bold text-[#14B8A6] uppercase tracking-widest mb-1.5 leading-none">Lịch sử</p>
                   <h2 className="text-[28px] font-sans font-bold text-[#0F3A40] tracking-tight leading-none">Giao dịch gần đây</h2>
                </div>
-               <button className="text-[13px] font-bold text-[#0F3A40] hover:text-[#14B8A6] transition-colors flex items-center gap-1.5">
+               <button type="button" onClick={refresh} className="text-[13px] font-bold text-[#0F3A40] hover:text-[#14B8A6] transition-colors flex items-center gap-1.5">
                   Xem tất cả <ArrowRight className="w-4 h-4" />
                </button>
             </div>
@@ -92,41 +218,58 @@ export default function PaymentManagePage() {
                         </tr>
                      </thead>
                      <tbody>
-                        {transactions.map((tx, idx) => (
-                           <tr key={idx} className="border-b border-[#BCE1E5]/40 last:border-0 hover:bg-white/50 transition-colors">
+                        {isLoading ? (
+                           <tr>
+                              <td colSpan={6} className="py-10 text-center text-[13px] font-medium text-[#4A787C]">
+                                 Đang tải dữ liệu...
+                              </td>
+                           </tr>
+                        ) : transactions.length === 0 ? (
+                           <tr>
+                              <td colSpan={6} className="py-10 text-center text-[13px] font-medium text-[#4A787C]">
+                                 Chưa có giao dịch đã duyệt hoặc đã từ chối. Sau khi xử lý yêu cầu ở trên, giao dịch sẽ hiển thị tại đây.
+                              </td>
+                           </tr>
+                        ) : transactions.map((tx) => {
+                           const ui = statusUi(tx.status);
+                           return (
+                           <tr key={tx.payment_id} className="border-b border-[#BCE1E5]/40 last:border-0 hover:bg-white/50 transition-colors">
                               <td className="py-4 px-2">
-                                 <span className="font-bold text-[#82ABB0] text-[13px]">{tx.id}</span>
+                                 <span className="font-bold text-[#82ABB0] text-[13px]">#{tx.payment_id}</span>
                               </td>
                               <td className="py-4 px-2">
                                  <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-full ${tx.avatarBg} flex items-center justify-center overflow-hidden`}>
-                                       <img src={`https://ui-avatars.com/api/?name=${tx.name}&background=0F3A40&color=fff`} className="w-full h-full object-cover" alt="avatar" />
+                                    <div className="w-8 h-8 rounded-full bg-[#0F3A40] flex items-center justify-center overflow-hidden">
+                                       <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(tx.full_name || 'Tenant')}&background=0F3A40&color=fff`} className="w-full h-full object-cover" alt="avatar" />
                                     </div>
                                     <div className="flex flex-col">
-                                       <span className="font-bold text-[#0F3A40] text-[14px] leading-tight">{tx.name}</span>
-                                       <span className="text-[11px] text-[#82ABB0] font-medium">{tx.room}</span>
+                                       <span className="font-bold text-[#0F3A40] text-[14px] leading-tight">{tx.full_name || '—'}</span>
+                                       <span className="text-[11px] text-[#82ABB0] font-medium">{tx.room_number ? `Phòng ${tx.room_number}` : '—'}</span>
                                     </div>
                                  </div>
                               </td>
                               <td className="py-4 px-2">
-                                 <span className="text-[#0F3A40] text-[14px] font-medium">{tx.date}</span>
+                                 <span className="text-[#0F3A40] text-[14px] font-medium">
+                                    {tx.paid_at ? new Date(tx.paid_at).toLocaleDateString('vi-VN') : '—'}
+                                 </span>
                               </td>
                               <td className="py-4 px-2">
-                                 <span className="font-bold text-[#0F3A40] text-[14px]">{tx.amount}</span>
+                                 <span className="font-bold text-[#0F3A40] text-[14px]">{formatMoney(tx.amount)}</span>
                               </td>
                               <td className="py-4 px-2">
                                  <div className="text-[13px] text-[#4A787C] font-medium leading-tight w-16">
-                                    {tx.method}
+                                    {methodLabel(tx.method)}
                                  </div>
                               </td>
                               <td className="py-4 px-2">
-                                 <div className={`${tx.statusPill} inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase`}>
-                                    <span className={`w-1 h-1 rounded-full ${tx.dot}`}></span>
-                                    {tx.status}
+                                 <div className={`${ui.pill} inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase`}>
+                                    <span className={`w-1 h-1 rounded-full ${ui.dot}`}></span>
+                                    {ui.label}
                                  </div>
                               </td>
                            </tr>
-                        ))}
+                           );
+                        })}
                      </tbody>
                   </table>
                </div>
@@ -192,6 +335,30 @@ export default function PaymentManagePage() {
                </button>
             </div>
          </section>
+         {previewImage ? (
+            <div
+               className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+               onClick={() => setPreviewImage('')}
+            >
+               <div
+                  className="bg-white rounded-2xl p-3 max-w-3xl w-full shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+               >
+                  <img
+                     src={resolveBackendAssetUrl(previewImage)}
+                     alt="Minh chứng thanh toán"
+                     className="w-full max-h-[80vh] object-contain rounded-xl"
+                  />
+                  <button
+                     type="button"
+                     onClick={() => setPreviewImage('')}
+                     className="mt-3 w-full py-2.5 rounded-xl bg-[#0F3A40] text-white font-bold text-sm hover:bg-[#1F545B]"
+                  >
+                     Đóng xem ảnh
+                  </button>
+               </div>
+            </div>
+         ) : null}
       </div>
    );
 }

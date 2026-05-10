@@ -76,6 +76,18 @@ async function ensureInvoicesTableMinimal() {
   await ensureEnumType('invoice_status', ['DRAFT', 'ISSUED', 'PAID', 'OVERDUE', 'CANCELLED']);
   // Không tạo lại bảng invoices vì đã tồn tại với schema khác
   // Chỉ đảm bảo enum type tồn tại
+  // Approve payment cập nhật updated_at — nhiều DB cũ không có cột này.
+  await pool.query(
+    `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`
+  );
+}
+
+/** Khớp nhãn enum thực tế (UNPAID/PARTIAL/PAID vs DRAFT/ISSUED/PAID…). */
+async function resolveInvoicePaidStatusValue() {
+  const labels = await getEnumLabels('invoice_status');
+  if (labels.has('PAID')) return 'PAID';
+  if (labels.has('ISSUED')) return 'ISSUED';
+  return 'PAID';
 }
 
 async function ensurePaymentsTable() {
@@ -168,6 +180,71 @@ async function ensurePaymentsTable() {
        WHERE method IS NULL OR method = '${transferMethodLabel}'::payment_method`
     );
   }
+}
+
+/** Legacy DB uses amount_paid + payment_method; newer schema uses amount + method. Populate whichever exists. */
+async function insertPendingTenantPayment(poolRef, payload) {
+  const columnsResult = await poolRef.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'payments'`
+  );
+  const cols = new Set(columnsResult.rows.map((row) => row.column_name));
+
+  const { invoiceId, amount, normalizedMethod, proofUrl, recordedBy, note } = payload;
+
+  const fragments = [];
+  const push = (col, val, cast = '') => {
+    fragments.push({ col, val, cast });
+  };
+
+  push('invoice_id', invoiceId);
+
+  if (cols.has('amount') && cols.has('amount_paid')) {
+    push('amount', amount);
+    push('amount_paid', amount);
+  } else if (cols.has('amount')) {
+    push('amount', amount);
+  } else if (cols.has('amount_paid')) {
+    push('amount_paid', amount);
+  }
+
+  if (cols.has('method') && cols.has('payment_method')) {
+    push('method', normalizedMethod, '::payment_method');
+    push('payment_method', normalizedMethod, '::payment_method');
+  } else if (cols.has('method')) {
+    push('method', normalizedMethod, '::payment_method');
+  } else if (cols.has('payment_method')) {
+    push('payment_method', normalizedMethod, '::payment_method');
+  }
+
+  if (cols.has('proof_url')) {
+    push('proof_url', proofUrl);
+  }
+
+  if (cols.has('status')) {
+    push('status', 'PENDING', '::payment_status');
+  }
+
+  if (cols.has('recorded_by')) {
+    push('recorded_by', recordedBy);
+  }
+
+  if (cols.has('note')) {
+    push('note', note);
+  }
+
+  const columnSql = fragments.map((f) => f.col).join(', ');
+  const placeholders = fragments.map((f, idx) => `$${idx + 1}${f.cast}`).join(', ');
+  const values = fragments.map((f) => f.val);
+
+  const sql = `
+    INSERT INTO payments (${columnSql})
+    VALUES (${placeholders})
+    RETURNING *
+  `;
+
+  return poolRef.query(sql, values);
 }
 
 router.get('/admin/payments', requireAuth, requireAdmin, async (req, res) => {
@@ -286,19 +363,14 @@ router.post('/tenant/payments', requireAuth, requireTenant, async (req, res) => 
     const methodLabels = await getEnumLabels('payment_method');
     const normalizedMethod = resolveMethodValue(method, methodLabels);
 
-    const result = await pool.query(
-      `INSERT INTO payments (invoice_id, amount, method, proof_url, status, paid_at, recorded_by, note)
-       VALUES ($1, $2, $3::payment_method, $4, 'PENDING', NOW(), $5, $6)
-       RETURNING payment_id, invoice_id, amount, method, proof_url, status, paid_at, note, created_at, updated_at`,
-      [
-        invoiceId,
-        Number.isFinite(amt) ? amt : 0,
-        normalizedMethod,
-        String(proof_url),
-        req.auth.sub,
-        note ? String(note) : null,
-      ]
-    );
+    const result = await insertPendingTenantPayment(pool, {
+      invoiceId,
+      amount: Number.isFinite(amt) ? amt : 0,
+      normalizedMethod,
+      proofUrl: String(proof_url),
+      recordedBy: req.auth.sub,
+      note: note ? String(note) : null,
+    });
 
     return res.status(201).json({ ok: true, payment: result.rows[0] });
   } catch (err) {
@@ -366,22 +438,25 @@ router.post('/admin/payments/:id/approve', requireAuth, requireAdmin, async (req
       await client.query('ROLLBACK');
       return res.status(404).json({ ok: false, message: 'payment not found' });
     }
-    if (payment.rows[0].status !== 'PENDING') {
+    const payStatus = String(payment.rows[0].status ?? '').toUpperCase();
+    if (payStatus !== 'PENDING') {
       await client.query('ROLLBACK');
       return res.status(409).json({ ok: false, message: 'payment is not pending' });
     }
 
+    const invoicePaidStatus = await resolveInvoicePaidStatusValue();
+
     await client.query(
       `UPDATE payments
-       SET status = 'APPROVED', recorded_by = $2, updated_at = NOW()
+       SET status = 'APPROVED'::payment_status, recorded_by = $2, updated_at = NOW()
        WHERE payment_id = $1`,
       [paymentId, req.auth.sub]
     );
     await client.query(
       `UPDATE invoices
-       SET status = 'PAID'::invoice_status, updated_at = NOW()
-       WHERE invoice_id = $1`,
-      [payment.rows[0].invoice_id]
+       SET status = $1::invoice_status, updated_at = NOW()
+       WHERE invoice_id = $2`,
+      [invoicePaidStatus, payment.rows[0].invoice_id]
     );
 
     await client.query('COMMIT');
@@ -412,7 +487,7 @@ router.post('/admin/payments/:id/reject', requireAuth, requireAdmin, async (req,
 
     const result = await pool.query(
       `UPDATE payments
-       SET status = 'REJECTED', recorded_by = $2, updated_at = NOW()
+       SET status = 'REJECTED'::payment_status, recorded_by = $2, updated_at = NOW()
        WHERE payment_id = $1
        RETURNING payment_id`,
       [paymentId, req.auth.sub]

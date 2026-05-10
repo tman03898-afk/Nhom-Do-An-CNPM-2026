@@ -1,40 +1,324 @@
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, AreaChart, Area
-} from 'recharts';
-import { 
-  Calendar, Download, ArrowUpRight, ArrowDownRight, 
-  Users, Home, TrendingUp, AlertTriangle, Info, CheckCircle2,
-  TrendingDown, DollarSign
+import { useEffect, useMemo, useState } from 'react';
+import {
+  BedDouble,
+  Calendar,
+  CreditCard,
+  Download,
+  FileText,
+  Gauge,
+  Loader2,
+  Percent,
+  Users,
+  Wrench,
 } from 'lucide-react';
-
-const revenueData = [
-  { name: 'Th1', revenue: 400, expense: 240 },
-  { name: 'Th3', revenue: 500, expense: 280 },
-  { name: 'Th5', revenue: 450, expense: 320 },
-  { name: 'Th7', revenue: 650, expense: 380 },
-  { name: 'Th9', revenue: 850, expense: 420 },
-  { name: 'Th11', revenue: 750, expense: 390 },
-];
-
-const tenantSegmentData = [
-  { name: 'Sinh viên', value: 65, color: '#14B8A6' },
-  { name: 'Người đi làm', value: 25, color: '#0F3A40' },
-  { name: 'Khác', value: 10, color: '#BCE1E5' },
-];
-
-const floorOccupancy = [
-  { floor: 'Tầng 1 (Premium)', percent: 100, color: '#14B8A6' },
-  { floor: 'Tầng 2 (Studio)', percent: 92, color: '#14B8A6' },
-  { floor: 'Tầng 3 (Standard)', percent: 88, color: '#14B8A6' },
-  { floor: 'Tầng 4 (Loft)', percent: 96, color: '#14B8A6' },
-  { floor: 'Penthouse', percent: 75, color: '#14B8A6' },
-];
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 
 export default function AnalyticsPage() {
+  const { token } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [overview, setOverview] = useState(null);
+  const [rooms, setRooms] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [tickets, setTickets] = useState([]);
+  const [contracts, setContracts] = useState([]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!token) return;
+      setIsLoading(true);
+      setLoadError('');
+      try {
+        const results = await Promise.allSettled([
+          apiFetch('/admin/analytics/overview', { token }),
+          apiFetch('/rooms', { token }),
+          apiFetch('/admin/invoices', { token }),
+          apiFetch('/admin/tickets', { token }),
+          apiFetch('/admin/contracts', { token }),
+        ]);
+
+        const [ov, roomRes, invoiceRes, ticketRes, contractRes] = results;
+        const failed = [];
+
+        if (ov.status === 'fulfilled') {
+          setOverview(ov.value?.overview || null);
+        } else {
+          setOverview(null);
+          failed.push('overview');
+        }
+
+        if (roomRes.status === 'fulfilled') {
+          setRooms(roomRes.value?.rooms || []);
+        } else {
+          setRooms([]);
+          failed.push('rooms');
+        }
+
+        if (invoiceRes.status === 'fulfilled') {
+          setInvoices(invoiceRes.value?.invoices || []);
+        } else {
+          setInvoices([]);
+          failed.push('invoices');
+        }
+
+        if (ticketRes.status === 'fulfilled') {
+          setTickets(ticketRes.value?.tickets || []);
+        } else {
+          setTickets([]);
+          failed.push('tickets');
+        }
+
+        if (contractRes.status === 'fulfilled') {
+          setContracts(contractRes.value?.contracts || []);
+        } else {
+          setContracts([]);
+          failed.push('contracts');
+        }
+
+        if (failed.length > 0) {
+          setLoadError(`Một số nguồn dữ liệu lỗi (${failed.join(', ')}), số liệu đang hiển thị phần còn lại.`);
+        }
+      } catch (error) {
+        setLoadError(error?.message || 'Không tải được dữ liệu phân tích');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    run();
+  }, [token]);
+
+  const metrics = useMemo(() => {
+    const toNum = (v) => Number(v || 0);
+    const roomsTotal = toNum(overview?.rooms_total || rooms.length);
+    const roomsRented = toNum(overview?.rooms_rented || rooms.filter((r) => r.status === 'RENTED').length);
+    const roomsAvailable = toNum(overview?.rooms_available || rooms.filter((r) => r.status === 'AVAILABLE').length);
+    const tenantsTotal = toNum(overview?.tenants_total);
+
+    const occupancyRate = roomsTotal > 0 ? Math.round((roomsRented / roomsTotal) * 100) : 0;
+
+    const activeContracts = contracts.filter((c) => c.status === 'ACTIVE').length;
+    const now = new Date();
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const expiringSoon = contracts.filter(
+      (c) => c.status === 'ACTIVE' && c.end_date && new Date(c.end_date) <= in30Days
+    ).length;
+
+    const paidInvoices = invoices.filter((i) => i.status === 'PAID');
+    const unpaidInvoices = invoices.filter((i) => i.status !== 'PAID' && i.status !== 'CANCELLED');
+    const totalRevenue = paidInvoices.reduce((sum, i) => sum + toNum(i.total_amount), 0);
+    const outstandingAmount = unpaidInvoices.reduce((sum, i) => sum + toNum(i.total_amount), 0);
+
+    const openTickets = tickets.filter((t) => t.status === 'OPEN').length;
+
+    return {
+      roomsTotal,
+      roomsRented,
+      roomsAvailable,
+      tenantsTotal,
+      occupancyRate,
+      activeContracts,
+      expiringSoon,
+      totalRevenue,
+      outstandingAmount,
+      openTickets,
+      unpaidCount: unpaidInvoices.length,
+    };
+  }, [overview, rooms, invoices, tickets, contracts]);
+
+  const insights = useMemo(() => {
+    const list = [];
+
+    if (metrics.occupancyRate >= 90) {
+      list.push(`Tỷ lệ lấp đầy đạt ${metrics.occupancyRate}%, công suất phòng đang rất cao.`);
+    } else if (metrics.occupancyRate >= 70) {
+      list.push(`Tỷ lệ lấp đầy hiện ${metrics.occupancyRate}%, trạng thái vận hành ổn định.`);
+    } else {
+      list.push(`Tỷ lệ lấp đầy mới ${metrics.occupancyRate}%, nên ưu tiên chiến dịch lấp phòng trống.`);
+    }
+
+    if (metrics.unpaidCount > 0) {
+      list.push(
+        `Có ${metrics.unpaidCount} hóa đơn chưa thanh toán với tổng ${metrics.outstandingAmount.toLocaleString('vi-VN')}đ cần theo dõi.`
+      );
+    } else {
+      list.push('Hiện không có hóa đơn tồn đọng, dòng tiền thu phí đang tốt.');
+    }
+
+    if (metrics.expiringSoon > 0) {
+      list.push(`Có ${metrics.expiringSoon} hợp đồng sắp hết hạn trong 30 ngày tới, nên nhắc gia hạn sớm.`);
+    } else {
+      list.push('Chưa có hợp đồng sắp hết hạn trong 30 ngày tới.');
+    }
+
+    if (metrics.openTickets > 0) {
+      list.push(`Có ${metrics.openTickets} yêu cầu bảo trì đang mở, cần ưu tiên xử lý để giữ trải nghiệm thuê.`);
+    } else {
+      list.push('Không có yêu cầu bảo trì mở, chất lượng vận hành đang ổn định.');
+    }
+
+    return list;
+  }, [metrics]);
+
+  const cards = [
+    {
+      id: 'occupancy',
+      title: 'Tỷ lệ lấp đầy',
+      value: `${metrics.occupancyRate}%`,
+      helper: `${metrics.roomsRented}/${metrics.roomsTotal} phòng đang thuê`,
+      icon: Gauge,
+    },
+    {
+      id: 'revenue',
+      title: 'Doanh thu đã thu',
+      value: `${metrics.totalRevenue.toLocaleString('vi-VN')}đ`,
+      helper: 'Tổng từ hóa đơn đã thanh toán',
+      icon: CreditCard,
+    },
+    {
+      id: 'unpaid',
+      title: 'Công nợ cần thu',
+      value: `${metrics.outstandingAmount.toLocaleString('vi-VN')}đ`,
+      helper: `${metrics.unpaidCount} hóa đơn chưa thanh toán`,
+      icon: FileText,
+    },
+    {
+      id: 'tenants',
+      title: 'Tổng người thuê',
+      value: `${metrics.tenantsTotal}`,
+      helper: `${metrics.activeContracts} hợp đồng đang hiệu lực`,
+      icon: Users,
+    },
+    {
+      id: 'available',
+      title: 'Phòng trống',
+      value: `${metrics.roomsAvailable}`,
+      helper: 'Phòng sẵn sàng khai thác',
+      icon: BedDouble,
+    },
+    {
+      id: 'tickets',
+      title: 'Bảo trì đang mở',
+      value: `${metrics.openTickets}`,
+      helper: `${metrics.expiringSoon} hợp đồng sắp hết hạn`,
+      icon: Wrench,
+    },
+  ];
+
+  const handleExportCsv = () => {
+    const toDateTime = (input) => {
+      if (!input) return '';
+      const parsed = new Date(input);
+      if (Number.isNaN(parsed.getTime())) return '';
+      return parsed.toLocaleString('vi-VN');
+    };
+    const escapeCsv = (value) => {
+      const normalized = String(value ?? '');
+      return `"${normalized.replace(/"/g, '""')}"`;
+    };
+    const row = (values) => values.map(escapeCsv).join(',');
+    const nowText = new Date().toLocaleString('vi-VN');
+
+    const lines = [];
+    lines.push(row(['Mục', 'Giá trị']));
+    lines.push(row(['Thời gian xuất báo cáo', nowText]));
+    lines.push(row(['Tổng số phòng', metrics.roomsTotal]));
+    lines.push(row(['Phòng đang thuê', metrics.roomsRented]));
+    lines.push(row(['Phòng trống', metrics.roomsAvailable]));
+    lines.push(row(['Tỷ lệ lấp đầy (%)', metrics.occupancyRate]));
+    lines.push(row(['Tổng người thuê', metrics.tenantsTotal]));
+    lines.push(row(['Hợp đồng đang hiệu lực', metrics.activeContracts]));
+    lines.push(row(['Hợp đồng sắp hết hạn 30 ngày', metrics.expiringSoon]));
+    lines.push(row(['Tổng doanh thu đã thu', metrics.totalRevenue]));
+    lines.push(row(['Công nợ cần thu', metrics.outstandingAmount]));
+    lines.push(row(['Số hóa đơn chưa thanh toán', metrics.unpaidCount]));
+    lines.push(row(['Yêu cầu bảo trì đang mở', metrics.openTickets]));
+    lines.push('');
+
+    lines.push(row(['Nhận định']));
+    insights.forEach((insight) => lines.push(row([insight])));
+    lines.push('');
+
+    lines.push(row(['PHÒNG']));
+    lines.push(row(['room_id', 'room_number', 'status', 'price', 'area', 'max_tenants']));
+    rooms.forEach((room) => {
+      lines.push(
+        row([
+          room.room_id,
+          room.room_number,
+          room.status,
+          room.price,
+          room.area,
+          room.max_tenants,
+        ])
+      );
+    });
+    lines.push('');
+
+    lines.push(row(['HÓA ĐƠN']));
+    lines.push(row(['invoice_id', 'contract_id', 'status', 'total_amount', 'due_date', 'created_at']));
+    invoices.forEach((invoice) => {
+      lines.push(
+        row([
+          invoice.invoice_id,
+          invoice.contract_id,
+          invoice.status,
+          invoice.total_amount,
+          toDateTime(invoice.due_date),
+          toDateTime(invoice.created_at),
+        ])
+      );
+    });
+    lines.push('');
+
+    lines.push(row(['HỢP ĐỒNG']));
+    lines.push(row(['contract_id', 'tenant_id', 'room_id', 'status', 'start_date', 'end_date', 'monthly_rent']));
+    contracts.forEach((contract) => {
+      lines.push(
+        row([
+          contract.contract_id,
+          contract.tenant_id,
+          contract.room_id,
+          contract.status,
+          toDateTime(contract.start_date),
+          toDateTime(contract.end_date),
+          contract.monthly_rent,
+        ])
+      );
+    });
+    lines.push('');
+
+    lines.push(row(['BẢO TRÌ']));
+    lines.push(row(['ticket_id', 'room_id', 'tenant_id', 'status', 'title', 'created_at']));
+    tickets.forEach((ticket) => {
+      lines.push(
+        row([
+          ticket.ticket_id,
+          ticket.room_id,
+          ticket.tenant_id,
+          ticket.status,
+          ticket.title,
+          toDateTime(ticket.created_at),
+        ])
+      );
+    });
+
+    const csvContent = `\uFEFF${lines.join('\n')}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `bao-cao-phan-tich-admin-${dateStamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="w-full max-w-[1400px] mx-auto pb-12">
-      {/* Header section */}
       <div className="flex justify-between items-end mb-8 pt-4">
         <div>
           <h1 className="text-[36px] font-bold text-[#0F3A40] leading-none mb-3">Phân tích Dữ liệu</h1>
@@ -44,247 +328,89 @@ export default function AnalyticsPage() {
           <button className="flex items-center gap-2 bg-white border border-[#BCE1E5]/50 px-5 py-3 rounded-2xl text-[14px] font-bold text-[#0F3A40] shadow-sm hover:shadow-md transition-all">
             <Calendar className="w-4 h-4 text-[#14B8A6]" /> 30 ngày qua
           </button>
-          <button className="flex items-center gap-2 bg-[#0F3A40] text-white px-5 py-3 rounded-2xl text-[14px] font-bold shadow-lg shadow-[#0F3A40]/20 hover:bg-[#1F545B] transition-all">
-            <Download className="w-4 h-4" /> Xuất báo cáo
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={isLoading}
+            className="flex items-center gap-2 bg-[#0F3A40] text-white px-5 py-3 rounded-2xl text-[14px] font-bold shadow-lg shadow-[#0F3A40]/20 hover:bg-[#1F545B] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" /> Xuất báo cáo CSV
           </button>
         </div>
       </div>
 
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {/* Card 1 */}
-        <div className="bg-white/70 backdrop-blur-xl border border-white/50 rounded-[32px] p-6 shadow-sm flex flex-col justify-between min-h-[160px]">
-          <div className="flex justify-between items-start mb-4">
-            <div className="w-12 h-12 bg-[#DDF5F7] rounded-2xl flex items-center justify-center text-[#14B8A6]">
-              <Home className="w-6 h-6" />
-            </div>
-            <div className="flex items-center gap-1 bg-[#EBFDFB] text-[#14B8A6] px-2 py-1 rounded-full text-[12px] font-bold">
-              <ArrowUpRight size={14} /> +2.4%
+      <div className="bg-white/70 backdrop-blur-xl border border-white/50 rounded-[40px] p-10 shadow-sm">
+        {isLoading ? (
+          <div className="min-h-[320px] flex items-center justify-center text-[#4A787C]">
+            <div className="flex items-center gap-3 text-[15px] font-semibold">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Đang tổng hợp dữ liệu phân tích...
             </div>
           </div>
-          <div>
-            <p className="text-[14px] font-bold text-[#4A787C] mb-1">Tỷ lệ lấp đầy phòng (%)</p>
-            <h3 className="text-3xl font-bold text-[#0F3A40]">94.8%</h3>
-          </div>
-        </div>
-
-        {/* Card 2 */}
-        <div className="bg-white/70 backdrop-blur-xl border border-white/50 rounded-[32px] p-6 shadow-sm flex flex-col justify-between min-h-[160px]">
-          <div className="flex justify-between items-start mb-4">
-            <div className="w-12 h-12 bg-[#EBF4FF] rounded-2xl flex items-center justify-center text-[#3B82F6]">
-              <TrendingUp className="w-6 h-6" />
-            </div>
-            <div className="flex items-center gap-1 bg-[#EBF4FF] text-[#3B82F6] px-2 py-1 rounded-full text-[12px] font-bold">
-              <ArrowUpRight size={14} /> +12%
-            </div>
-          </div>
-          <div>
-            <p className="text-[14px] font-bold text-[#4A787C] mb-1">Doanh thu trung bình (ARPU)</p>
-            <div className="flex items-baseline gap-1">
-              <h3 className="text-3xl font-bold text-[#0F3A40]">5.2Tr</h3>
-              <span className="text-[14px] font-medium text-[#82ABB0]">/phòng</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3 */}
-        <div className="bg-white/70 backdrop-blur-xl border border-white/50 rounded-[32px] p-6 shadow-sm flex flex-col justify-between min-h-[160px]">
-          <div className="flex justify-between items-start mb-4">
-            <div className="w-12 h-12 bg-[#FFF3E0] rounded-2xl flex items-center justify-center text-[#E68A00]">
-              <TrendingDown className="w-6 h-6" />
-            </div>
-            <div className="flex items-center gap-1 bg-[#FFF3E0] text-[#E68A00] px-2 py-1 rounded-full text-[12px] font-bold">
-              <ArrowDownRight size={14} /> -5%
-            </div>
-          </div>
-          <div>
-            <p className="text-[14px] font-bold text-[#4A787C] mb-1">Tổng chi phí vận hành</p>
-            <h3 className="text-3xl font-bold text-[#0F3A40]">128.5Tr</h3>
-          </div>
-        </div>
-
-        {/* Card 4 */}
-        <div className="bg-white/70 backdrop-blur-xl border border-white/50 rounded-[32px] p-6 shadow-sm flex flex-col justify-between min-h-[160px]">
-          <div className="flex justify-between items-start mb-4">
-            <div className="w-12 h-12 bg-[#EBFDFB] rounded-2xl flex items-center justify-center text-[#14B8A6]">
-              <DollarSign className="w-6 h-6" />
-            </div>
-            <div className="flex items-center gap-1 bg-[#EBFDFB] text-[#14B8A6] px-2 py-1 rounded-full text-[12px] font-bold">
-              <ArrowUpRight size={14} /> +18.5%
-            </div>
-          </div>
-          <div>
-            <p className="text-[14px] font-bold text-[#4A787C] mb-1">Lợi nhuận ròng</p>
-            <h3 className="text-3xl font-bold text-[#0F3A40]">452.0Tr</h3>
-          </div>
-        </div>
-      </div>
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-        {/* Main Line Chart */}
-        <div className="lg:col-span-2 bg-white/70 backdrop-blur-xl border border-white/50 rounded-[40px] p-8 shadow-sm">
-          <div className="flex justify-between items-center mb-10">
-            <h3 className="text-[18px] font-bold text-[#0F3A40]">Tăng trưởng Doanh thu vs Chi phí</h3>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#14B8A6]"></div>
-                <span className="text-[12px] font-bold text-[#4A787C]">Doanh thu</span>
+        ) : (
+          <div className="space-y-8">
+            {loadError ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-700 text-sm font-medium">
+                {loadError}
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#0F3A40] opacity-60"></div>
-                <span className="text-[12px] font-bold text-[#4A787C]">Chi phí</span>
-              </div>
-            </div>
-          </div>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#BCE1E5" opacity={0.3} />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#82ABB0', fontSize: 12, fontWeight: 600 }}
-                  dy={10}
-                />
-                <YAxis hide={true} />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'rgba(255, 255, 255, 0.9)', 
-                    borderRadius: '16px', 
-                    border: '1px solid #BCE1E5',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                  }}
-                  itemStyle={{ fontSize: '13px', fontWeight: 'bold' }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="revenue" 
-                  stroke="#14B8A6" 
-                  strokeWidth={4} 
-                  dot={{ r: 6, fill: '#14B8A6', strokeWidth: 3, stroke: '#fff' }}
-                  activeDot={{ r: 8, strokeWidth: 0 }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="expense" 
-                  stroke="#0F3A40" 
-                  strokeWidth={2} 
-                  strokeDasharray="5 5"
-                  opacity={0.5}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+            ) : null}
 
-        {/* Segment Donut Chart */}
-        <div className="bg-white/70 backdrop-blur-xl border border-white/50 rounded-[40px] p-8 shadow-sm flex flex-col items-center">
-          <h3 className="text-[18px] font-bold text-[#0F3A40] w-full text-left mb-8">Cơ cấu Khách thuê</h3>
-          <div className="relative w-full h-[220px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={tenantSegmentData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={65}
-                  outerRadius={85}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {tenantSegmentData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-3xl font-bold text-[#0F3A40]">1,280</span>
-              <span className="text-[10px] font-bold text-[#82ABB0] tracking-widest uppercase">NGƯỜI</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {cards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <article key={card.id} className="rounded-[28px] bg-white border border-[#BCE1E5]/40 p-6">
+                    <div className="w-11 h-11 rounded-full bg-[#EAF7F8] flex items-center justify-center text-[#14B8A6] mb-5">
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <p className="text-[11px] font-bold text-[#4A787C] uppercase tracking-wider mb-2">{card.title}</p>
+                    <h3 className="text-[30px] font-bold text-[#0F3A40] leading-tight">{card.value}</h3>
+                    <p className="text-[13px] text-[#4A787C] font-medium mt-2">{card.helper}</p>
+                  </article>
+                );
+              })}
             </div>
-          </div>
-          <div className="w-full space-y-3 mt-6">
-            {tenantSegmentData.map((item, i) => (
-              <div key={i} className="flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className={`w-2.5 h-2.5 rounded-full`} style={{ backgroundColor: item.color }}></div>
-                  <span className="text-[13px] font-bold text-[#4A787C]">{item.name}</span>
+
+            <div className="rounded-[28px] bg-[#F8FAFC] border border-slate-200 p-6">
+              <div className="flex items-center gap-2 text-[#0F3A40] mb-4">
+                <Percent className="w-5 h-5 text-[#14B8A6]" />
+                <h3 className="text-[18px] font-bold">Nhận định tự động từ dữ liệu hiện có</h3>
+              </div>
+              <ul className="space-y-3">
+                {insights.map((text) => (
+                  <li key={text} className="text-[14px] text-[#4A787C] leading-relaxed font-medium flex items-start gap-3">
+                    <span className="mt-1.5 w-2 h-2 rounded-full bg-[#14B8A6] shrink-0" />
+                    <span>{text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-[28px] bg-[#F2FCFD] border border-[#BCE1E5]/40 p-6">
+              <h3 className="text-[16px] font-bold text-[#0F3A40] mb-3">Tóm tắt vận hành</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-2xl bg-white/80 border border-[#BCE1E5]/50 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-wide font-bold text-[#4A787C]">Phòng</p>
+                  <p className="text-[14px] font-semibold text-[#0F3A40] mt-1">
+                    {metrics.roomsRented} đang thuê / {metrics.roomsAvailable} trống
+                  </p>
                 </div>
-                <span className="text-[14px] font-bold text-[#0F3A40]">{item.value}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-        {/* Floor occupancy list */}
-        <div className="lg:col-span-3 bg-white/70 backdrop-blur-xl border border-white/50 rounded-[40px] p-8 shadow-sm">
-          <h3 className="text-[18px] font-bold text-[#0F3A40] mb-8">Tỷ lệ lấp đầy theo tầng</h3>
-          <div className="space-y-7">
-            {floorOccupancy.map((floor, i) => (
-              <div key={i} className="space-y-2">
-                <div className="flex justify-between text-[14px] font-bold">
-                  <span className="text-[#0F3A40]">{floor.floor}</span>
-                  <span className="text-[#14B8A6]">{floor.percent}%</span>
+                <div className="rounded-2xl bg-white/80 border border-[#BCE1E5]/50 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-wide font-bold text-[#4A787C]">Hóa đơn</p>
+                  <p className="text-[14px] font-semibold text-[#0F3A40] mt-1">
+                    {metrics.unpaidCount} chưa thanh toán
+                  </p>
                 </div>
-                <div className="h-2 w-full bg-[#EBFDFB] rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-[#14B8A6] rounded-full transition-all duration-1000"
-                    style={{ width: `${floor.percent}%`, backgroundColor: i === 4 ? '#82ABB0' : '#14B8A6' }}
-                  ></div>
+                <div className="rounded-2xl bg-white/80 border border-[#BCE1E5]/50 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-wide font-bold text-[#4A787C]">Hợp đồng</p>
+                  <p className="text-[14px] font-semibold text-[#0F3A40] mt-1">
+                    {metrics.activeContracts} hiệu lực / {metrics.expiringSoon} sắp hết hạn
+                  </p>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Market Insights */}
-        <div className="lg:col-span-2 bg-[#F2FCFD]/60 backdrop-blur-xl border border-[#BCE1E5]/30 rounded-[40px] p-8 shadow-sm flex flex-col">
-          <div className="flex justify-between items-center mb-8">
-            <h3 className="text-[18px] font-bold text-[#0F3A40]">Thông tin thị trường</h3>
-            <div className="w-10 h-10 bg-[#0F3A40] rounded-2xl flex items-center justify-center text-white shadow-lg">
-              <TrendingUp size={18} />
             </div>
           </div>
-          
-          <div className="space-y-6">
-            <div className="flex gap-4 p-4 rounded-[24px] bg-white/40 border border-white/50">
-              <div className="w-10 h-10 bg-[#EBFDFB] rounded-xl flex items-center justify-center text-[#14B8A6] shrink-0">
-                <Users size={18} />
-              </div>
-              <div>
-                <h4 className="text-[13px] font-bold text-[#0F3A40] mb-1">Nhu cầu sinh viên tăng cao</h4>
-                <p className="text-[12px] text-[#4A787C] leading-relaxed">Nhu cầu thuê phòng khu vực lân cận Đại học Quốc gia tăng 15% trong tháng 8 do kỳ nhập học mới.</p>
-              </div>
-            </div>
-
-            <div className="flex gap-4 p-4 rounded-[24px] bg-white/40 border border-white/50">
-              <div className="w-10 h-10 bg-[#FFF3E0] rounded-xl flex items-center justify-center text-[#E68A00] shrink-0">
-                <AlertTriangle size={18} />
-              </div>
-              <div>
-                <h4 className="text-[13px] font-bold text-[#0F3A40] mb-1">Cảnh báo chi phí điện</h4>
-                <p className="text-[12px] text-[#4A787C] leading-relaxed">Hệ thống ghi nhận chi phí điện tại Tòa A tăng bất thường. Đề xuất kiểm tra bảo trì hệ thống điều hòa.</p>
-              </div>
-            </div>
-
-            <div className="flex gap-4 p-4 rounded-[24px] bg-white/40 border border-white/50">
-              <div className="w-10 h-10 bg-[#EBFDFB] rounded-xl flex items-center justify-center text-[#14B8A6] shrink-0">
-                <CheckCircle2 size={18} />
-              </div>
-              <div>
-                <h4 className="text-[13px] font-bold text-[#0F3A40] mb-1">Xếp hạng tin cậy cao</h4>
-                <p className="text-[12px] text-[#4A787C] leading-relaxed">The Nest Living đạt 4.8/5 sao trên Google Maps nhờ dịch vụ hỗ trợ khách thuê nhanh chóng.</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

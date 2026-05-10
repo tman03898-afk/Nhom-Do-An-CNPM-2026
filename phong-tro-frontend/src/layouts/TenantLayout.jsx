@@ -4,13 +4,59 @@ import {
   Home, Receipt, ClipboardList, AlertTriangle, Bell, User,
   Bird, ChevronLeft, ChevronRight, X, Menu
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiFetch } from '../lib/api';
 
 export default function TenantLayout() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [roomLabel, setRoomLabel] = useState('—');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+  // hydrate room label for tenant UI (no hardcoded demo)
+  useEffect(() => {
+    const run = async () => {
+      if (!token) {
+        setRoomLabel('—');
+        return;
+      }
+      try {
+        const response = await fetch(`${API_BASE_URL}/tenant/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        const roomNumber = data?.tenant?.room_number;
+        if (response.ok && data?.ok && roomNumber) {
+          setRoomLabel(`Phòng ${roomNumber}`);
+        } else {
+          setRoomLabel('—');
+        }
+      } catch (error) {
+        setRoomLabel('—');
+      }
+    };
+    run();
+  }, [API_BASE_URL, token]);
+
+  useEffect(() => {
+    const loadUnread = async () => {
+      if (!token) {
+        setUnreadCount(0);
+        return;
+      }
+      try {
+        const data = await apiFetch('/tenant/notifications', { token });
+        const unread = (data.notifications || []).filter((n) => !n.is_read).length;
+        setUnreadCount(unread);
+      } catch (err) {
+        setUnreadCount(0);
+      }
+    };
+    loadUnread();
+  }, [token]);
 
   const links = [
     { name: 'Trang chủ', path: '/tenant/dashboard', icon: Home },
@@ -101,7 +147,7 @@ export default function TenantLayout() {
             {(!isCollapsed || isMobileMenuOpen) && (
               <div className="flex flex-col min-w-0">
                 <span className="text-white text-[13px] font-bold truncate">{user?.name || 'Khách thuê'}</span>
-                <span className="text-white/50 text-[11px] truncate mt-0.5 whitespace-nowrap">Phòng 301 - Building A</span>
+                <span className="text-white/50 text-[11px] truncate mt-0.5 whitespace-nowrap">{roomLabel}</span>
               </div>
             )}
           </div>
@@ -133,7 +179,7 @@ export default function TenantLayout() {
             {/* Context Pill */}
             <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 bg-nest-bg/80 backdrop-blur-md rounded-full border border-nest-primary/20 shadow-sm ml-0 lg:ml-4">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span className="text-[10px] lg:text-[12px] font-bold text-[#4A787C] whitespace-nowrap">Phòng 301 - Building A</span>
+              <span className="text-[10px] lg:text-[12px] font-bold text-[#4A787C] whitespace-nowrap">{roomLabel}</span>
             </div>
           </div>
 
@@ -141,7 +187,9 @@ export default function TenantLayout() {
           <div className="flex items-center gap-3 lg:gap-5">
             <Link to="/tenant/notifications" className="relative w-10 h-10 lg:w-11 lg:h-11 rounded-xl lg:rounded-2xl bg-white/80 backdrop-blur-md flex items-center justify-center text-[#4A787C] hover:text-[#14B8A6] hover:bg-white hover:shadow-lg hover:shadow-nest-primary/10 transition-all border border-transparent hover:border-nest-primary/10 group">
               <Bell size={18} className="group-hover:rotate-12 transition-transform lg:size-[20px]" />
-              <span className="absolute top-2.5 right-2.5 lg:top-3 lg:right-3 w-1.5 lg:w-2 h-1.5 lg:h-2 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+              {unreadCount > 0 ? (
+                <span className="absolute top-1.5 right-1.5 lg:top-2 lg:right-2 min-w-[18px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">{unreadCount}</span>
+              ) : null}
             </Link>
             <Link to="/tenant/profile" className="w-9 h-9 lg:w-10 lg:h-10 rounded-full overflow-hidden border-2 border-white shadow-md cursor-pointer hover:border-[#14B8A6]/50 hover:scale-110 transition-all">
               <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=14B8A6&color=fff`} className="w-full h-full object-cover" />

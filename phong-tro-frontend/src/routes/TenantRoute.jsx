@@ -3,7 +3,9 @@ import TenantLayout from '../layouts/TenantLayout';
 import { useAuth } from '../context/AuthContext';
 
 export default function TenantRoute() {
-  const { user } = useAuth();
+  const { user, authLoading } = useAuth();
+
+  if (authLoading) return null;
 
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== 'TENANT') return <Navigate to="/" replace />; // Role mismatch

@@ -1,8 +1,43 @@
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Phone, MessageCircle, MapPin, Wifi, Wind, Box, BedDouble, Droplets, CheckCircle2, Ruler, LayoutGrid, Layers } from 'lucide-react';
 
 export default function RoomDetailPage() {
   const { id } = useParams();
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const [room, setRoom] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    const fetchRoom = async () => {
+      setIsLoading(true);
+      setErrorMessage('');
+      try {
+        const response = await fetch(`${API_BASE_URL}/rooms/${id}`);
+        const data = await response.json();
+        if (!response.ok || !data?.ok) {
+          throw new Error(data?.message || 'Không tìm thấy phòng');
+        }
+        setRoom(data.room);
+      } catch (error) {
+        setRoom(null);
+        setErrorMessage(error.message || 'Không thể tải thông tin phòng');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (id) fetchRoom();
+  }, [API_BASE_URL, id]);
+
+  const statusView = useMemo(() => {
+    if (!room?.status) return { label: '—', color: 'text-nest-text-secondary', icon: CheckCircle2 };
+    if (room.status === 'AVAILABLE') return { label: 'Còn trống', color: 'text-[#0f8b7d]', icon: CheckCircle2 };
+    if (room.status === 'RENTED') return { label: 'Đang thuê', color: 'text-nest-text-secondary', icon: CheckCircle2 };
+    if (room.status === 'MAINTENANCE') return { label: 'Bảo trì', color: 'text-amber-600', icon: CheckCircle2 };
+    return { label: room.status, color: 'text-nest-text-secondary', icon: CheckCircle2 };
+  }, [room]);
 
   return (
     <div className="max-w-7xl mx-auto px-8 w-full pb-24">
@@ -34,29 +69,47 @@ export default function RoomDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left main info */}
         <div className="lg:col-span-2 bg-white/40 backdrop-blur-[16px] border border-white/60 rounded-[3rem] p-8 md:p-12">
-          <h1 className="text-4xl md:text-[2.75rem] font-sans font-bold text-nest-text-primary mb-8 leading-[1.1]">Phòng 402</h1>
+          <h1 className="text-4xl md:text-[2.75rem] font-sans font-bold text-nest-text-primary mb-8 leading-[1.1]">
+            {isLoading ? 'Đang tải...' : room?.room_number ? `Phòng ${room.room_number}` : 'Phòng'}
+          </h1>
+
+          {errorMessage && (
+            <div className="mb-8 p-4 rounded-2xl bg-white/60 border border-white/60 text-nest-text-secondary font-medium">
+              {errorMessage}
+            </div>
+          )}
 
           <div className="mb-10">
             <div className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-wider mb-2">Giá Thuê Tháng</div>
-            <div className="text-4xl md:text-5xl font-sans font-bold text-[#14B8A6]">2.500.000đ</div>
+            <div className="text-4xl md:text-5xl font-sans font-bold text-[#14B8A6]">
+              {room?.price !== null && room?.price !== undefined ? `${Number(room.price).toLocaleString('vi-VN')}đ` : '—'}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y border-nest-surface-low mb-10">
             <div>
               <div className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-wider mb-2">Diện tích</div>
-              <div className="flex items-center gap-2 font-bold text-nest-text-primary text-base"><Ruler className="w-5 h-5 text-[#14B8A6]" /> 20 m²</div>
+              <div className="flex items-center gap-2 font-bold text-nest-text-primary text-base">
+                <Ruler className="w-5 h-5 text-[#14B8A6]" /> {room?.area !== null && room?.area !== undefined ? `${room.area} m²` : '—'}
+              </div>
             </div>
             <div>
               <div className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-wider mb-2">Loại phòng</div>
-              <div className="flex items-center gap-2 font-bold text-nest-text-primary text-base"><LayoutGrid className="w-5 h-5 text-[#14B8A6]" /> Gác lửng</div>
+              <div className="flex items-center gap-2 font-bold text-nest-text-primary text-base">
+                <LayoutGrid className="w-5 h-5 text-[#14B8A6]" /> —
+              </div>
             </div>
             <div>
               <div className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-wider mb-2">Trạng thái</div>
-              <div className="flex items-center gap-2 font-bold text-[#0f8b7d] text-base"><CheckCircle2 className="w-5 h-5 text-[#14B8A6]" /> Còn trống</div>
+              <div className={`flex items-center gap-2 font-bold text-base ${statusView.color}`}>
+                <statusView.icon className="w-5 h-5 text-[#14B8A6]" /> {statusView.label}
+              </div>
             </div>
             <div>
               <div className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-wider mb-2">Tầng</div>
-              <div className="flex items-center gap-2 font-bold text-nest-text-primary text-base"><Layers className="w-5 h-5 text-[#14B8A6]" /> 04</div>
+              <div className="flex items-center gap-2 font-bold text-nest-text-primary text-base">
+                <Layers className="w-5 h-5 text-[#14B8A6]" /> {room?.floor !== null && room?.floor !== undefined ? String(room.floor) : '—'}
+              </div>
             </div>
           </div>
 
@@ -80,7 +133,7 @@ export default function RoomDetailPage() {
 
           <h3 className="font-sans font-bold text-lg text-nest-text-primary mb-4">Mô tả chi tiết</h3>
           <p className="text-sm text-nest-text-secondary leading-[1.8] pr-4">
-            Phòng được thiết kế tối ưu diện tích với kết cấu gác lửng hiện đại, tạo ra sự tách biệt thông minh giữa không gian nghỉ ngơi riêng tư và khu vực làm việc/nấu nướng bên dưới. Hệ thống cửa sổ lớn đón trọn ánh sáng tự nhiên và gió trời, mang lại cảm giác thông thoáng tuyệt đối. Đây là lựa chọn lý tưởng cho các bạn sinh viên hoặc nhân viên văn phòng đang tìm kiếm một "tổ ấm" an ninh, yên tĩnh và đầy đủ tiện nghi ngay tại trung tâm.
+            {room?.description || '—'}
           </p>
         </div>
 
@@ -95,11 +148,14 @@ export default function RoomDetailPage() {
               </div>
               <div>
                 <div className="text-[9px] font-bold text-nest-text-secondary uppercase tracking-wider mb-1">Gọi trực tiếp</div>
-                <div className="font-bold text-nest-text-primary text-sm">+84 123 456 789</div>
+                <div className="font-bold text-nest-text-primary text-sm">+84 857 667 533</div>
               </div>
             </div>
 
-            <button className="w-full py-4 rounded-2xl bg-[#14B8A6] hover:bg-[#0fa696] text-white text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-md mb-4">
+            <button
+              onClick={() => window.open('https://zalo.me/84857667533', '_blank', 'noopener')}
+              className="w-full py-4 rounded-2xl bg-[#14B8A6] hover:bg-[#0fa696] text-white text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-md mb-4"
+            >
               <MessageCircle className="w-4 h-4" /> Nhắn tin Zalo ngay
             </button>
 

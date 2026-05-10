@@ -1,158 +1,204 @@
-import { UserPlus, Pencil, MoreVertical, Key, DoorOpen, CalendarX, TrendingUp, ChevronRight } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { UserPlus, X } from 'lucide-react';
 
 export default function TenantManagePage() {
-  const tenants = [
-    {
-      avatarText: 'NH', avatarBg: 'bg-nest-primary/10', avatarColor: 'text-nest-primary',
-      name: 'Nguyễn Văn Hiếu', email: 'hieu.nv@gmail.com',
-      phone: '090 123 4567',
-      room: 'P.402 (Gác lửng)', roomColor: 'text-nest-primary',
-      status: 'Đang hoạt động', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]'
-    },
-    {
-      avatarText: 'PT', avatarBg: 'bg-amber-100', avatarColor: 'text-amber-600',
-      name: 'Phạm Thị Tú', email: 'tu.pham@outlook.com',
-      phone: '091 888 9999',
-      room: 'P.601 (Ban công)', roomColor: 'text-nest-primary',
-      status: 'Sắp hết hạn', statusPill: 'bg-amber-50 text-amber-600', dot: 'bg-amber-500'
-    },
-    {
-      avatarText: 'LĐ', avatarBg: 'bg-slate-100', avatarColor: 'text-slate-600',
-      name: 'Lê Đại', email: 'dai.le@me.com',
-      phone: '093 456 7890',
-      room: 'P.301 (Thường)', roomColor: 'text-nest-primary',
-      status: 'Đã kết thúc', statusPill: 'bg-slate-100 text-slate-500', dot: 'bg-slate-400'
+  const { token } = useAuth();
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingTenants, setIsLoadingTenants] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const [createForm, setCreateForm] = useState({ full_name: '', phone: '', room_number: '', email: '', password: '' });
+  const [tenantsFromApi, setTenantsFromApi] = useState([]);
+
+  const tenants = useMemo(() => {
+    if (tenantsFromApi.length > 0) {
+      return tenantsFromApi.map((t) => ({
+        name: t.full_name,
+        email: t.email,
+        phone: t.phone || '',
+        room: t.room_number || '',
+      }));
     }
-  ];
+    return [];
+  }, [tenantsFromApi]);
+
+  const openCreateModal = () => {
+    setCreateForm({ full_name: '', phone: '', room_number: '', email: '', password: '' });
+    setFormError('');
+    setFormSuccess('');
+    setIsCreateModalOpen(true);
+  };
+
+  const fetchTenants = async () => {
+    if (!token) return;
+    setIsLoadingTenants(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/tenants`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.message || 'Không thể tải danh sách khách thuê');
+      }
+      setTenantsFromApi(data.tenants || []);
+    } catch (error) {
+      setTenantsFromApi([]);
+    } finally {
+      setIsLoadingTenants(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTenants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  const handleCreateTenant = async (event) => {
+    event.preventDefault();
+    setFormError('');
+    setFormSuccess('');
+
+    if (!createForm.full_name || !createForm.phone || !createForm.room_number || !createForm.email || !createForm.password) {
+      setFormError('Vui lòng nhập đủ họ tên, số điện thoại, số phòng, email và mật khẩu.');
+      return;
+    }
+
+    if (!token) {
+      setFormError('Phiên đăng nhập admin đã hết hạn, vui lòng đăng nhập lại.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const response = await fetch(`${API_BASE_URL}/auth/users/tenant`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(createForm),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.message || 'Không thể tạo tài khoản tenant');
+      }
+
+      setFormSuccess(`Đã tạo tài khoản cho ${data.user.full_name} (${data.user.email})`);
+      setCreateForm({ full_name: '', phone: '', room_number: '', email: '', password: '' });
+      await fetchTenants();
+    } catch (error) {
+      setFormError(error.message || 'Có lỗi xảy ra khi tạo tài khoản tenant');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <div className="w-full max-w-[1200px] mx-auto mt-2 px-4 pb-12">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-8 relative z-10">
-        <div>
-          <h1 className="text-2xl sm:text-[32px] font-sans font-bold text-nest-text-primary tracking-tight leading-none">Quản lý Khách thuê</h1>
+    <>
+      <div className="w-full max-w-[1200px] mx-auto mt-2 px-4 pb-12">
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-2xl sm:text-[32px] font-sans font-bold text-nest-text-primary">Quản lý Khách thuê</h1>
+          <button
+            onClick={openCreateModal}
+            className="bg-nest-primary hover:bg-[#0da090] text-white px-6 py-2.5 rounded-full text-[14px] font-bold transition-colors shadow-lg shadow-nest-primary/20 flex items-center gap-2"
+          >
+            <UserPlus className="w-[18px] h-[18px]" /> Thêm khách
+          </button>
         </div>
-        <button className="w-full sm:w-auto bg-nest-primary hover:bg-[#0da090] text-white px-6 py-2.5 rounded-full text-[14px] font-bold transition-colors shadow-lg shadow-nest-primary/20 flex items-center justify-center gap-2">
-          <UserPlus className="w-[18px] h-[18px]" /> Thêm khách
-        </button>
-      </div>
 
-      {/* Main Table Area (Premium White Layout) */}
-      <div className="bg-white/80 rounded-[32px] p-4 sm:p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm mb-8 overflow-hidden">
-        <div className="overflow-x-auto custom-scrollbar">
-          <div className="min-w-[800px]">
-            {/* Header Row */}
-            <div className="flex text-[10px] font-bold text-nest-text-secondary tracking-widest uppercase px-6 mb-6">
-              <div className="w-[30%]">Họ và tên</div>
-              <div className="w-[20%]">Số điện thoại</div>
-              <div className="w-[15%]">Phòng</div>
-              <div className="w-[25%] pl-4">Trạng thái hợp đồng</div>
-              <div className="w-[10%] text-center">Thao tác</div>
-            </div>
-
-            {/* Rows */}
-            <div className="flex flex-col gap-4 pb-2">
-              {tenants.map((tenant, idx) => (
-                <div key={idx} className="bg-white rounded-full flex items-center px-6 py-4 shadow-[0_2px_10px_rgba(0,31,36,0.02)] hover:shadow-md transition-shadow border border-slate-100/80">
-                  <div className="w-[30%] flex items-center gap-4">
-                    <div className={`w-[46px] h-[46px] rounded-full ${tenant.avatarBg} ${tenant.avatarColor} flex items-center justify-center font-bold text-[16px]`}>
-                      {tenant.avatarText}
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-nest-text-primary text-[15px]">{tenant.name}</span>
-                      <span className="text-nest-text-secondary text-[12px] font-medium leading-tight">{tenant.email}</span>
-                    </div>
-                  </div>
-                  <div className="w-[20%]">
-                    <span className="font-bold text-nest-text-primary text-[14px]">{tenant.phone}</span>
-                  </div>
-                  <div className="w-[15%]">
-                    <span className={`bg-nest-primary/5 ${tenant.roomColor} border-[0.5px] border-nest-primary/10 px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase`}>
-                      {tenant.room}
-                    </span>
-                  </div>
-                  <div className="w-[25%] pl-4">
-                    <div className={`${tenant.statusPill} inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[12px] font-bold tracking-wide`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${tenant.dot}`}></span>
-                      {tenant.status}
-                    </div>
-                  </div>
-                  <div className="w-[10%] flex items-center justify-center gap-4 text-nest-text-secondary">
-                    <button className="hover:text-nest-primary transition-colors"><Pencil className="w-4 h-4" /></button>
-                    <button className="hover:text-nest-text-primary transition-colors"><MoreVertical className="w-5 h-5" /></button>
-                  </div>
+        <div className="bg-white/80 rounded-[32px] p-4 sm:p-8 border border-slate-200/60">
+          <div className="grid grid-cols-4 text-[12px] font-bold text-nest-text-secondary mb-4 px-4">
+            <span>Họ và tên</span>
+            <span>Email</span>
+            <span>Số điện thoại</span>
+            <span>Phòng</span>
+          </div>
+          <div className="space-y-3">
+            {isLoadingTenants ? (
+              <div className="px-4 py-8 text-sm font-medium text-nest-text-secondary">Đang tải danh sách...</div>
+            ) : tenants.length === 0 ? (
+              <div className="px-4 py-8 text-sm font-medium text-nest-text-secondary">Chưa có khách thuê nào.</div>
+            ) : (
+              tenants.map((tenant, idx) => (
+                <div key={idx} className="grid grid-cols-4 items-center bg-white rounded-2xl px-4 py-3 border border-slate-100">
+                  <span className="font-semibold">{tenant.name}</span>
+                  <span>{tenant.email}</span>
+                  <span>{tenant.phone}</span>
+                  <span>{tenant.room}</span>
                 </div>
-              ))}
-            </div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
-      {/* Bottom Layout Sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Flash Actions */}
-        <div className="lg:col-span-4 bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-nest-primary/5 rounded-full blur-2xl pointer-events-none"></div>
-
-          <div className="relative z-10 mb-8">
-            <h3 className="text-xl font-bold text-nest-text-primary mb-1">Thao tác nhanh</h3>
-            <p className="text-[12px] text-nest-text-secondary font-medium">Quản lý khách thuê và cài đặt</p>
-          </div>
-          <div className="flex flex-col gap-3 relative z-10">
-            <button className="w-full bg-nest-bg/50 hover:bg-nest-primary/10 flex items-center justify-between p-4 rounded-2xl transition-all group border border-slate-200/50 hover:border-nest-primary/30 shadow-sm hover:shadow-md">
-              <div className="flex items-center gap-4">
-                <Key className="w-5 h-5 text-nest-primary" />
-                <span className="font-bold text-nest-text-primary text-[14px]">Tạo tài khoản đăng nhập</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-nest-text-secondary group-hover:text-nest-primary transition-colors" />
-            </button>
-            <button className="w-full bg-nest-bg/50 hover:bg-nest-primary/10 flex items-center justify-between p-4 rounded-2xl transition-all group border border-slate-200/50 hover:border-nest-primary/30 shadow-sm hover:shadow-md">
-              <div className="flex items-center gap-4">
-                <DoorOpen className="w-5 h-5 text-nest-primary" />
-                <span className="font-bold text-nest-text-primary text-[14px]">Gán phòng (Assign)</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-nest-text-secondary group-hover:text-nest-primary transition-colors" />
-            </button>
-            <button className="w-full bg-red-50/30 hover:bg-red-50 flex items-center justify-between p-4 rounded-2xl transition-all group border border-red-100/50 hover:border-red-200 shadow-sm hover:shadow-md">
-              <div className="flex items-center gap-4">
-                <CalendarX className="w-5 h-5 text-red-500" />
-                <span className="font-bold text-nest-text-primary text-[14px]">Kết thúc hợp đồng</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-nest-text-secondary group-hover:text-red-500 transition-colors" />
-            </button>
-          </div>
-        </div>
-
-        {/* Composite Statistics */}
-        <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Stat 1 */}
-          <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm flex flex-col justify-center items-center text-center h-full">
-            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-4">Tổng khách thuê</p>
-            <h2 className="text-4xl font-extrabold text-nest-primary mb-4 tracking-tight">1,284</h2>
-            <div className="flex items-center gap-2 text-nest-primary font-bold text-[11px] bg-nest-primary/10 px-3 py-1.5 rounded-full">
-              <TrendingUp className="w-3 h-3" /> +12%
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-7 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-nest-text-primary">Cấp tài khoản khách thuê</h3>
+              <button
+                onClick={() => !isSubmitting && setIsCreateModalOpen(false)}
+                className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          </div>
+            <form className="space-y-4" onSubmit={handleCreateTenant}>
+              <input
+                type="text"
+                value={createForm.full_name}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary"
+                placeholder="Họ và tên"
+              />
+              <input
+                type="text"
+                value={createForm.phone}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, phone: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary"
+                placeholder="Số điện thoại"
+              />
+              <input
+                type="text"
+                value={createForm.room_number}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, room_number: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary"
+                placeholder="Số phòng (ví dụ: P.301)"
+              />
+              <input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary"
+                placeholder="Email đăng nhập"
+              />
+              <input
+                type="password"
+                value={createForm.password}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary"
+                placeholder="Mật khẩu tạm thời"
+              />
 
-          {/* Stat 2 */}
-          <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm flex flex-col justify-center items-center text-center h-full">
-            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-4">Sắp hết hạn</p>
-            <h2 className="text-4xl font-extrabold text-amber-500 mb-4 tracking-tight">42</h2>
-            <p className="text-[11px] font-medium text-amber-600/80 leading-snug">
-              Yêu cầu gia hạn
-            </p>
-          </div>
+              {formError && <p className="text-sm font-medium text-red-500">{formError}</p>}
+              {formSuccess && <p className="text-sm font-medium text-emerald-600">{formSuccess}</p>}
 
-          {/* Stat 3 */}
-          <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm flex flex-col justify-center items-center text-center h-full">
-            <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-4">Chờ cấp quyền</p>
-            <h2 className="text-4xl font-extrabold text-nest-text-primary mb-4 tracking-tight">18</h2>
-            <p className="text-[11px] font-medium text-nest-text-secondary leading-snug">
-              Đang thiết lập
-            </p>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full rounded-full bg-nest-primary py-3 font-bold text-white hover:bg-[#0da090] disabled:opacity-70"
+              >
+                {isSubmitting ? 'Đang tạo...' : 'Tạo tài khoản'}
+              </button>
+            </form>
           </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

@@ -1,43 +1,130 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
    Receipt, Filter, Search, ChevronLeft, ChevronRight,
    Eye, CheckCircle2, AlertCircle, CreditCard, X
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 
 export default function TenantInvoicePage() {
    const navigate = useNavigate();
+   const { token } = useAuth();
    const [searchQuery, setSearchQuery] = useState('');
    const [filterMonth, setFilterMonth] = useState('Tất cả');
    const [filterStatus, setFilterStatus] = useState('Tất cả');
 
-   const invoices = [
-      {
-         month: '10/2023', rent: '4.500.000', electric: '850.000', water: '100.000',
-         total: '5.450.000', status: 'Chưa thanh toán', statusType: 'unpaid'
-      },
-      {
-         month: '09/2023', rent: '4.500.000', electric: '720.000', water: '95.000',
-         total: '5.315.000', status: 'Đã thanh toán', statusType: 'paid'
-      },
-      {
-         month: '08/2023', rent: '4.500.000', electric: '980.000', water: '110.000',
-         total: '5.590.000', status: 'Đã thanh toán', statusType: 'paid'
-      },
-   ];
+   const [invoices, setInvoices] = useState([]);
+   const [payments, setPayments] = useState([]);
+   const [isLoading, setIsLoading] = useState(false);
 
-   const filteredInvoices = invoices.filter(inv => {
-      const matchesSearch = 
+   const formatMoney = (v) => Number(v || 0).toLocaleString('vi-VN');
+   const formatMonth = (periodMonth, periodYear) => `${String(periodMonth).padStart(2, '0')}/${periodYear}`;
+   const statusMeta = (invoiceStatus, paymentStatus) => {
+      const invoiceValue = String(invoiceStatus || '').toUpperCase();
+      const paymentValue = String(paymentStatus || '').toUpperCase();
+
+      if (invoiceValue === 'PAID' || paymentValue === 'APPROVED') {
+         return { text: 'Đã phê duyệt', type: 'approved' };
+      }
+      if (paymentValue === 'PENDING') {
+         return { text: 'Chờ phê duyệt', type: 'pending' };
+      }
+      if (paymentValue === 'REJECTED') {
+         return { text: 'Không thành công', type: 'failed' };
+      }
+      return { text: 'Chưa thanh toán', type: 'unpaid' };
+   };
+
+   useEffect(() => {
+      const run = async () => {
+         if (!token) return;
+         setIsLoading(true);
+         const [invoiceResult, paymentResult] = await Promise.allSettled([
+            apiFetch('/tenant/invoices', { token }),
+            apiFetch('/tenant/payments', { token }),
+         ]);
+
+         if (invoiceResult.status === 'fulfilled') {
+            setInvoices(invoiceResult.value?.invoices || []);
+         } else {
+            setInvoices([]);
+         }
+
+         if (paymentResult.status === 'fulfilled') {
+            setPayments(paymentResult.value?.payments || []);
+         } else {
+            setPayments([]);
+         }
+
+         setIsLoading(false);
+      };
+      run();
+   }, [token]);
+
+   const latestPaymentByInvoice = useMemo(() => {
+      const map = new Map();
+      for (const p of payments) {
+         const key = Number(p.invoice_id);
+         if (!map.has(key)) {
+            map.set(key, p);
+         }
+      }
+      return map;
+   }, [payments]);
+
+   const displayInvoices = useMemo(() => {
+      return invoices.map((inv) => {
+         const latestPayment = latestPaymentByInvoice.get(Number(inv.invoice_id));
+         const meta = statusMeta(inv.status, latestPayment?.status);
+         return {
+            invoice_id: inv.invoice_id,
+            month: formatMonth(inv.period_month, inv.period_year),
+            rent: formatMoney(inv.rent_amount),
+            electric: formatMoney(inv.electricity_amount),
+            water: formatMoney(inv.water_amount),
+            total: formatMoney(inv.total_amount),
+            status: meta.text,
+            statusType: meta.type,
+            rawStatus: String(inv.status || '').toUpperCase(),
+         };
+      });
+   }, [invoices, latestPaymentByInvoice]);
+
+   const filteredInvoices = displayInvoices.filter((inv) => {
+      const matchesSearch =
          inv.month.toLowerCase().includes(searchQuery.toLowerCase()) ||
          inv.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
          inv.total.includes(searchQuery);
-      
+
       const matchesMonth = filterMonth === 'Tất cả' || filterMonth.includes(inv.month);
-      const matchesStatus = filterStatus === 'Tất cả' || inv.status === filterStatus;
+      const normalizedFilter = filterStatus.replace('Trạng thái ', '');
+      const matchesStatus = filterStatus === 'Trạng thái Tất cả' || normalizedFilter === 'Tất cả' || inv.status === normalizedFilter;
 
       return matchesSearch && matchesMonth && matchesStatus;
    });
+
+   const totalDebt = displayInvoices
+      .filter((i) => i.statusType !== 'approved')
+      .reduce((sum, i) => sum + Number(String(i.total).replace(/\./g, '')), 0);
+
+   const latestInvoice = invoices[0] || null;
+   const latestActionableInvoice = displayInvoices.find((i) => i.statusType === 'unpaid' || i.statusType === 'failed') || null;
+   const latestActionableInvoiceRaw = latestActionableInvoice
+      ? invoices.find((inv) => Number(inv.invoice_id) === Number(latestActionableInvoice.invoice_id))
+      : null;
+   const latestPendingInvoice = displayInvoices.find((i) => i.statusType === 'pending') || null;
+   const latestMonthLabel = latestInvoice ? formatMonth(latestInvoice.period_month, latestInvoice.period_year) : '—';
+
+   const formatDueDate = (d) => {
+      if (!d) return '—';
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return '—';
+      return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
+   };
+   const latestDueDate = formatDueDate(latestActionableInvoiceRaw?.due_date);
+   const hasUnpaid = Boolean(latestActionableInvoiceRaw);
 
    return (
       <div className="flex flex-col gap-8 pb-10">
@@ -57,16 +144,27 @@ export default function TenantInvoicePage() {
                <div className="relative">
                   <p className="text-[12px] font-bold text-[#82ABB0] mb-2">Tổng dư nợ hiện tại</p>
                   <div className="flex items-baseline gap-2">
-                     <h2 className="text-[36px] font-bold text-[#0F3A40]">5.450.000</h2>
+                     <h2 className="text-[36px] font-bold text-[#0F3A40]">{formatMoney(totalDebt)}</h2>
                      <span className="text-xl font-bold text-[#0F3A40]">VNĐ</span>
                   </div>
                   <p className="text-[12px] font-bold text-[#D14D4D] mt-3 flex items-center gap-1.5">
-                     <AlertCircle size={14} /> Hạn thanh toán: 05/11/2023
+                     {hasUnpaid ? (
+                       <>
+                         <AlertCircle size={14} /> Hạn thanh toán: {latestDueDate}
+                       </>
+                     ) : (
+                       <>
+                         <CheckCircle2 size={14} className="text-[#14B8A6]" /> Không có hóa đơn cần thanh toán
+                       </>
+                     )}
                   </p>
                </div>
                <button
-                  onClick={() => navigate('/tenant/payment')}
-                  className="relative bg-[#0F3A40] hover:bg-[#1F545B] text-white px-8 py-4 rounded-3xl font-bold text-[15px] shadow-xl transition-all flex items-center gap-2 group/btn"
+                  onClick={() => navigate(latestActionableInvoiceRaw ? `/tenant/payment?invoiceId=${latestActionableInvoiceRaw.invoice_id}` : '/tenant/payment')}
+                  disabled={!hasUnpaid}
+                  className={`relative px-8 py-4 rounded-3xl font-bold text-[15px] shadow-xl transition-all flex items-center gap-2 group/btn ${
+                    hasUnpaid ? 'bg-[#0F3A40] hover:bg-[#1F545B] text-white' : 'bg-slate-200 text-slate-500 cursor-not-allowed shadow-transparent'
+                  }`}
                >
                   Thanh toán ngay <CreditCard size={18} className="group-hover/btn:rotate-12 transition-transform" />
                </button>
@@ -74,7 +172,7 @@ export default function TenantInvoicePage() {
 
             <div className="w-full md:w-[320px] bg-white/40 rounded-[40px] p-8 border border-white/50 shadow-sm flex flex-col justify-center">
                <p className="text-[12px] font-bold text-[#82ABB0] mb-2">Hóa đơn mới nhất</p>
-               <h3 className="text-[22px] font-bold text-[#0F3A40]">Tháng 10/2023</h3>
+               <h3 className="text-[22px] font-bold text-[#0F3A40]">Tháng {latestMonthLabel}</h3>
                <div className="w-full h-1.5 bg-[#BCE1E5]/30 rounded-full mt-5 overflow-hidden">
                   <div className="w-[70%] h-full bg-[#14B8A6] rounded-full"></div>
                </div>
@@ -105,8 +203,10 @@ export default function TenantInvoicePage() {
                         className="appearance-none bg-[#F2FCFD] border border-[#BCE1E5]/40 rounded-2xl px-6 py-2.5 pr-12 text-[13px] font-bold text-[#0F3A40] outline-none cursor-pointer hover:border-[#14B8A6]/30 transition-all"
                      >
                         <option>Trạng thái Tất cả</option>
-                        <option>Đã thanh toán</option>
                         <option>Chưa thanh toán</option>
+                        <option>Chờ phê duyệt</option>
+                        <option>Không thành công</option>
+                        <option>Đã phê duyệt</option>
                      </select>
                      <Filter size={14} className="absolute right-5 top-1/2 -translate-y-1/2 text-[#4A787C] pointer-events-none" />
                   </div>
@@ -159,11 +259,14 @@ export default function TenantInvoicePage() {
                               <span className="font-bold text-[#0F3A40] text-[16px]">{inv.total}</span>
                            </td>
                            <td className="px-6 py-6">
-                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all ${inv.statusType === 'paid'
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all ${
+                                 inv.statusType === 'approved'
                                     ? 'bg-[#EBFDFB] text-[#14B8A6]'
-                                    : 'bg-[#FFF0F0] text-[#D14D4D]'
+                                    : inv.statusType === 'pending'
+                                      ? 'bg-[#FFF3E0] text-[#E68A00]'
+                                      : 'bg-[#FFF0F0] text-[#D14D4D]'
                                  }`}>
-                                 {inv.statusType === 'paid' ? <CheckCircle2 size={12} /> : <div className="w-1.5 h-1.5 rounded-full bg-current" />}
+                                 {inv.statusType === 'approved' ? <CheckCircle2 size={12} /> : <div className="w-1.5 h-1.5 rounded-full bg-current" />}
                                  {inv.status?.toUpperCase()}
                               </div>
                            </td>
@@ -172,12 +275,12 @@ export default function TenantInvoicePage() {
                                  <button className="p-2.5 rounded-xl bg-[#F2FCFD] border border-[#BCE1E5]/40 text-[#4A787C] hover:text-[#14B8A6] hover:bg-white transition-all shadow-sm">
                                     <Eye size={16} />
                                  </button>
-                                 {inv.statusType === 'unpaid' && (
+                                 {(inv.statusType === 'unpaid' || inv.statusType === 'failed') && (
                                     <button
-                                       onClick={(e) => { e.stopPropagation(); navigate('/tenant/payment'); }}
+                                       onClick={(e) => { e.stopPropagation(); navigate(`/tenant/payment?invoiceId=${inv.invoice_id}`); }}
                                        className="px-5 py-2.5 rounded-xl bg-[#14B8A6] text-white text-[12px] font-bold shadow-lg shadow-[#14B8A6]/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
                                     >
-                                       Thanh toán
+                                       {inv.statusType === 'failed' ? 'Gửi lại' : 'Thanh toán'}
                                     </button>
                                  )}
                               </div>
@@ -190,7 +293,10 @@ export default function TenantInvoicePage() {
 
             {/* Pagination */}
             <div className="p-8 border-t border-[#BCE1E5]/30 flex justify-between items-center text-[12px] font-bold text-[#82ABB0]">
-               <span>Hiển thị {filteredInvoices.length} trong tổng số <span className="text-[#0F3A40]">{invoices.length} hóa đơn</span></span>
+               <span>
+                  Hiển thị {filteredInvoices.length} trong tổng số <span className="text-[#0F3A40]">{invoices.length} hóa đơn</span>
+                  {latestPendingInvoice ? ` • ${latestPendingInvoice.month} đang chờ phê duyệt` : ''}
+               </span>
                <div className="flex items-center gap-3">
                   <button className="p-2 rounded-full hover:bg-[#F2FCFD] transition-all"><ChevronLeft size={16} /></button>
                   <button className="w-8 h-8 rounded-full bg-[#0F3A40] text-white flex items-center justify-center shadow-lg shadow-[#0F3A40]/20">1</button>

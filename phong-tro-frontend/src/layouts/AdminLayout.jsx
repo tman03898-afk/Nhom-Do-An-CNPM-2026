@@ -1,16 +1,127 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../lib/api';
 import {
   LayoutDashboard, Home, Users, Receipt,
   Wallet, Zap, Hammer, Bell, Bird, ChevronLeft, ChevronRight, Package, ClipboardList, Menu, X
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+/** Khóa badge khớp GET /admin/nav-badges → badges */
+const BADGE_BY_PATH = {
+  '/admin/contracts': 'contracts',
+  '/admin/invoices': 'invoices',
+  '/admin/payments': 'payments',
+  '/admin/tickets': 'tickets',
+  '/admin/notifications': 'notifications',
+};
+
+function formatBadgeCount(n) {
+  const x = Number(n) || 0;
+  if (x <= 0) return null;
+  return x > 99 ? '99+' : String(x);
+}
+
+/** Số server − mốc đã vào trang; baseline undefined = chưa “xóa đỏ” → hiện full. */
+function deltaNavBadge(serverCount, baselineVal) {
+  const s = Number(serverCount) || 0;
+  if (baselineVal === undefined || baselineVal === null) return s;
+  const b = Number(baselineVal);
+  if (Number.isNaN(b)) return s;
+  return Math.max(0, s - b);
+}
+
+const BASELINE_STORAGE_KEY = 'admin-nav-badge-baseline';
 
 export default function AdminLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [badges, setBadges] = useState({});
+  const [baseline, setBaseline] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(BASELINE_STORAGE_KEY);
+      if (!raw) return {};
+      const o = JSON.parse(raw);
+      return typeof o === 'object' && o && !Array.isArray(o) ? o : {};
+    } catch {
+      return {};
+    }
+  });
+  /** Tránh snap lại khi chỉ polling trong cùng route */
+  const lastSnappedPathRef = useRef('');
+
+  const loadBadges = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await apiFetch('/admin/nav-badges', { token });
+      setBadges(data.badges || {});
+    } catch {
+      setBadges({});
+    }
+  }, [token]);
+
+  /** Mỗi lần đổi trang: cập nhật số badge ngay (kèm lần đầu vào layout). */
+  useEffect(() => {
+    loadBadges();
+  }, [loadBadges, location.pathname]);
+
+  /** Polling + tab hiện lại + sự kiện sau khi đánh dấu đã đọc thông báo… */
+  useEffect(() => {
+    const interval = setInterval(loadBadges, 30000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadBadges();
+    };
+    const onRefresh = () => loadBadges();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('admin-nav-badges-refresh', onRefresh);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('admin-nav-badges-refresh', onRefresh);
+    };
+  }, [loadBadges]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(BASELINE_STORAGE_KEY, JSON.stringify(baseline));
+    } catch {
+      /* ignore */
+    }
+  }, [baseline]);
+
+  /** Hàng đợi giảm (đã xử lý) → hạ mốc để không bị âm / kẹt số. */
+  useEffect(() => {
+    setBaseline((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const k of Object.keys(badges)) {
+        const s = Number(badges[k]) || 0;
+        const b = next[k];
+        if (b !== undefined && s < b) {
+          next[k] = s;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [badges]);
+
+  /** Mỗi lần vào đúng route có badge: coi như đã xem → ẩn đỏ cho mức hiện tại. */
+  useEffect(() => {
+    const key = BADGE_BY_PATH[location.pathname];
+    if (!key || !token) return;
+    if (Object.keys(badges).length === 0) return;
+
+    if (lastSnappedPathRef.current !== location.pathname) {
+      lastSnappedPathRef.current = location.pathname;
+      const s = Number(badges[key]) || 0;
+      setBaseline((prev) => ({ ...prev, [key]: s }));
+    }
+  }, [location.pathname, token, badges]);
+
+  const notificationBellDelta = deltaNavBadge(badges.notifications, baseline.notifications);
 
   const links = [
     { name: 'Bảng điều khiển', path: '/admin/dashboard', icon: LayoutDashboard },
@@ -81,18 +192,39 @@ export default function AdminLayout() {
           {links.map((link) => {
             const isActive = location.pathname.startsWith(link.path);
             const showLabel = !isCollapsed || isMobileMenuOpen;
+            const badgeKey = BADGE_BY_PATH[link.path];
+            const rawCount = badgeKey
+              ? deltaNavBadge(badges[badgeKey], baseline[badgeKey])
+              : 0;
+            const badgeText = formatBadgeCount(rawCount);
             return (
               <Link
                 key={link.path}
                 to={link.path}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className={`flex items-center gap-4 rounded-2xl transition-all duration-300 h-12 overflow-hidden ${(!showLabel) ? 'justify-center px-0' : 'px-5'} ${isActive
+                className={`relative flex items-center gap-4 rounded-2xl transition-all duration-300 min-h-12 overflow-visible ${(!showLabel) ? 'justify-center px-0' : 'px-5'} ${isActive
                   ? 'bg-[#14B8A6] text-white font-bold shadow-lg shadow-[#14B8A6]/20'
                   : 'text-white/70 hover:bg-white/5 hover:text-white font-medium'
                   }`}
               >
-                <link.icon className={`w-[18px] h-[18px] transition-colors shrink-0 ${isActive ? 'text-white' : 'text-[#14B8A6]'}`} />
-                {showLabel && <span className="text-[13.5px] tracking-wide whitespace-nowrap transition-opacity duration-300">{link.name}</span>}
+                <span className="relative inline-flex items-center justify-center shrink-0 w-[18px] h-[18px]">
+                  <link.icon className={`w-[18px] h-[18px] transition-colors ${isActive ? 'text-white' : 'text-[#14B8A6]'}`} />
+                  {!showLabel && badgeText ? (
+                    <span className="absolute -right-2 -top-2 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center leading-none shadow-md border border-[#1E4D54]">
+                      {badgeText}
+                    </span>
+                  ) : null}
+                </span>
+                {showLabel && (
+                  <>
+                    <span className="flex-1 text-[13.5px] tracking-wide whitespace-nowrap transition-opacity duration-300">{link.name}</span>
+                    {badgeText ? (
+                      <span className="min-w-[22px] h-[22px] px-1 rounded-full bg-red-500 text-white text-[11px] font-extrabold flex items-center justify-center leading-none shadow-sm shrink-0">
+                        {badgeText}
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </Link>
             )
           })}
@@ -128,11 +260,18 @@ export default function AdminLayout() {
 
           {/* User Actions */}
           <div className="flex items-center gap-3 lg:gap-7">
-            {/* Notification Bell */}
-            <button className="relative w-10 h-10 lg:w-11 lg:h-11 rounded-xl lg:rounded-2xl bg-white flex items-center justify-center text-nest-text-secondary hover:text-nest-primary hover:shadow-lg hover:shadow-nest-primary/10 transition-all border border-transparent hover:border-nest-primary/10 group">
+            <Link
+              to="/admin/notifications"
+              className="relative w-10 h-10 lg:w-11 lg:h-11 rounded-xl lg:rounded-2xl bg-white flex items-center justify-center text-nest-text-secondary hover:text-nest-primary hover:shadow-lg hover:shadow-nest-primary/10 transition-all border border-transparent hover:border-nest-primary/10 group"
+              aria-label="Thông báo"
+            >
                <Bell className="w-5 h-5 group-hover:scale-110 transition-transform" />
-               <span className="absolute top-3 right-3 w-1.5 h-1.5 lg:w-2 lg:h-2 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
-            </button>
+               {formatBadgeCount(notificationBellDelta) ? (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-extrabold flex items-center justify-center leading-none border-2 border-white shadow-sm">
+                     {formatBadgeCount(notificationBellDelta)}
+                  </span>
+               ) : null}
+            </Link>
 
             {/* Profile Section */}
             <div className="flex items-center gap-2 lg:gap-4 pl-3 lg:pl-6 border-l border-nest-text-primary/10">

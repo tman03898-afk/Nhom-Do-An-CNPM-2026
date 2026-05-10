@@ -97,6 +97,27 @@ router.post('/tenant/notifications/:id/read', requireAuth, async (req, res) => {
   }
 });
 
+/** Đánh dấu đã đọc mọi thông báo gửi **cho tài khoản admin** (để badge sidebar/chuông về 0). */
+router.post('/admin/notifications/mark-all-read', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await ensureUsersTable();
+    await ensureNotificationsTable();
+
+    const result = await pool.query(
+      `UPDATE notifications
+       SET is_read = TRUE, updated_at = NOW()
+       WHERE user_id = $1 AND is_read = FALSE
+       RETURNING notification_id`,
+      [req.auth.sub]
+    );
+
+    return res.json({ ok: true, marked: result.rowCount });
+  } catch (err) {
+    console.error('Mark all admin notifications read error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
 router.get('/admin/notifications', requireAuth, requireAdmin, async (req, res) => {
   try {
     await ensureUsersTable();

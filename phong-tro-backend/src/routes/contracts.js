@@ -427,7 +427,8 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
          c.created_at,
          c.updated_at,
          r.room_id,
-         r.room_number
+         r.room_number,
+         r.max_tenants
        FROM users u
        JOIN tenants t ON t.user_id = u.user_id
        LEFT JOIN contracts c ON c.tenant_id = t.tenant_id AND c.status = 'ACTIVE'

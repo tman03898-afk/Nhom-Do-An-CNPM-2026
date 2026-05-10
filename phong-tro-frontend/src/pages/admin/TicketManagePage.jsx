@@ -1,13 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Plus, BarChart3, ClipboardList, PenTool, CheckCircle2, 
   Filter, Snowflake, Droplet, Lightbulb, Key, 
   MoreVertical, PhoneCall, Trash2, Eye, Clock, Search, X
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 
 export default function TicketManagePage() {
    const { addToast } = useToast();
+   const { token } = useAuth();
    const [activeMenuId, setActiveMenuId] = useState(null);
    const [showFilters, setShowFilters] = useState(false);
    const [searchTerm, setSearchTerm] = useState('');
@@ -16,47 +19,62 @@ export default function TicketManagePage() {
    const menuRef = useRef(null);
    const filterRef = useRef(null);
 
-   const stats = [
-      { label: 'Tổng phiếu', value: '42', icon: <BarChart3 className="w-4 h-4 text-[#14B8A6]" />, border: 'border-[#14B8A6]/30', bg: 'bg-white' },
-      { label: 'Chờ xử lý', value: '12', icon: <ClipboardList className="w-4 h-4 text-[#E68A00]" />, border: 'border-[#E68A00]', bg: 'bg-white' },
-      { label: 'Đang thực hiện', value: '08', icon: <PenTool className="w-4 h-4 text-[#3B82F6]" />, border: 'border-[#3B82F6]', bg: 'bg-white' },
-      { label: 'Hoàn thành', value: '22', icon: <CheckCircle2 className="w-4 h-4 text-[#14B8A6]" />, border: 'border-[#14B8A6]', bg: 'bg-white' },
-   ];
+   const [tickets, setTickets] = useState([]);
+   const [isLoading, setIsLoading] = useState(false);
 
-   const [tickets, setTickets] = useState([
-      {
-         id: 1,
-         iconBlock: 'bg-[#FFF0F0] text-[#D14D4D]', icon: <Snowflake className="w-4 h-4" />,
-         title: 'Điều hòa không mát', room: 'P.304 - Building A', roomColor: 'text-[#4A787C]',
-         desc: 'Mới bật lên nhưng chỉ ra gió, không lạnh sau 3...',
-         date: '12/10/2023',
-         status: 'CHỜ XỬ LÝ', statusColor: 'bg-[#FFF3E0] text-[#E68A00]'
-      },
-      {
-         id: 2,
-         iconBlock: 'bg-[#EBF4FF] text-[#3B82F6]', icon: <Droplet className="w-4 h-4" />,
-         title: 'Rò rỉ vòi nước', room: 'P.102 - Building B', roomColor: 'text-[#4A787C]',
-         desc: 'Vòi sen trong nhà tắm bị rỉ nước liên tục...',
-         date: '11/10/2023',
-         status: 'ĐANG THỰC HIỆN', statusColor: 'bg-[#EBF4FF] text-[#3B82F6]'
-      },
-      {
-         id: 3,
-         iconBlock: 'bg-[#EBFDFB] text-[#14B8A6]', icon: <Lightbulb className="w-4 h-4" />,
-         title: 'Thay bóng đèn hành lang', room: 'Khu vực chung - Tầng 2', roomColor: 'text-[#14B8A6]',
-         desc: 'Bóng đèn chớp liên tục gây khó chịu cho cư d...',
-         date: '10/10/2023',
-         status: 'HOÀN THÀNH', statusColor: 'bg-[#EBFDFB] text-[#14B8A6]'
-      },
-      {
-         id: 4,
-         iconBlock: 'bg-[#FFF3E0] text-[#E68A00]', icon: <Key className="w-4 h-4" />,
-         title: 'Kẹt khóa cửa phòng', room: 'P.505 - Building A', roomColor: 'text-[#4A787C]',
-         desc: 'Ổ khóa thông minh bị lỗi không nhận vân tay...',
-         date: '09/10/2023',
-         status: 'CHỜ XỬ LÝ', statusColor: 'bg-[#FFF3E0] text-[#E68A00]'
+   const mapStatus = (apiStatus) => {
+      if (apiStatus === 'OPEN') return 'CHỜ XỬ LÝ';
+      if (apiStatus === 'IN_PROGRESS') return 'ĐANG THỰC HIỆN';
+      if (apiStatus === 'RESOLVED' || apiStatus === 'CLOSED') return 'HOÀN THÀNH';
+      return 'CHỜ XỬ LÝ';
+   };
+
+   const statusColor = (uiStatus) => {
+      let c = 'bg-[#FFF3E0] text-[#E68A00]';
+      if (uiStatus === 'ĐANG THỰC HIỆN') c = 'bg-[#EBF4FF] text-[#3B82F6]';
+      if (uiStatus === 'HOÀN THÀNH') c = 'bg-[#EBFDFB] text-[#14B8A6]';
+      return c;
+   };
+
+   const refresh = async () => {
+      if (!token) return;
+      setIsLoading(true);
+      try {
+         const data = await apiFetch('/admin/tickets', { token });
+         const mapped = (data.tickets || []).map((t) => {
+            const uiStatus = mapStatus(t.status);
+            return {
+               id: t.incident_id,
+               title: t.title,
+               room: t.room_number ? `Phòng ${t.room_number}` : '—',
+               roomColor: 'text-[#0F3A40]',
+               desc: t.description || '',
+               date: t.created_at ? new Date(t.created_at).toLocaleDateString('vi-VN') : '—',
+               status: uiStatus,
+               statusColor: statusColor(uiStatus),
+               iconBlock: 'bg-[#EBFDFB] text-[#14B8A6]',
+               icon: <Lightbulb className="w-4 h-4" />,
+            };
+         });
+         setTickets(mapped);
+      } catch (e) {
+         setTickets([]);
+      } finally {
+         setIsLoading(false);
       }
-   ]);
+   };
+
+   useEffect(() => {
+      refresh();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [token]);
+
+   const stats = useMemo(() => ([
+      { label: 'Tổng phiếu', value: String(tickets.length), icon: <BarChart3 className="w-4 h-4 text-[#14B8A6]" />, border: 'border-[#14B8A6]/30', bg: 'bg-white' },
+      { label: 'Chờ xử lý', value: String(tickets.filter((t) => t.status === 'CHỜ XỬ LÝ').length), icon: <ClipboardList className="w-4 h-4 text-[#E68A00]" />, border: 'border-[#E68A00]', bg: 'bg-white' },
+      { label: 'Đang thực hiện', value: String(tickets.filter((t) => t.status === 'ĐANG THỰC HIỆN').length), icon: <PenTool className="w-4 h-4 text-[#3B82F6]" />, border: 'border-[#3B82F6]', bg: 'bg-white' },
+      { label: 'Hoàn thành', value: String(tickets.filter((t) => t.status === 'HOÀN THÀNH').length), icon: <CheckCircle2 className="w-4 h-4 text-[#14B8A6]" />, border: 'border-[#14B8A6]', bg: 'bg-white' },
+   ]), [tickets]);
 
    // Close popovers when clicking outside
    useEffect(() => {
@@ -72,24 +90,24 @@ export default function TicketManagePage() {
       return () => document.removeEventListener("mousedown", handleClickOutside);
    }, [menuRef, filterRef]);
 
-   const handleStatusUpdate = (id, newStatus) => {
-      let statusColor = 'bg-[#FFF3E0] text-[#E68A00]';
-      if (newStatus === 'ĐANG THỰC HIỆN') statusColor = 'bg-[#EBF4FF] text-[#3B82F6]';
-      if (newStatus === 'HOÀN THÀNH') statusColor = 'bg-[#EBFDFB] text-[#14B8A6]';
+   const toApiStatus = (uiStatus) => {
+      if (uiStatus === 'CHỜ XỬ LÝ') return 'OPEN';
+      if (uiStatus === 'ĐANG THỰC HIỆN') return 'IN_PROGRESS';
+      if (uiStatus === 'HOÀN THÀNH') return 'RESOLVED';
+      return 'OPEN';
+   };
 
-      setTickets(tickets.map(t => 
-         t.id === id ? { ...t, status: newStatus, statusColor } : t
-      ));
+   const handleStatusUpdate = async (id, newStatus) => {
+      if (!token) return;
+      await apiFetch(`/admin/tickets/${id}`, { token, method: 'PUT', body: { status: toApiStatus(newStatus) } });
       setActiveMenuId(null);
       addToast(`Đã chuyển trạng thái sang: ${newStatus}`);
+      await refresh();
    };
 
    const handleDelete = (id) => {
-      if (window.confirm('Bạn có chắc muốn xóa phiếu yêu cầu này?')) {
-         setTickets(tickets.filter(t => t.id !== id));
-         setActiveMenuId(null);
-         addToast('Đã xóa phiếu yêu cầu bảo trì!', 'error');
-      }
+      addToast('Hiện backend chưa hỗ trợ xoá phiếu (để tránh mất lịch sử).', 'error');
+      setActiveMenuId(null);
    };
 
    const toggleStatusFilter = (status) => {
@@ -242,7 +260,13 @@ export default function TicketManagePage() {
                      </tr>
                   </thead>
                   <tbody className="before:block before:h-2">
-                     {filteredTickets.length > 0 ? (
+                     {isLoading ? (
+                        <tr>
+                           <td colSpan="6" className="py-20 text-center text-[13px] font-medium text-[#4A787C]">
+                              Đang tải dữ liệu...
+                           </td>
+                        </tr>
+                     ) : filteredTickets.length > 0 ? (
                         filteredTickets.map((t) => (
                            <tr key={t.id} className="border-b border-[#BCE1E5]/40 last:border-0 hover:bg-[#F2FCFD]/50 transition-colors">
                               <td className="py-5 px-2">

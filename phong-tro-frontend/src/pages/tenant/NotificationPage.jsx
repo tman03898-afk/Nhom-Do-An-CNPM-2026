@@ -1,45 +1,52 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bell, Zap, Package, CreditCard, MessageSquare, ChevronRight, SearchX, Search, X } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 
 export default function TenantNotificationPage() {
+   const { token } = useAuth();
    const [searchQuery, setSearchQuery] = useState('');
-   const notifications = [
-      {
-         id: 1,
-         type: 'utility',
-         title: 'Thông báo tạm ngưng cấp điện',
-         desc: 'Hệ thống điện tòa nhà A sẽ được bảo trì vào lúc 14:00 - 16:00 chiều nay.',
-         time: '2 giờ trước',
-         icon: <Zap size={20} />,
-         iconBg: 'bg-yellow-100 text-yellow-600',
-         isNew: true
-      },
-      {
-         id: 2,
-         type: 'package',
-         title: 'Bưu phẩm mới đã đến',
-         desc: 'Bạn có một kiện hàng từ Shopee đang chờ tại quầy lễ tân.',
-         time: '12:00 PM',
-         icon: <Package size={20} />,
-         iconBg: 'bg-blue-100 text-blue-600',
-         isNew: true
-      },
-      {
-         id: 3,
-         type: 'payment',
-         title: 'Hóa đơn tháng 10/2023 đã sẵn sàng',
-         desc: 'Vui lòng kiểm tra và thanh toán hóa đơn trước ngày 05/11.',
-         time: 'Hôm qua',
-         icon: <CreditCard size={20} />,
-         iconBg: 'bg-green-100 text-green-600',
-         isNew: false
-      }
-   ];
+   const [notifications, setNotifications] = useState([]);
+   const [isLoading, setIsLoading] = useState(false);
 
-   const filteredNotifications = notifications.filter(n =>
-      n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.desc.toLowerCase().includes(searchQuery.toLowerCase())
-   );
+   const fetchNotifications = async () => {
+      if (!token) return;
+      setIsLoading(true);
+      try {
+         const data = await apiFetch('/tenant/notifications', { token });
+         setNotifications(data.notifications || []);
+      } catch (e) {
+         setNotifications([]);
+      } finally {
+         setIsLoading(false);
+      }
+   };
+
+   useEffect(() => {
+      fetchNotifications();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [token]);
+
+   const filteredNotifications = notifications
+      .map((n) => ({
+         id: n.notification_id,
+         title: n.title,
+         desc: n.body || '',
+         time: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : '',
+         isNew: !n.is_read,
+      }))
+      .filter((n) =>
+         n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         n.desc.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
+   const markRead = async (id) => {
+      if (!token) return;
+      try {
+         await apiFetch(`/tenant/notifications/${id}/read`, { token, method: 'POST' });
+      } catch (e) {}
+      await fetchNotifications();
+   };
 
    return (
       <div className="flex flex-col gap-8 pb-10">
@@ -78,11 +85,13 @@ export default function TenantNotificationPage() {
             </div>
 
             <div className="space-y-2">
-               {filteredNotifications.length > 0 ? (
+               {isLoading ? (
+                  <div className="py-10 text-center text-[13px] font-medium text-[#4A787C]">Đang tải thông báo...</div>
+               ) : filteredNotifications.length > 0 ? (
                   filteredNotifications.map((n) => (
-                     <div key={n.id} className={`flex items-center gap-6 p-6 rounded-[32px] transition-all cursor-pointer group ${n.isNew ? 'bg-white/80' : 'hover:bg-[#F2FCFD]/40'}`}>
-                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${n.iconBg} group-hover:scale-110 transition-transform`}>
-                           {n.icon}
+                     <div key={n.id} onClick={() => markRead(n.id)} className={`flex items-center gap-6 p-6 rounded-[32px] transition-all cursor-pointer group ${n.isNew ? 'bg-white/80' : 'hover:bg-[#F2FCFD]/40'}`}>
+                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${n.isNew ? 'bg-yellow-100 text-yellow-600' : 'bg-slate-100 text-slate-500'} group-hover:scale-110 transition-transform`}>
+                           <Zap size={20} />
                         </div>
                         <div className="flex-1 min-w-0">
                            <div className="flex items-center gap-3 mb-1">
