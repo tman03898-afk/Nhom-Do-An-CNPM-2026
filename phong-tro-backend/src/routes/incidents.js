@@ -9,6 +9,32 @@ const { ensureEnumType, ensureRoomsTable, ensureUsersTable } = require('./_dbHel
 
 const router = express.Router();
 
+/** DB cũ có thể đã tạo incident_status trước khi có RESOLVED/CLOSED — bổ sung nhãn enum. */
+async function syncIncidentStatusEnumValues() {
+  const desired = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
+  try {
+    const r = await pool.query(
+      `SELECT e.enumlabel
+       FROM pg_type t
+       JOIN pg_enum e ON t.oid = e.enumtypid
+       WHERE t.typname = 'incident_status'`
+    );
+    const have = new Set(r.rows.map((row) => String(row.enumlabel)));
+    for (const lab of desired) {
+      if (have.has(lab)) continue;
+      try {
+        await pool.query(`ALTER TYPE incident_status ADD VALUE IF NOT EXISTS '${lab}'`);
+      } catch (err) {
+        if (err.code !== '42710' && err.code !== '23505') {
+          console.warn('syncIncidentStatusEnumValues:', lab, err.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('syncIncidentStatusEnumValues:', err.message);
+  }
+}
+
 const incidentUploadDir = path.join(__dirname, '../../uploads/incident-attachments');
 if (!fs.existsSync(incidentUploadDir)) {
   fs.mkdirSync(incidentUploadDir, { recursive: true });
@@ -37,6 +63,8 @@ const incidentUpload = multer({
 async function ensureIncidentsTable() {
   await ensureEnumType('incident_status', ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']);
   await ensureEnumType('incident_priority', ['LOW', 'MEDIUM', 'HIGH']);
+
+  await syncIncidentStatusEnumValues();
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS incidents (
@@ -124,10 +152,20 @@ router.put('/admin/tickets/:id', requireAuth, requireAdmin, async (req, res) => 
       return res.status(400).json({ ok: false, message: 'no valid fields provided for update' });
     }
 
+    const allowedIncidentStatus = new Set(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']);
+    const statusEntry = entries.find(([k]) => k === 'status');
+    if (statusEntry) {
+      const raw = String(statusEntry[1] || '').trim().toUpperCase();
+      if (!allowedIncidentStatus.has(raw)) {
+        return res.status(400).json({ ok: false, message: 'invalid status' });
+      }
+    }
+
     const values = [];
     const setClauses = entries.map(([key, value], idx) => {
       if (key === 'status') {
-        values.push(String(value));
+        const raw = String(value || '').trim().toUpperCase();
+        values.push(raw);
         return `${key} = $${idx + 1}::incident_status`;
       }
       if (key === 'priority') {

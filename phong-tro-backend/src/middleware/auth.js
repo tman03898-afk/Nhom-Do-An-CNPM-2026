@@ -24,14 +24,16 @@ function requireAuth(req, res, next) {
 }
 
 function requireAdmin(req, res, next) {
-  if (!req.auth || req.auth.role !== 'ADMIN') {
+  const role = String(req.auth?.role || '').toUpperCase();
+  if (!req.auth || role !== 'ADMIN') {
     return res.status(403).json({ ok: false, message: 'admin permission required' });
   }
   return next();
 }
 
 function requireTenant(req, res, next) {
-  if (!req.auth || req.auth.role !== 'TENANT') {
+  const role = String(req.auth?.role || '').toUpperCase();
+  if (!req.auth || role !== 'TENANT') {
     return res.status(403).json({ ok: false, message: 'tenant permission required' });
   }
   return next();

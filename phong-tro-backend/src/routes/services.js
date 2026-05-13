@@ -2,7 +2,9 @@ const express = require('express');
 
 const pool = require('../config/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
+const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable, formatCalendarDateString } = require('./_dbHelpers');
+const { sumAllRecurringExtrasForTenant, ensureTenantServiceSubscriptionsTable } = require('./_subscriptionFees');
+const { ensureInvoicesTable } = require('./invoices');
 
 const router = express.Router();
 
@@ -17,6 +19,14 @@ async function ensureServicesTable() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+  await pool.query(
+    `ALTER TABLE services ADD COLUMN IF NOT EXISTS allow_tenant_subscription BOOLEAN NOT NULL DEFAULT TRUE`
+  );
+  await pool.query(`
+    UPDATE services
+    SET allow_tenant_subscription = false
+    WHERE LOWER(TRIM(COALESCE(unit, ''))) IN ('kwh', 'm3', 'm³')
   `);
 }
 
@@ -36,6 +46,41 @@ async function ensureUtilityReadingsTable() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_utility_readings_room_id ON utility_readings(room_id)`);
+
+  const { rows: colRows } = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'utility_readings'`
+  );
+  const cols = new Set(colRows.map((r) => r.column_name));
+
+  // DB cũ (seed / constraint_db): một dòng gồm contract_id, billing_month, electricity_*, water_* — không có utility_type.
+  // INSERT mới cần utility_type + previous/current; nới NOT NULL các cột legacy để tránh 500.
+  const isLegacyWide = cols.has('electricity_new') || cols.has('electricity_old');
+  if (isLegacyWide) {
+    if (!cols.has('utility_type')) {
+      await pool.query(`ALTER TABLE utility_readings ADD COLUMN utility_type utility_type`);
+    }
+    await pool.query(`ALTER TABLE utility_readings ADD COLUMN IF NOT EXISTS previous_value NUMERIC NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE utility_readings ADD COLUMN IF NOT EXISTS current_value NUMERIC NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE utility_readings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
+    await pool.query(`ALTER TABLE utility_readings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
+
+    const dropNN = async (name) => {
+      if (!cols.has(name)) return;
+      try {
+        await pool.query(`ALTER TABLE utility_readings ALTER COLUMN ${name} DROP NOT NULL`);
+      } catch (e) {
+        /* already nullable or permission */
+      }
+    };
+    await dropNN('contract_id');
+    await dropNN('billing_month');
+    await dropNN('electricity_old');
+    await dropNN('electricity_new');
+    await dropNN('water_old');
+    await dropNN('water_new');
+  }
 }
 
 async function ensureContractsTableForUtilities() {
@@ -94,21 +139,221 @@ async function ensureContractsTableForUtilities() {
 
 function normalizeDate(value) {
   if (!value) return null;
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  return formatCalendarDateString(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
 async function getPreviousUtilityValue(roomId, utilityType) {
+  const ut = String(utilityType).toUpperCase();
   const prev = await pool.query(
     `SELECT current_value
      FROM utility_readings
-     WHERE room_id = $1 AND utility_type = $2
-     ORDER BY recorded_at DESC, reading_id DESC
+     WHERE room_id = $1 AND utility_type = $2::utility_type
+     ORDER BY recorded_at DESC NULLS LAST, reading_id DESC
      LIMIT 1`,
-    [roomId, String(utilityType)]
+    [roomId, ut]
   );
-  return prev.rowCount ? Number(prev.rows[0].current_value || 0) : 0;
+  if (prev.rowCount) return Number(prev.rows[0].current_value || 0);
+
+  /**
+   * Nếu phòng đã có chỉ số kiểu mới (ELECTRIC/WATER) cho **bất kỳ** loại nào mà loại hiện tại
+   * **chưa** có bản ghi typed → không đọc dòng legacy (utility_type IS NULL).
+   * Tránh lệch cơ sở: ví dụ điện đã có bản ghi 50, nước fallback legacy = 0 → nhập 50/50
+   * thành tiền điện 0 nhưng nước tính cả 50 khối.
+   */
+  const typedAny = await pool.query(
+    `SELECT 1
+     FROM utility_readings
+     WHERE room_id = $1 AND utility_type IS NOT NULL
+     LIMIT 1`,
+    [roomId]
+  );
+  if (typedAny.rowCount) {
+    return 0;
+  }
+
+  if (!(await columnExists('utility_readings', 'electricity_new'))) {
+    return 0;
+  }
+
+  const leg = await pool.query(
+    `SELECT electricity_new, water_new
+     FROM utility_readings
+     WHERE room_id = $1 AND utility_type IS NULL
+     ORDER BY recorded_at DESC NULLS LAST, reading_id DESC
+     LIMIT 1`,
+    [roomId]
+  );
+  if (!leg.rowCount) return 0;
+  const r = leg.rows[0];
+  const raw = ut === 'WATER' ? r.water_new : r.electricity_new;
+  return Number(raw || 0);
+}
+
+async function hasPublicTable(tableName) {
+  const r = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = $1
+     ) AS ex`,
+    [tableName]
+  );
+  return r.rows[0]?.ex === true;
+}
+
+/**
+ * Đơn giá điện (VNĐ/kWh) và nước (VNĐ/m³): ưu tiên giá theo hợp đồng (contract_service_fees),
+ * sau đó bảng services (đơn vị kWh / m3), cuối cùng catalog service_fees (seed cũ).
+ */
+async function resolveUtilityRatesForContract(contractId) {
+  await ensureServicesTable();
+
+  let eleRate = 0;
+  let waterRate = 0;
+
+  const hasSf = await hasPublicTable('service_fees');
+  const hasCsf = await hasPublicTable('contract_service_fees');
+
+  const cid = Number(contractId);
+  if (Number.isInteger(cid) && cid > 0 && hasCsf && hasSf) {
+    const eRow = await pool.query(
+      `SELECT COALESCE(csf.agreed_price, sf.unit_price, 0)::numeric AS p
+       FROM contract_service_fees csf
+       JOIN service_fees sf ON sf.fee_id = csf.fee_id
+       WHERE csf.contract_id = $1
+         AND (TRIM(sf.fee_name) = 'Điện' OR LOWER(TRIM(sf.fee_name)) IN ('điện', 'dien'))
+       ORDER BY csf.id DESC
+       LIMIT 1`,
+      [cid]
+    );
+    if (eRow.rowCount) eleRate = Number(eRow.rows[0].p || 0);
+
+    const wRow = await pool.query(
+      `SELECT COALESCE(csf.agreed_price, sf.unit_price, 0)::numeric AS p
+       FROM contract_service_fees csf
+       JOIN service_fees sf ON sf.fee_id = csf.fee_id
+       WHERE csf.contract_id = $1
+         AND (TRIM(sf.fee_name) = 'Nước' OR LOWER(TRIM(sf.fee_name)) IN ('nước', 'nuoc'))
+       ORDER BY csf.id DESC
+       LIMIT 1`,
+      [cid]
+    );
+    if (wRow.rowCount) waterRate = Number(wRow.rows[0].p || 0);
+  }
+
+  if (eleRate <= 0) {
+    const eleRes = await pool.query(
+      `SELECT price::numeric AS price
+       FROM services
+       WHERE COALESCE(is_active, true) = true
+         AND LOWER(TRIM(COALESCE(unit, ''))) = 'kwh'
+       ORDER BY service_id DESC
+       LIMIT 1`
+    );
+    if (eleRes.rowCount) eleRate = Number(eleRes.rows[0].price || 0);
+  }
+
+  if (waterRate <= 0) {
+    const watRes = await pool.query(
+      `SELECT price::numeric AS price
+       FROM services
+       WHERE COALESCE(is_active, true) = true
+         AND (
+           LOWER(TRIM(COALESCE(unit, ''))) IN ('m3', 'm³')
+           OR LOWER(REPLACE(REPLACE(TRIM(COALESCE(unit, '')), '³', '3'), ' ', '')) = 'm3'
+         )
+       ORDER BY service_id DESC
+       LIMIT 1`
+    );
+    if (watRes.rowCount) waterRate = Number(watRes.rows[0].price || 0);
+  }
+
+  if (eleRate <= 0 && hasSf) {
+    const r = await pool.query(
+      `SELECT COALESCE(unit_price, 0)::numeric AS p
+       FROM service_fees
+       WHERE COALESCE(is_active, true) = true
+         AND (TRIM(fee_name) = 'Điện' OR LOWER(TRIM(fee_name)) IN ('điện', 'dien'))
+       ORDER BY fee_id DESC
+       LIMIT 1`
+    );
+    if (r.rowCount) eleRate = Number(r.rows[0].p || 0);
+  }
+
+  if (waterRate <= 0 && hasSf) {
+    const r = await pool.query(
+      `SELECT COALESCE(unit_price, 0)::numeric AS p
+       FROM service_fees
+       WHERE COALESCE(is_active, true) = true
+         AND (TRIM(fee_name) = 'Nước' OR LOWER(TRIM(fee_name)) IN ('nước', 'nuoc'))
+       ORDER BY fee_id DESC
+       LIMIT 1`
+    );
+    if (r.rowCount) waterRate = Number(r.rows[0].p || 0);
+  }
+
+  return { eleRate, waterRate };
+}
+
+async function columnExists(table, column) {
+  const r = await pool.query(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+     LIMIT 1`,
+    [table, column]
+  );
+  return r.rowCount > 0;
+}
+
+function parseBillingMonthOverride(raw) {
+  if (raw == null || raw === '') return null;
+  const s = String(raw).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const y = Number(s.slice(0, 4));
+  const m = Number(s.slice(5, 7));
+  const first = formatCalendarDateString(y, m, 1);
+  const due = formatCalendarDateString(y, m, 5);
+  if (!first || !due) return null;
+  return { billing_month: first, due_date: due };
+}
+
+/**
+ * Ghi chỉ số vào đúng kỳ hóa đơn đang mở (ưu tiên hóa đơn chưa PAID cũ nhất),
+ * tránh lệch tháng khi server đã sang tháng mới nhưng kỳ tháng trước vẫn còn nợ.
+ */
+async function resolveBillingMonthForUtilityConfirm(tenantId, body) {
+  const fromBody = parseBillingMonthOverride(body?.billing_month);
+  if (fromBody) return fromBody;
+
+  const r = await pool.query(
+    `SELECT billing_month::text AS bm
+     FROM invoices
+     WHERE tenant_id = $1
+       AND UPPER(TRIM(status::text)) NOT IN ('PAID')
+     ORDER BY billing_month ASC
+     LIMIT 1`,
+    [tenantId]
+  );
+
+  const now = new Date();
+  if (r.rowCount > 0 && r.rows[0].bm) {
+    const bm = String(r.rows[0].bm).slice(0, 10);
+    const y = Number(bm.slice(0, 4));
+    const m = Number(bm.slice(5, 7));
+    return {
+      billing_month: formatCalendarDateString(y, m, 1),
+      due_date: formatCalendarDateString(y, m, 5),
+    };
+  }
+
+  return {
+    billing_month: formatCalendarDateString(now.getFullYear(), now.getMonth() + 1, 1),
+    due_date: formatCalendarDateString(now.getFullYear(), now.getMonth() + 1, 5),
+  };
 }
 
 async function upsertInvoiceFromUtility({
@@ -121,8 +366,18 @@ async function upsertInvoiceFromUtility({
   billing_month,
   due_date,
   created_by,
+  /** Dùng cùng client trong transaction (INSERT chỉ số + cập nhật hóa đơn). */
+  exec = null,
 }) {
-  const existing = await pool.query(
+  await ensureInvoicesTable();
+  await ensureTenantServiceSubscriptionsTable();
+  const subscriptionFees = await sumAllRecurringExtrasForTenant(tenant_id, billing_month);
+  const manualOther = Number(other_fees_amount || 0);
+  const otherFees = manualOther + subscriptionFees;
+
+  const run = exec || ((text, params) => pool.query(text, params));
+
+  const existing = await run(
     `SELECT invoice_id, status
      FROM invoices
      WHERE tenant_id = $1 AND billing_month = $2
@@ -133,7 +388,6 @@ async function upsertInvoiceFromUtility({
   const electricity = Number(electricity_amount || 0);
   const water = Number(water_amount || 0);
   const rent = Number(rent_amount || 0);
-  const otherFees = Number(other_fees_amount || 0);
   const total = rent + electricity + water + otherFees;
 
   if (existing.rowCount) {
@@ -141,20 +395,22 @@ async function upsertInvoiceFromUtility({
     const currentStatus = String(existing.rows[0].status || '');
     const nextStatus = currentStatus === 'PAID' ? 'PAID' : currentStatus === 'PARTIAL' ? 'PARTIAL' : 'UNPAID';
 
-    await pool.query(
+    await run(
       `UPDATE invoices
-       SET rent_amount = $1,
-           electricity_amount = $2,
-           water_amount = $3,
-           other_fees_amount = $4,
-           total_amount = $5,
-           due_date = $6,
-           status = $7
-       WHERE invoice_id = $8`,
-      [rent, electricity, water, otherFees, total, due_date, nextStatus, existing.rows[0].invoice_id]
+       SET contract_id = $1,
+           rent_amount = $2,
+           electricity_amount = $3,
+           water_amount = $4,
+           other_fees_amount = $5,
+           total_amount = $6,
+           due_date = $7,
+           status = $8,
+           updated_at = NOW()
+       WHERE invoice_id = $9`,
+      [contract_id, rent, electricity, water, otherFees, total, due_date, nextStatus, existing.rows[0].invoice_id]
     );
   } else {
-    await pool.query(
+    await run(
       `INSERT INTO invoices
         (contract_id, tenant_id, billing_month, due_date, rent_amount, electricity_amount, water_amount, other_fees_amount, total_amount, status, created_by)
        VALUES
@@ -168,7 +424,7 @@ router.get('/admin/services', requireAuth, requireAdmin, async (req, res) => {
   try {
     await ensureServicesTable();
     const result = await pool.query(
-      `SELECT service_id, name, unit, price, is_active, created_at, updated_at
+      `SELECT service_id, name, unit, price, is_active, allow_tenant_subscription, created_at, updated_at
        FROM services
        ORDER BY service_id DESC`
     );
@@ -182,15 +438,19 @@ router.get('/admin/services', requireAuth, requireAdmin, async (req, res) => {
 router.post('/admin/services', requireAuth, requireAdmin, async (req, res) => {
   try {
     await ensureServicesTable();
-    const { name, unit, price, is_active } = req.body || {};
+    const { name, unit, price, is_active, allow_tenant_subscription } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ ok: false, message: 'name is required' });
     }
+    const unitStr = unit ? String(unit).trim() : '';
+    const meterLike = ['kWh', 'm3', 'm³'].includes(unitStr);
+    const allowSub =
+      allow_tenant_subscription !== undefined ? Boolean(allow_tenant_subscription) : !meterLike;
     const result = await pool.query(
-      `INSERT INTO services (name, unit, price, is_active)
-       VALUES ($1, $2, $3, $4)
-       RETURNING service_id, name, unit, price, is_active, created_at, updated_at`,
-      [String(name).trim(), unit ? String(unit) : null, Number(price || 0), is_active !== undefined ? Boolean(is_active) : true]
+      `INSERT INTO services (name, unit, price, is_active, allow_tenant_subscription)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING service_id, name, unit, price, is_active, allow_tenant_subscription, created_at, updated_at`,
+      [String(name).trim(), unitStr || null, Number(price || 0), is_active !== undefined ? Boolean(is_active) : true, allowSub]
     );
     return res.status(201).json({ ok: true, service: result.rows[0] });
   } catch (err) {
@@ -210,7 +470,7 @@ router.put('/admin/services/:id', requireAuth, requireAdmin, async (req, res) =>
       return res.status(400).json({ ok: false, message: 'invalid service id' });
     }
 
-    const allowed = ['name', 'unit', 'price', 'is_active'];
+    const allowed = ['name', 'unit', 'price', 'is_active', 'allow_tenant_subscription'];
     const entries = Object.entries(req.body || {}).filter(([k]) => allowed.includes(k));
     if (entries.length === 0) {
       return res.status(400).json({ ok: false, message: 'no valid fields provided for update' });
@@ -218,7 +478,7 @@ router.put('/admin/services/:id', requireAuth, requireAdmin, async (req, res) =>
 
     const values = [];
     const setClauses = entries.map(([key, value], idx) => {
-      values.push(value);
+      values.push(key === 'allow_tenant_subscription' ? Boolean(value) : value);
       return `${key} = $${idx + 1}`;
     });
     values.push(id);
@@ -227,7 +487,7 @@ router.put('/admin/services/:id', requireAuth, requireAdmin, async (req, res) =>
       `UPDATE services
        SET ${setClauses.join(', ')}, updated_at = NOW()
        WHERE service_id = $${values.length}
-       RETURNING service_id, name, unit, price, is_active, created_at, updated_at`,
+       RETURNING service_id, name, unit, price, is_active, allow_tenant_subscription, created_at, updated_at`,
       values
     );
     if (result.rowCount === 0) {
@@ -236,6 +496,36 @@ router.put('/admin/services/:id', requireAuth, requireAdmin, async (req, res) =>
     return res.json({ ok: true, service: result.rows[0] });
   } catch (err) {
     console.error('Update service error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
+function parseOptionalPreviousReading(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+  const n = Number(raw);
+  if (Number.isNaN(n) || n < 0) return null;
+  return n;
+}
+
+/** Chỉ số đầu kỳ (mới − đầu kỳ = tiêu thụ) — dùng khi nhập chỉ số mới trên admin. */
+router.get('/admin/utilities/readings/baseline', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await ensureRoomsTable();
+    await ensureUtilityReadingsTable();
+    const roomId = Number(req.query.room_id);
+    if (!Number.isInteger(roomId) || roomId <= 0) {
+      return res.status(400).json({ ok: false, message: 'room_id is required' });
+    }
+    const previous_electric = await getPreviousUtilityValue(roomId, 'ELECTRIC');
+    const previous_water = await getPreviousUtilityValue(roomId, 'WATER');
+    return res.json({
+      ok: true,
+      room_id: roomId,
+      previous_electric,
+      previous_water,
+    });
+  } catch (err) {
+    console.error('Utility baseline error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
 });
@@ -363,8 +653,8 @@ router.post('/admin/utilities/readings/confirm', requireAuth, requireAdmin, asyn
       const end = new Date(start);
       end.setFullYear(end.getFullYear() + 1);
 
-      const startDate = start.toISOString().slice(0, 10);
-      const endDate = end.toISOString().slice(0, 10);
+      const startDate = formatCalendarDateString(start.getFullYear(), start.getMonth() + 1, start.getDate());
+      const endDate = formatCalendarDateString(end.getFullYear(), end.getMonth() + 1, end.getDate());
 
       const created = await pool.query(
         `INSERT INTO contracts
@@ -385,61 +675,90 @@ router.post('/admin/utilities/readings/confirm', requireAuth, requireAdmin, asyn
       );
     }
 
-    const now = new Date();
-    const billingMonthDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-    const dueDate = new Date(now.getFullYear(), now.getMonth(), 5).toISOString().slice(0, 10);
+    const { billing_month: billingMonthDate, due_date: dueDate } = await resolveBillingMonthForUtilityConfirm(
+      tenantId,
+      req.body || {}
+    );
 
-    // Save reading + calculate consumption from previous reading.
-    const prevEle = await getPreviousUtilityValue(roomId, 'ELECTRIC');
-    const prevWat = await getPreviousUtilityValue(roomId, 'WATER');
+    // Save reading + calculate consumption from previous reading (có thể ghi đè tay khi dữ liệu cũ lệch).
+    let prevEle = await getPreviousUtilityValue(roomId, 'ELECTRIC');
+    let prevWat = await getPreviousUtilityValue(roomId, 'WATER');
+    const oEl = parseOptionalPreviousReading(req.body?.electricity_previous);
+    const oWt = parseOptionalPreviousReading(req.body?.water_previous);
+    if (oEl !== null) prevEle = oEl;
+    if (oWt !== null) prevWat = oWt;
+
     const eleDelta = Math.max(eleCur - prevEle, 0);
     const watDelta = Math.max(watCur - prevWat, 0);
 
-    // Price per unit comes from `services` (admin config).
-    const eleRateRes = await pool.query(
-      `SELECT price
-       FROM services
-       WHERE is_active = true AND unit = 'kWh'
-       ORDER BY service_id DESC
-       LIMIT 1`
-    );
-    const waterRateRes = await pool.query(
-      `SELECT price
-       FROM services
-       WHERE is_active = true AND (unit = 'm3' OR unit = 'm³')
-       ORDER BY service_id DESC
-       LIMIT 1`
-    );
-    const eleRate = eleRateRes.rowCount ? Number(eleRateRes.rows[0].price || 0) : 0;
-    const waterRate = waterRateRes.rowCount ? Number(waterRateRes.rows[0].price || 0) : 0;
+    const { eleRate, waterRate } = await resolveUtilityRatesForContract(contractId);
+
+    if (eleDelta > 0 && eleRate <= 0) {
+      return res.status(400).json({
+        ok: false,
+        message:
+          'Chưa có đơn giá điện (VNĐ/kWh). Thêm trong Quản lý Dịch vụ (đơn vị kWh) hoặc cấu hình phí Điện trong hợp đồng / service_fees.',
+      });
+    }
+    if (watDelta > 0 && waterRate <= 0) {
+      return res.status(400).json({
+        ok: false,
+        message:
+          'Chưa có đơn giá nước (VNĐ/m³). Thêm trong Quản lý Dịch vụ (đơn vị m3 hoặc m³) hoặc cấu hình phí Nước trong hợp đồng / service_fees.',
+      });
+    }
 
     const eleCost = eleDelta * eleRate;
     const watCost = watDelta * waterRate;
 
-    await pool.query(
-      `INSERT INTO utility_readings (room_id, recorded_by, utility_type, previous_value, current_value, recorded_at)
-       VALUES ($1, $2, 'ELECTRIC', $3, $4, NOW())`,
-      [roomId, req.auth.sub, prevEle, eleCur]
-    );
-    await pool.query(
-      `INSERT INTO utility_readings (room_id, recorded_by, utility_type, previous_value, current_value, recorded_at)
-       VALUES ($1, $2, 'WATER', $3, $4, NOW())`,
-      [roomId, req.auth.sub, prevWat, watCur]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO utility_readings (room_id, recorded_by, utility_type, previous_value, current_value, recorded_at)
+         VALUES ($1, $2, 'ELECTRIC', $3, $4, NOW())`,
+        [roomId, req.auth.sub, prevEle, eleCur]
+      );
+      await client.query(
+        `INSERT INTO utility_readings (room_id, recorded_by, utility_type, previous_value, current_value, recorded_at)
+         VALUES ($1, $2, 'WATER', $3, $4, NOW())`,
+        [roomId, req.auth.sub, prevWat, watCur]
+      );
+      await upsertInvoiceFromUtility({
+        tenant_id: tenantId,
+        contract_id: contractId,
+        rent_amount: rentAmount,
+        electricity_amount: eleCost,
+        water_amount: watCost,
+        other_fees_amount: 0,
+        billing_month: billingMonthDate,
+        due_date: dueDate,
+        created_by: req.auth.sub,
+        exec: (text, params) => client.query(text, params),
+      });
+      await client.query('COMMIT');
+    } catch (e) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rbErr) {}
+      throw e;
+    } finally {
+      client.release();
+    }
 
-    await upsertInvoiceFromUtility({
-      tenant_id: tenantId,
-      contract_id: contractId,
-      rent_amount: rentAmount,
-      electricity_amount: eleCost,
-      water_amount: watCost,
-      other_fees_amount: 0,
-      billing_month: billingMonthDate,
-      due_date: dueDate,
-      created_by: req.auth.sub,
+    return res.json({
+      ok: true,
+      applied: {
+        previous_electric: prevEle,
+        previous_water: prevWat,
+        current_electric: eleCur,
+        current_water: watCur,
+        delta_electric_kwh: eleDelta,
+        delta_water_m3: watDelta,
+        amount_electric: eleCost,
+        amount_water: watCost,
+      },
     });
-
-    return res.json({ ok: true });
   } catch (err) {
     console.error('Confirm utility readings error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
@@ -447,4 +766,5 @@ router.post('/admin/utilities/readings/confirm', requireAuth, requireAdmin, asyn
 });
 
 module.exports = router;
+module.exports.ensureServicesTable = ensureServicesTable;
 
