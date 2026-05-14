@@ -1,23 +1,43 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Bird, Mail, Lock, LogIn, 
-  ShieldCheck, HelpCircle
+  ShieldCheck, HelpCircle, Eye, EyeOff
 } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [resetNotice, setResetNotice] = useState(false);
 
-  const handleLogin = (e) => {
+  useEffect(() => {
+    if (location.state?.resetOk) {
+      setResetNotice(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.pathname, location.state, navigate]);
+
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const loginRole = email.toLowerCase().includes('admin') ? 'admin' : 'tenant';
-    login(loginRole);
-    if (loginRole === 'admin') navigate('/admin');
-    else navigate('/tenant');
+    setErrorMessage('');
+    setIsSubmitting(true);
+
+    try {
+      const user = await login({ email, password });
+      if (user.role === 'ADMIN') navigate('/admin');
+      else navigate('/tenant');
+    } catch (error) {
+      setErrorMessage(error.message || 'Đăng nhập thất bại');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -39,6 +59,11 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
+          {resetNotice && (
+            <p className="text-emerald-600 text-sm font-medium text-center bg-emerald-50 rounded-2xl py-3 px-4 border border-emerald-100">
+              Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.
+            </p>
+          )}
           {/* Email Field */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-nest-text-primary uppercase tracking-[0.2em] px-1">Email</label>
@@ -59,18 +84,30 @@ export default function LoginPage() {
           <div className="space-y-2">
             <div className="flex justify-between items-center px-1">
               <label className="text-[11px] font-bold text-nest-text-primary uppercase tracking-[0.2em]">Mật khẩu</label>
-              <button type="button" className="text-[11px] font-bold text-nest-primary hover:underline uppercase tracking-wide">Quên mật khẩu?</button>
+              <Link
+                to="/forgot-password"
+                className="text-[11px] font-bold text-nest-primary hover:underline uppercase tracking-wide"
+              >
+                Quên mật khẩu?
+              </Link>
             </div>
             <div className="relative group">
               <input 
-                type="password" 
+                type={showPassword ? 'text' : 'password'} 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
-                className="w-full h-14 bg-white border border-gray-100 focus:border-nest-primary/30 rounded-2xl px-6 py-4 text-[14px] outline-none shadow-sm transition-all text-nest-text-primary font-medium placeholder-gray-300"
+                className="w-full h-14 bg-white border border-gray-100 focus:border-nest-primary/30 rounded-2xl px-6 py-4 pr-14 text-[14px] outline-none shadow-sm transition-all text-nest-text-primary font-medium placeholder-gray-300"
                 placeholder="••••••••"
               />
-              <Lock className="absolute right-6 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-300 group-focus-within:text-nest-primary transition-colors" />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center text-gray-300 hover:text-nest-primary transition-colors"
+                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
             </div>
           </div>
 
@@ -83,11 +120,16 @@ export default function LoginPage() {
           {/* Login Button */}
           <button 
             type="submit"
+            disabled={isSubmitting}
             className="w-full h-15 py-4 rounded-full bg-nest-primary hover:bg-[#0fa696] text-white font-bold text-base shadow-xl shadow-nest-primary/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98] group"
           >
-            Đăng nhập 
+            {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
             <LogIn size={20} className="group-hover:translate-x-1 transition-transform" />
           </button>
+
+          {errorMessage && (
+            <p className="text-red-500 text-sm font-medium text-center">{errorMessage}</p>
+          )}
         </form>
 
         {/* Footer Link */}

@@ -8,13 +8,25 @@ export default function Footer() {
         </div>
         <div>
            <h4 className="font-bold text-nest-text-primary mb-4">Kết nối</h4>
-           <p className="mb-2">Phone: +84 123 456 789</p>
-           <a href="#" className="text-[#14B8A6] hover:underline">Nhắn tin Zalo ngay</a>
+           <p className="mb-2">Phone: +84 857 667 533</p>
+           <button
+             onClick={() => window.open('https://zalo.me/84857667533', '_blank', 'noopener')}
+             className="text-[#14B8A6] hover:underline"
+           >
+             Nhắn tin Zalo ngay
+           </button>
         </div>
         <div>
            <h4 className="font-bold text-nest-text-primary mb-4">Vị trí</h4>
            <p className="mb-2">Address: Ho Chi Minh City</p>
-           <a href="#" className="text-[#14B8A6] hover:underline">View on Map</a>
+           <a
+             href="https://www.google.com/maps/dir/?api=1&destination=Tr%C6%B0%E1%BB%9Dng%20%C4%90%E1%BA%A1i%20h%E1%BB%8Dc%20C%C3%B4ng%20ngh%E1%BB%87%20Th%C3%B4ng%20tin%2C%20%C4%90HQG-HCM"
+             target="_blank"
+             rel="noopener noreferrer"
+             className="text-[#14B8A6] hover:underline"
+           >
+             Xem đường đi trên Google Maps
+           </a>
         </div>
         <div>
            <h4 className="font-bold text-nest-text-primary mb-4">Mạng xã hội</h4>

@@ -6,6 +6,8 @@ import AdminRoute from './AdminRoute';
 import HomePage from '../pages/guest/HomePage';
 import RoomDetailPage from '../pages/guest/RoomDetailPage';
 import LoginPage from '../pages/auth/LoginPage';
+import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage';
+import ResetPasswordPage from '../pages/auth/ResetPasswordPage';
 
 import TenantDashboard from '../pages/tenant/DashboardPage';
 import ContractPage from '../pages/tenant/ContractPage';
@@ -13,6 +15,7 @@ import TenantInvoicePage from '../pages/tenant/InvoicePage';
 import PaymentPage from '../pages/tenant/PaymentPage';
 import TenantTicketPage from '../pages/tenant/TicketPage';
 import TenantNotificationPage from '../pages/tenant/NotificationPage';
+import TenantServicesPage from '../pages/tenant/ServicesPage';
 import ProfilePage from '../pages/tenant/ProfilePage';
 
 import AdminDashboard from '../pages/admin/DashboardPage';
@@ -26,6 +29,7 @@ import AdminNotificationPage from '../pages/admin/NotificationManagePage';
 import AnalyticsPage from '../pages/admin/AnalyticsPage';
 import AssetManagePage from '../pages/admin/AssetManagePage';
 import ContractManagePage from '../pages/admin/ContractManagePage';
+import RemovalHistoryPage from '../pages/admin/RemovalHistoryPage';
 
 export default function AppRouter() {
   return (
@@ -38,6 +42,8 @@ export default function AppRouter() {
 
       {/* Auth */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Tenant Routes */}
       <Route path="/tenant" element={<TenantRoute />}>
@@ -47,6 +53,7 @@ export default function AppRouter() {
         <Route path="payment" element={<PaymentPage />} />
         <Route path="tickets" element={<TenantTicketPage />} />
         <Route path="notifications" element={<TenantNotificationPage />} />
+        <Route path="services" element={<TenantServicesPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
@@ -64,6 +71,7 @@ export default function AppRouter() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="assets" element={<AssetManagePage />} />
         <Route path="contracts" element={<ContractManagePage />} />
+        <Route path="removal-log" element={<RemovalHistoryPage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
       

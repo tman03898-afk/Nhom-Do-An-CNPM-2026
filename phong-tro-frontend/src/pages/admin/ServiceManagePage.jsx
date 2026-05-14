@@ -1,50 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Zap, Droplet, Wifi, Trash2, Save, Plus, X,
-  Settings2, User, Hash, Box, Info
+  Settings2, User, Hash, Box, Info, UserCheck, XCircle, RefreshCw
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 
 export default function ServiceManagePage() {
   const { addToast } = useToast();
+  const { token } = useAuth();
 
-  const [services, setServices] = useState([
-    {
-      id: 'dien',
-      title: 'Giá điện',
-      desc: 'Đơn giá áp dụng theo số ký (kWh)',
-      icon: 'Zap',
-      method: 'meter', // Theo chỉ số
-      value: '3500'
-    },
-    {
-      id: 'nuoc',
-      title: 'Giá nước',
-      desc: 'Đơn giá áp dụng theo khối (m³)',
-      icon: 'Droplet',
-      method: 'meter', // Theo chỉ số
-      value: '25000'
-    },
-    {
-      id: 'wifi',
-      title: 'Wifi',
-      desc: 'Phí trọn gói hàng tháng',
-      icon: 'Wifi',
-      method: 'fixed', // Cố định
-      value: '100000'
-    },
-    {
-      id: 'rac',
-      title: 'Rác',
-      desc: 'Phí thu gom rác định kỳ',
-      icon: 'Trash2',
-      method: 'fixed', // Cố định
-      value: '50000'
-    }
-  ]);
+  const [services, setServices] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pendingFeeSubs, setPendingFeeSubs] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [busyFeeId, setBusyFeeId] = useState(null);
 
   const [isAdding, setIsAdding] = useState(false);
   const [newSvc, setNewSvc] = useState({ title: '', desc: '', value: '', method: 'fixed' });
+  const [dirtyIds, setDirtyIds] = useState(() => new Set());
 
   const getIcon = (name) => {
     switch (name) {
@@ -53,6 +28,100 @@ export default function ServiceManagePage() {
       case 'Wifi': return <Wifi className="w-6 h-6" />;
       case 'Trash2': return <Trash2 className="w-6 h-6" fill="currentColor" />;
       default: return <Settings2 className="w-6 h-6" />;
+    }
+  };
+
+  const toUiMethod = (unit) => {
+    if (unit === 'kWh' || unit === 'm3' || unit === 'm³') return 'meter';
+    if (unit === 'person') return 'person';
+    return 'fixed';
+  };
+
+  const fromUi = (svc) => {
+    const method = svc.method;
+    let unit = 'month';
+    if (method === 'meter') unit = 'kWh';
+    if (method === 'person') unit = 'person';
+    if (method === 'fixed') unit = 'month';
+    return {
+      name: svc.title,
+      unit,
+      price: Number(svc.value || 0),
+      is_active: true,
+    };
+  };
+
+  const refresh = async () => {
+    if (!token) return;
+    setIsLoading(true);
+    try {
+      const data = await apiFetch('/admin/services', { token });
+      const mapped = (data.services || []).map((s) => ({
+        id: String(s.service_id),
+        service_id: s.service_id,
+        title: s.name,
+        desc: s.unit ? `Đơn vị: ${s.unit}` : '',
+        icon: 'Settings2',
+        method: toUiMethod(s.unit),
+        value: String(s.price ?? ''),
+      }));
+      setServices(mapped);
+      setDirtyIds(new Set());
+    } catch (e) {
+      setServices([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  const loadPendingFeeSubs = useCallback(async () => {
+    if (!token) return;
+    setPendingLoading(true);
+    try {
+      const d = await apiFetch('/admin/fee-subscriptions/pending', { token });
+      setPendingFeeSubs(d.pending || []);
+    } catch {
+      setPendingFeeSubs([]);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadPendingFeeSubs();
+  }, [loadPendingFeeSubs]);
+
+  const approveFeeSub = async (id) => {
+    if (!token) return;
+    setBusyFeeId(id);
+    try {
+      await apiFetch(`/admin/fee-subscriptions/${id}/approve`, { token, method: 'POST', body: {} });
+      addToast('Đã duyệt. Phí sẽ cộng vào hóa đơn từ tháng sau.', 'success');
+      await loadPendingFeeSubs();
+    } catch (e) {
+      addToast(e?.message || 'Không duyệt được.', 'error');
+    } finally {
+      setBusyFeeId(null);
+    }
+  };
+
+  const rejectFeeSub = async (id) => {
+    if (!token) return;
+    const reason = window.prompt('Lý do từ chối (có thể để trống):') ?? '';
+    setBusyFeeId(id);
+    try {
+      await apiFetch(`/admin/fee-subscriptions/${id}/reject`, { token, method: 'POST', body: { reason } });
+      addToast('Đã từ chối yêu cầu.', 'success');
+      await loadPendingFeeSubs();
+    } catch (e) {
+      addToast(e?.message || 'Không từ chối được.', 'error');
+    } finally {
+      setBusyFeeId(null);
     }
   };
 
@@ -86,19 +155,40 @@ export default function ServiceManagePage() {
       addToast('Vui lòng điền tên và đơn giá dịch vụ!', 'error');
       return;
     }
-    const id = Date.now().toString();
-    setServices([...services, { ...newSvc, id, icon: 'Settings2' }]);
-    setNewSvc({ title: '', desc: '', value: '', method: 'fixed' });
-    setIsAdding(false);
-    addToast('Đã thêm dịch vụ phát sinh mới!');
+    const run = async () => {
+      if (!token) return;
+      await apiFetch('/admin/services', { token, method: 'POST', body: fromUi(newSvc) });
+      setNewSvc({ title: '', desc: '', value: '', method: 'fixed' });
+      setIsAdding(false);
+      addToast('Đã thêm dịch vụ mới!');
+      await refresh();
+    };
+    run().catch((e) => addToast(e.message || 'Không thể thêm dịch vụ', 'error'));
   };
 
   const handleUpdate = (id, field, val) => {
     setServices(services.map(s => s.id === id ? { ...s, [field]: val } : s));
+    setDirtyIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
   };
 
   const handleSaveAll = () => {
-    addToast('Đã lưu toàn bộ thay đổi hệ thống!');
+    const run = async () => {
+      if (!token) return;
+      const dirty = Array.from(dirtyIds);
+      for (const id of dirty) {
+        const svc = services.find((s) => s.id === id);
+        if (!svc?.service_id) continue;
+        const payload = fromUi(svc);
+        await apiFetch(`/admin/services/${svc.service_id}`, { token, method: 'PUT', body: payload });
+      }
+      addToast('Đã lưu toàn bộ thay đổi hệ thống!');
+      await refresh();
+    };
+    run().catch((e) => addToast(e.message || 'Không thể lưu thay đổi', 'error'));
   };
 
   return (
@@ -120,6 +210,86 @@ export default function ServiceManagePage() {
           >
             <Plus className="w-5 h-5" /> Thêm dịch vụ
           </button>
+        </div>
+
+        {/* Duyệt đăng ký tiện ích (tenant → service_fees) */}
+        <div className="mb-10 rounded-[32px] border border-[#BCE1E5]/60 bg-white p-6 shadow-[0_4px_24px_rgba(15,58,64,0.04)]">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#F2FCFD] text-[#14B8A6] flex items-center justify-center">
+                <UserCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-[#0F3A40]">Duyệt đăng ký tiện ích</h2>
+                <p className="text-xs text-[#4A787C] font-medium">
+                  Tenant gửi từ trang dịch vụ. Sau khi duyệt, phí được cộng vào hóa đơn từ <span className="font-bold">kỳ tháng tiếp theo</span>.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadPendingFeeSubs()}
+              disabled={pendingLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#BCE1E5] text-[13px] font-bold text-[#0F3A40] hover:bg-[#F2FCFD] disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${pendingLoading ? 'animate-spin' : ''}`} /> Làm mới
+            </button>
+          </div>
+          {pendingLoading && pendingFeeSubs.length === 0 ? (
+            <p className="text-sm text-[#4A787C] py-4">Đang tải…</p>
+          ) : pendingFeeSubs.length === 0 ? (
+            <p className="text-sm text-[#4A787C] py-2">Không có yêu cầu chờ duyệt.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-[#BCE1E5]/40">
+              <table className="w-full text-left text-sm min-w-[640px]">
+                <thead>
+                  <tr className="bg-[#F2FCFD] text-[10px] font-bold uppercase tracking-wider text-[#82ABB0]">
+                    <th className="px-3 py-2.5">Phòng</th>
+                    <th className="px-3 py-2.5">Tenant</th>
+                    <th className="px-3 py-2.5">Tiện ích</th>
+                    <th className="px-3 py-2.5 whitespace-nowrap">Phí/tháng</th>
+                    <th className="px-3 py-2.5 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingFeeSubs.map((row) => {
+                    const busy = busyFeeId === row.id;
+                    return (
+                      <tr key={row.id} className="border-t border-[#BCE1E5]/30">
+                        <td className="px-3 py-2.5 font-bold text-[#0F3A40]">{row.room_number || '—'}</td>
+                        <td className="px-3 py-2.5 text-[#4A787C]">
+                          <div className="font-medium text-[#0F3A40]">{row.tenant_name || '—'}</div>
+                          <div className="text-xs">{row.tenant_email || ''}</div>
+                        </td>
+                        <td className="px-3 py-2.5 text-[#0F3A40]">{row.fee_name}</td>
+                        <td className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                          {Number(row.monthly_price || 0).toLocaleString('vi-VN')}đ
+                        </td>
+                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => approveFeeSub(row.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#14B8A6] text-white text-xs font-bold mr-2 hover:bg-[#0da090] disabled:opacity-50"
+                          >
+                            Duyệt
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => rejectFeeSub(row.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> Từ chối
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Adding New Service Form (Inline Card) */}
@@ -180,7 +350,11 @@ export default function ServiceManagePage() {
 
         {/* Configuration Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-          {services.map((svc) => (
+          {isLoading ? (
+            <div className="col-span-full text-center text-[#4A787C] font-medium py-10">Đang tải dịch vụ...</div>
+          ) : services.length === 0 ? (
+            <div className="col-span-full text-center text-[#4A787C] font-medium py-10">Chưa có dịch vụ nào.</div>
+          ) : services.map((svc) => (
             <div key={svc.id} className="bg-white rounded-[40px] p-8 shadow-[0_4px_25px_rgba(15,58,64,0.06)] border border-[#BCE1E5]/20 hover:border-[#14B8A6]/40 transition-all group relative overflow-hidden">
               <button
                 onClick={() => handleDelete(svc.id)}

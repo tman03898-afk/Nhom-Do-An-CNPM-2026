@@ -2,19 +2,92 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Home, Receipt, ClipboardList, AlertTriangle, Bell, User,
-  Bird, ChevronLeft, ChevronRight, X, Menu
+  Bird, ChevronLeft, ChevronRight, X, Menu, Sparkles
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { apiFetch } from '../lib/api';
 
 export default function TenantLayout() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [roomLabel, setRoomLabel] = useState('—');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+  const tenantAvatarSrc = useMemo(() => {
+    const raw = user?.avatar_url;
+    const name = user?.full_name || user?.name || 'User';
+    const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=14B8A6&color=fff`;
+    if (!raw) return fallback;
+    if (String(raw).startsWith('http')) return raw;
+    const origin = API_BASE_URL.replace(/\/api\/?$/, '');
+    return `${origin}${String(raw).startsWith('/') ? raw : `/${raw}`}`;
+  }, [API_BASE_URL, user?.avatar_url, user?.full_name, user?.name]);
+
+  // hydrate room label for tenant UI (no hardcoded demo)
+  useEffect(() => {
+    const run = async () => {
+      if (!token) {
+        setRoomLabel('—');
+        return;
+      }
+      try {
+        const response = await fetch(`${API_BASE_URL}/tenant/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        const roomNumber = data?.tenant?.room_number;
+        if (response.ok && data?.ok && roomNumber) {
+          setRoomLabel(`Phòng ${roomNumber}`);
+        } else {
+          setRoomLabel('—');
+        }
+      } catch (error) {
+        setRoomLabel('—');
+      }
+    };
+    run();
+  }, [API_BASE_URL, token]);
+
+  const loadUnread = useCallback(async () => {
+    if (!token) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const data = await apiFetch('/tenant/notifications', { token });
+      const unread = (data.notifications || []).filter((n) => !n.is_read).length;
+      setUnreadCount(unread);
+    } catch (err) {
+      setUnreadCount(0);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadUnread();
+  }, [loadUnread, location.pathname]);
+
+  useEffect(() => {
+    const interval = setInterval(loadUnread, 45000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadUnread();
+    };
+    const onRefresh = () => loadUnread();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('tenant-notifications-refresh', onRefresh);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('tenant-notifications-refresh', onRefresh);
+    };
+  }, [loadUnread]);
 
   const links = [
     { name: 'Trang chủ', path: '/tenant/dashboard', icon: Home },
     { name: 'Hóa đơn', path: '/tenant/invoices', icon: Receipt },
+    { name: 'Dịch vụ', path: '/tenant/services', icon: Sparkles },
     { name: 'Hợp đồng', path: '/tenant/contract', icon: ClipboardList },
     { name: 'Hỗ trợ', path: '/tenant/tickets', icon: AlertTriangle },
     { name: 'Thông báo', path: '/tenant/notifications', icon: Bell },
@@ -74,19 +147,38 @@ export default function TenantLayout() {
           {links.map((link) => {
             const isActive = location.pathname.startsWith(link.path);
             const showLabel = !isCollapsed || isMobileMenuOpen;
+            const isNotif = link.path === '/tenant/notifications';
+            const badgeText =
+              isNotif && unreadCount > 0 ? (unreadCount > 99 ? '99+' : String(unreadCount)) : null;
             return (
               <Link
                 key={link.path}
                 to={link.path}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className={`flex items-center gap-4 rounded-2xl transition-all duration-300 h-12 overflow-hidden ${(isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : 'px-5'} ${isActive
+                className={`flex items-center gap-4 rounded-2xl transition-all duration-300 h-12 overflow-visible ${(isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : 'px-5'} ${isActive
                   ? 'bg-white/15 text-white font-bold shadow-lg shadow-black/5'
                   : 'text-white/70 hover:bg-white/5 hover:text-white font-medium'
                   }`}
               >
-                <link.icon className={`w-[19px] h-[19px] transition-colors shrink-0 ${isActive ? 'text-[#14B8A6]' : 'text-white/60'}`} />
-                {showLabel && <span className="text-[14px] tracking-wide whitespace-nowrap transition-opacity duration-300">{link.name}</span>}
-                {isActive && showLabel && <div className="ml-auto w-1.5 h-6 bg-[#14B8A6] rounded-full mr-[-4px]"></div>}
+                <span className="relative inline-flex items-center justify-center shrink-0 w-[19px] h-[19px]">
+                  <link.icon className={`w-[19px] h-[19px] transition-colors ${isActive ? 'text-[#14B8A6]' : 'text-white/60'}`} />
+                  {isNotif && badgeText && !showLabel ? (
+                    <span className="absolute -right-2 -top-2 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center leading-none shadow-md border border-[#1E4D54]">
+                      {badgeText}
+                    </span>
+                  ) : null}
+                </span>
+                {showLabel && (
+                  <>
+                    <span className="flex-1 text-[14px] tracking-wide whitespace-nowrap transition-opacity duration-300">{link.name}</span>
+                    {isNotif && badgeText ? (
+                      <span className="min-w-[22px] h-[22px] px-1 rounded-full bg-red-500 text-white text-[11px] font-extrabold flex items-center justify-center leading-none shrink-0">
+                        {badgeText}
+                      </span>
+                    ) : null}
+                    {isActive && <div className="ml-auto w-1.5 h-6 bg-[#14B8A6] rounded-full mr-[-4px]"></div>}
+                  </>
+                )}
               </Link>
             )
           })}
@@ -96,12 +188,17 @@ export default function TenantLayout() {
         <div className={`mt-auto pt-6 border-t border-white/10 ${isCollapsed ? 'lg:items-center' : 'px-2'}`}>
           <div className={`flex items-center gap-3 bg-white/5 p-3 rounded-2xl ${isCollapsed ? 'lg:justify-center lg:p-2' : ''}`}>
             <div className="w-10 h-10 rounded-full bg-[#14B8A6]/20 border border-[#14B8A6]/30 overflow-hidden shrink-0 flex items-center justify-center">
-              <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=14B8A6&color=fff`} className="w-full h-full object-cover" />
+              <img
+                key={user?.avatar_url || 'av'}
+                src={tenantAvatarSrc}
+                alt=""
+                className="w-full h-full object-cover"
+              />
             </div>
             {(!isCollapsed || isMobileMenuOpen) && (
               <div className="flex flex-col min-w-0">
-                <span className="text-white text-[13px] font-bold truncate">{user?.name || 'Khách thuê'}</span>
-                <span className="text-white/50 text-[11px] truncate mt-0.5 whitespace-nowrap">Phòng 301 - Building A</span>
+                <span className="text-white text-[13px] font-bold truncate">{user?.full_name || user?.name || 'Khách thuê'}</span>
+                <span className="text-white/50 text-[11px] truncate mt-0.5 whitespace-nowrap">{roomLabel}</span>
               </div>
             )}
           </div>
@@ -133,7 +230,7 @@ export default function TenantLayout() {
             {/* Context Pill */}
             <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 bg-nest-bg/80 backdrop-blur-md rounded-full border border-nest-primary/20 shadow-sm ml-0 lg:ml-4">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span className="text-[10px] lg:text-[12px] font-bold text-[#4A787C] whitespace-nowrap">Phòng 301 - Building A</span>
+              <span className="text-[10px] lg:text-[12px] font-bold text-[#4A787C] whitespace-nowrap">{roomLabel}</span>
             </div>
           </div>
 
@@ -141,10 +238,17 @@ export default function TenantLayout() {
           <div className="flex items-center gap-3 lg:gap-5">
             <Link to="/tenant/notifications" className="relative w-10 h-10 lg:w-11 lg:h-11 rounded-xl lg:rounded-2xl bg-white/80 backdrop-blur-md flex items-center justify-center text-[#4A787C] hover:text-[#14B8A6] hover:bg-white hover:shadow-lg hover:shadow-nest-primary/10 transition-all border border-transparent hover:border-nest-primary/10 group">
               <Bell size={18} className="group-hover:rotate-12 transition-transform lg:size-[20px]" />
-              <span className="absolute top-2.5 right-2.5 lg:top-3 lg:right-3 w-1.5 lg:w-2 h-1.5 lg:h-2 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+              {unreadCount > 0 ? (
+                <span className="absolute top-1.5 right-1.5 lg:top-2 lg:right-2 min-w-[18px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">{unreadCount}</span>
+              ) : null}
             </Link>
             <Link to="/tenant/profile" className="w-9 h-9 lg:w-10 lg:h-10 rounded-full overflow-hidden border-2 border-white shadow-md cursor-pointer hover:border-[#14B8A6]/50 hover:scale-110 transition-all">
-              <img src={`https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=14B8A6&color=fff`} className="w-full h-full object-cover" />
+              <img
+                key={user?.avatar_url || 'av2'}
+                src={tenantAvatarSrc}
+                alt=""
+                className="w-full h-full object-cover"
+              />
             </Link>
           </div>
         </header>

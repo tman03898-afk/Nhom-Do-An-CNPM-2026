@@ -3,7 +3,9 @@ import AdminLayout from '../layouts/AdminLayout';
 import { useAuth } from '../context/AuthContext';
 
 export default function AdminRoute() {
-  const { user } = useAuth();
+  const { user, authLoading } = useAuth();
+
+  if (authLoading) return null;
 
   if (!user) return <Navigate to="/login" replace />;
   

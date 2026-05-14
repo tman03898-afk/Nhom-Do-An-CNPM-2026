@@ -1,13 +1,129 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { MapPin, CheckCircle2, UserCheck, BarChart3, Edit3, Trash2, ArrowUpRight, Plus } from 'lucide-react';
+import { apiFetch } from '../../lib/api';
 
 export default function RoomManagePage() {
-  const rooms = [
-    { id: 'P.402', type: 'Gác lửng', typeColor: 'bg-nest-primary/10', area: '20 m²', price: '2.500.000đ', status: 'TRỐNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-    { id: 'P.601', type: 'Ban công', typeColor: 'bg-nest-primary/10', area: '25 m²', price: '3.000.000đ', status: 'ĐANG THUÊ', statusPill: 'bg-slate-100 text-slate-500', dot: 'bg-slate-400' },
-    { id: 'P.301', type: 'Thường', typeColor: 'bg-nest-primary/10', area: '18 m²', price: '2.000.000đ', status: 'TRỐNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-    { id: 'P.205', type: 'Ban công', typeColor: 'bg-nest-primary/10', area: '24 m²', price: '2.800.000đ', status: 'BẢO TRÌ', statusPill: 'bg-[#FFF3E0] text-[#E68A00]', dot: 'bg-[#E68A00]' },
-    { id: 'P.512', type: 'Gác lửng', typeColor: 'bg-nest-primary/10', area: '22 m²', price: '2.600.000đ', status: 'TRỐNG', statusPill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
-  ];
+  const { token } = useAuth();
+  const [rooms, setRooms] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  /** ALL | AVAILABLE (trống) | RENTED (đang thuê) */
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState(null);
+  const [form, setForm] = useState({ room_number: '', floor: '', area: '', max_tenants: 2, price: '', status: 'AVAILABLE', description: '' });
+
+  const statusView = useMemo(
+    () => ({
+      AVAILABLE: { label: 'TRỐNG', pill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
+      RENTED: { label: 'ĐANG THUÊ', pill: 'bg-slate-100 text-slate-500', dot: 'bg-slate-400' },
+      MAINTENANCE: { label: 'BẢO TRÌ', pill: 'bg-[#FFF3E0] text-[#E68A00]', dot: 'bg-[#E68A00]' },
+    }),
+    []
+  );
+
+  const stats = useMemo(() => {
+    const total = rooms.length;
+    const available = rooms.filter((r) => r.status === 'AVAILABLE').length;
+    const rented = rooms.filter((r) => r.status === 'RENTED').length;
+    const occupancy = total > 0 ? Math.round((rented / total) * 100) : 0;
+    return { total, available, rented, occupancy };
+  }, [rooms]);
+
+  const filteredRooms = useMemo(() => {
+    if (statusFilter === 'ALL') return rooms;
+    return rooms.filter((r) => r.status === statusFilter);
+  }, [rooms, statusFilter]);
+
+  const filteredTotal = filteredRooms.length;
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredTotal / pageSize)), [filteredTotal]);
+  const pagedRooms = useMemo(() => {
+    const safePage = Math.min(Math.max(1, currentPage), totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredRooms.slice(start, start + pageSize);
+  }, [filteredRooms, currentPage, totalPages]);
+
+  useEffect(() => {
+    const fetchRooms = async () => {
+      setIsLoading(true);
+      try {
+        const data = await apiFetch('/rooms', { token });
+        const nextRooms = data.rooms || [];
+        setRooms(nextRooms);
+        setCurrentPage(1);
+      } catch (error) {
+        setRooms([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchRooms();
+  }, [token]);
+
+  useEffect(() => {
+    // keep currentPage valid after rooms / filter change (e.g. delete)
+    setCurrentPage((p) => Math.min(Math.max(1, p), totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter]);
+
+  const openCreate = () => {
+    setEditingRoom(null);
+    setForm({ room_number: '', floor: '', area: '', max_tenants: 2, price: '', status: 'AVAILABLE', description: '' });
+    setIsModalOpen(true);
+  };
+
+  const openEdit = (room) => {
+    setEditingRoom(room);
+    setForm({
+      room_number: room.room_number || '',
+      floor: room.floor ?? '',
+      area: room.area ?? '',
+      max_tenants: room.max_tenants ?? 2,
+      price: room.price ?? '',
+      status: room.status || 'AVAILABLE',
+      description: room.description || '',
+    });
+    setIsModalOpen(true);
+  };
+
+  const saveRoom = async () => {
+    if (!token) return;
+    const payload = {
+      room_number: String(form.room_number || '').trim(),
+      floor: form.floor === '' ? null : Number(form.floor),
+      area: Number(form.area),
+      max_tenants: Number(form.max_tenants || 1),
+      price: Number(form.price),
+      status: form.status,
+      description: form.description ? String(form.description) : null,
+    };
+
+    if (editingRoom?.room_id) {
+      await apiFetch(`/rooms/${editingRoom.room_id}`, { token, method: 'PUT', body: payload });
+    } else {
+      await apiFetch('/rooms', { token, method: 'POST', body: payload });
+    }
+    setIsModalOpen(false);
+    // reload
+    const data = await apiFetch('/rooms', { token });
+    setRooms(data.rooms || []);
+    setCurrentPage(1);
+  };
+
+  const deleteRoom = async (room) => {
+    if (!token) return;
+    if (!window.confirm(`Xóa phòng ${room.room_number}?`)) return;
+    await apiFetch(`/rooms/${room.room_id}`, { token, method: 'DELETE' });
+    const data = await apiFetch('/rooms', { token });
+    setRooms(data.rooms || []);
+  };
 
   return (
     <div className="w-full max-w-[1200px] mx-auto mt-2 px-4 pb-12">
@@ -16,17 +132,34 @@ export default function RoomManagePage() {
         <div>
           <h1 className="text-[32px] font-sans font-bold text-nest-text-primary tracking-tight">Quản lý Phòng</h1>
           <p className="text-[13px] font-bold text-nest-text-secondary mt-2 flex items-center gap-1.5">
-            <MapPin className="w-[14px] h-[14px]" /> Lâm Đồng Campus • 124 Phòng
+            <MapPin className="w-[14px] h-[14px]" /> Lâm Đồng Campus • {stats.total} Phòng
           </p>
         </div>
         <div className="flex items-center gap-6">
-          <div className="flex bg-white/50 backdrop-blur-md rounded-full p-1 border border-nest-primary/10 shadow-sm">
-            <button className="px-5 py-2.5 rounded-full bg-white text-nest-text-primary text-[13px] font-bold shadow-sm">Tất cả</button>
-            <button className="px-5 py-2.5 rounded-full text-nest-text-secondary hover:text-nest-text-primary text-[13px] font-bold transition-colors">Thường</button>
-            <button className="px-5 py-2.5 rounded-full text-nest-text-secondary hover:text-nest-text-primary text-[13px] font-bold transition-colors">Gác lửng</button>
-            <button className="px-5 py-2.5 rounded-full text-nest-text-secondary hover:text-nest-text-primary text-[13px] font-bold transition-colors">Ban công</button>
+          <div className="flex flex-wrap gap-1 bg-white/50 backdrop-blur-md rounded-full p-1 border border-nest-primary/10 shadow-sm">
+            {[
+              { key: 'ALL', label: 'Tất cả' },
+              { key: 'AVAILABLE', label: 'Phòng trống' },
+              { key: 'RENTED', label: 'Đang thuê' },
+            ].map(({ key, label }) => {
+              const active = statusFilter === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStatusFilter(key)}
+                  className={
+                    active
+                      ? 'px-5 py-2.5 rounded-full bg-white text-nest-text-primary text-[13px] font-bold shadow-sm'
+                      : 'px-5 py-2.5 rounded-full text-nest-text-secondary hover:text-nest-text-primary text-[13px] font-bold transition-colors'
+                  }
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
-          <button className="bg-nest-primary hover:bg-[#0da090] text-white px-6 py-2.5 rounded-full text-[14px] font-bold transition-colors shadow-lg shadow-nest-primary/20 flex items-center gap-2">
+          <button onClick={openCreate} className="bg-nest-primary hover:bg-[#0da090] text-white px-6 py-2.5 rounded-full text-[14px] font-bold transition-colors shadow-lg shadow-nest-primary/20 flex items-center gap-2">
              <Plus className="w-[18px] h-[18px]" /> Thêm phòng
           </button>
         </div>
@@ -37,7 +170,7 @@ export default function RoomManagePage() {
         <div className="bg-white rounded-[24px] p-6 shadow-[0_4px_23px_rgba(15,58,64,0.06)] border border-slate-200/60 flex justify-between items-center">
            <div>
               <p className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Sẵn sàng</p>
-              <h3 className="text-3xl font-bold text-nest-primary">42</h3>
+              <h3 className="text-3xl font-bold text-nest-primary">{stats.available}</h3>
            </div>
            <div className="w-[42px] h-[42px] rounded-full bg-nest-primary/10 text-nest-primary border border-nest-primary/20 flex items-center justify-center">
               <CheckCircle2 className="w-[22px] h-[22px]" />
@@ -46,7 +179,7 @@ export default function RoomManagePage() {
         <div className="bg-white rounded-[24px] p-6 shadow-[0_4px_23px_rgba(15,58,64,0.06)] border border-slate-200/60 flex justify-between items-center">
            <div>
               <p className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Đang thuê</p>
-              <h3 className="text-3xl font-bold text-nest-text-primary">78</h3>
+              <h3 className="text-3xl font-bold text-nest-text-primary">{stats.rented}</h3>
            </div>
            <div className="w-[42px] h-[42px] rounded-full bg-gray-50 text-gray-400 flex items-center justify-center border border-gray-100">
               <UserCheck className="w-[20px] h-[20px]" />
@@ -55,7 +188,7 @@ export default function RoomManagePage() {
         <div className="bg-white rounded-[24px] p-6 shadow-[0_4px_23px_rgba(15,58,64,0.06)] border border-slate-200/60 flex justify-between items-center">
            <div>
               <p className="text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Tỉ lệ lấp đầy</p>
-              <h3 className="text-3xl font-bold text-nest-text-primary">62%</h3>
+              <h3 className="text-3xl font-bold text-nest-text-primary">{stats.occupancy}%</h3>
            </div>
            <div className="w-[42px] h-[42px] rounded-full bg-nest-primary/10 text-nest-text-primary flex items-center justify-center text-nest-primary border border-nest-primary/20">
               <BarChart3 className="w-[20px] h-[20px]" />
@@ -78,47 +211,108 @@ export default function RoomManagePage() {
               </tr>
             </thead>
             <tbody>
-              {rooms.map((room, idx) => (
-                <tr key={idx} className="border-b border-[#BCE1E5]/40 last:border-0 hover:bg-white/50 transition-colors">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-sm font-medium text-[#82ABB0]">
+                    Đang tải danh sách phòng...
+                  </td>
+                </tr>
+              ) : pagedRooms.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-sm font-medium text-[#82ABB0]">
+                    {statusFilter === 'ALL'
+                      ? 'Chưa có phòng nào.'
+                      : statusFilter === 'AVAILABLE'
+                        ? 'Không có phòng trống.'
+                        : 'Không có phòng đang thuê.'}
+                  </td>
+                </tr>
+              ) : (
+                pagedRooms.map((room) => {
+                  const view = statusView[room.status] || statusView.AVAILABLE;
+                  return (
+                <tr key={room.room_id ?? room.room_number} className="border-b border-[#BCE1E5]/40 last:border-0 hover:bg-white/50 transition-colors">
                   <td className="py-5 px-2">
-                    <span className="font-bold text-[#0F3A40] text-[15px]">{room.id}</span>
+                    <span className="font-bold text-[#0F3A40] text-[15px]">{room.room_number}</span>
                   </td>
                   <td className="py-5 px-2 text-center">
-                    <span className={`${room.typeColor} text-[#0F3A40] px-3 py-1 rounded-full text-[11px] font-bold tracking-wide`}>
-                      {room.type}
+                    <span className="bg-nest-primary/10 text-[#0F3A40] px-3 py-1 rounded-full text-[11px] font-bold tracking-wide">
+                      {room.floor !== null && room.floor !== undefined ? `Tầng ${room.floor}` : '—'}
                     </span>
                   </td>
                   <td className="py-5 px-2 text-[#4A787C] text-[13px] font-bold text-center">
-                    {room.area}
+                    {room.area !== null && room.area !== undefined ? `${room.area} m²` : '—'}
                   </td>
                   <td className="py-5 px-2 text-[#0F3A40] font-bold text-[14px]">
-                    {room.price}
+                    {room.price !== null && room.price !== undefined ? `${Number(room.price).toLocaleString('vi-VN')}đ` : '—'}
                   </td>
                   <td className="py-5 px-2">
-                    <div className={`${room.statusPill} inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold tracking-wide`}>
-                       <span className={`w-1.5 h-1.5 rounded-full ${room.dot}`}></span>
-                       {room.status}
+                    <div className={`${view.pill} inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold tracking-wide`}>
+                       <span className={`w-1.5 h-1.5 rounded-full ${view.dot}`}></span>
+                       {view.label}
                     </div>
                   </td>
                   <td className="py-5 px-2 text-right">
                     <div className="flex items-center justify-end gap-3 text-[#82ABB0]">
-                       <button className="hover:text-[#14B8A6] transition-colors p-1"><Edit3 className="w-[18px] h-[18px]" /></button>
-                       <button className="hover:text-[#D14D4D] transition-colors p-1"><Trash2 className="w-[18px] h-[18px]" /></button>
+                       <button onClick={() => openEdit(room)} className="hover:text-[#14B8A6] transition-colors p-1"><Edit3 className="w-[18px] h-[18px]" /></button>
+                       <button onClick={() => deleteRoom(room)} className="hover:text-[#D14D4D] transition-colors p-1"><Trash2 className="w-[18px] h-[18px]" /></button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
-        <div className="flex justify-between items-center mt-6 pt-4 border-t border-transparent text-[12px] font-bold text-[#82ABB0]">
-           <span>Hiển thị 5 trên <span className="text-[#0F3A40]">124 phòng</span></span>
+          <div className="flex justify-between items-center mt-6 pt-4 border-t border-transparent text-[12px] font-bold text-[#82ABB0]">
+            <span>
+              Hiển thị {pagedRooms.length} trên{' '}
+              <span className="text-[#0F3A40]">
+                {filteredTotal} phòng
+                {statusFilter !== 'ALL' ? ` (lọc / ${stats.total} tổng)` : ''}
+              </span>
+            </span>
            <div className="flex items-center gap-2">
-              <button className="text-[#82ABB0] hover:text-[#0F3A40] px-2">&lt;</button>
-              <button className="w-8 h-8 rounded-full bg-[#14B8A6] text-white flex items-center justify-center">1</button>
-              <button className="w-8 h-8 rounded-full text-[#4A787C] hover:bg-[#EBFDFB] flex items-center justify-center transition-colors">2</button>
-              <button className="w-8 h-8 rounded-full text-[#4A787C] hover:bg-[#EBFDFB] flex items-center justify-center transition-colors">3</button>
-              <button className="text-[#82ABB0] hover:text-[#0F3A40] px-2">&gt;</button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                className={`px-2 ${currentPage <= 1 ? 'text-slate-300 cursor-not-allowed' : 'text-[#82ABB0] hover:text-[#0F3A40]'}`}
+                aria-label="Trang trước"
+              >
+                &lt;
+              </button>
+
+              {Array.from({ length: totalPages }).map((_, i) => {
+                const page = i + 1;
+                const active = page === currentPage;
+                return (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => setCurrentPage(page)}
+                    className={
+                      active
+                        ? 'w-8 h-8 rounded-full bg-[#14B8A6] text-white flex items-center justify-center'
+                        : 'w-8 h-8 rounded-full text-[#4A787C] hover:bg-[#EBFDFB] flex items-center justify-center transition-colors'
+                    }
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className={`px-2 ${currentPage >= totalPages ? 'text-slate-300 cursor-not-allowed' : 'text-[#82ABB0] hover:text-[#0F3A40]'}`}
+                aria-label="Trang sau"
+              >
+                &gt;
+              </button>
            </div>
         </div>
       </div>
@@ -167,6 +361,37 @@ export default function RoomManagePage() {
            </div>
         </div>
       </div>
+
+      {/* Create/Edit Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-nest-text-primary">{editingRoom ? 'Sửa phòng' : 'Thêm phòng'}</h3>
+              <button onClick={() => setIsModalOpen(false)} className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500">
+                ✕
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <input value={form.room_number} onChange={(e) => setForm((p) => ({ ...p, room_number: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Số phòng (VD: A101)" />
+              <input value={form.floor} onChange={(e) => setForm((p) => ({ ...p, floor: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Tầng" />
+              <input value={form.area} onChange={(e) => setForm((p) => ({ ...p, area: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Diện tích (m²)" />
+              <input value={form.price} onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Giá thuê (VNĐ)" />
+              <input value={form.max_tenants} onChange={(e) => setForm((p) => ({ ...p, max_tenants: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Số người tối đa" />
+              <select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary">
+                <option value="AVAILABLE">AVAILABLE</option>
+                <option value="RENTED">RENTED</option>
+                <option value="MAINTENANCE">MAINTENANCE</option>
+              </select>
+              <textarea value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} className="md:col-span-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Mô tả" rows={3} />
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setIsModalOpen(false)} className="px-6 py-3 rounded-full font-bold text-nest-text-secondary hover:text-nest-text-primary">Hủy</button>
+              <button onClick={saveRoom} className="px-8 py-3 rounded-full bg-nest-primary hover:bg-[#0da090] text-white font-bold shadow-lg shadow-nest-primary/20">Lưu</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

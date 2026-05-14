@@ -9,6 +9,7 @@ export default function HomePage() {
   const [area, setArea] = useState('Tất cả');
   const [furniture, setFurniture] = useState('Tất cả');
   const [currentSlide, setCurrentSlide] = useState(0);
+  const googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=Tr%C6%B0%E1%BB%9Dng%20%C4%90%E1%BA%A1i%20h%E1%BB%8Dc%20C%C3%B4ng%20ngh%E1%BB%87%20Th%C3%B4ng%20tin%2C%20%C4%90HQG-HCM';
 
   const heroSlides = [
     { src: '/images/home/mezzanine.png', alt: 'Không gian sống hiện đại' },
@@ -23,11 +24,41 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, []);
 
-  const featuredRooms = [
-    { id: 1, name: 'Phòng 402', price: 2500000, size: 20, category: 'Phòng gác lửng', tag: 'Thêm không gian, thêm riêng tư', furniture: 'Đầy đủ', image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80', status: 'Còn phòng' },
-    { id: 5, name: 'Phòng 601', price: 3000000, size: 25, category: 'Phòng ban công', tag: 'View thoáng, đón nắng tự nhiên', furniture: 'Đầy đủ', image: 'https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=800&q=80', status: 'Còn phòng' },
-    { id: 3, name: 'Phòng 301', price: 2000000, size: 18, category: 'Phòng thường', tag: 'Gọn gàng & Tiết kiệm', furniture: 'Cơ bản', image: '/rooms/room_301.png', status: 'Còn phòng' },
-  ];
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const [roomsFromApi, setRoomsFromApi] = useState([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchRooms = async () => {
+      setRoomsLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/rooms`);
+        const data = await response.json();
+        if (!response.ok || !data?.ok) throw new Error(data?.message || 'failed');
+        setRoomsFromApi(data.rooms || []);
+      } catch (error) {
+        setRoomsFromApi([]);
+      } finally {
+        setRoomsLoading(false);
+      }
+    };
+    fetchRooms();
+  }, [API_BASE_URL]);
+
+  const featuredRooms = roomsFromApi
+    .filter((r) => r.status === 'AVAILABLE')
+    .slice(0, 6)
+    .map((r) => ({
+      id: r.room_id,
+      name: r.room_number ? `Phòng ${r.room_number}` : 'Phòng',
+      price: r.price || 0,
+      size: r.area || 0,
+      category: 'Phòng',
+      tag: r.description || 'Liên hệ để xem phòng',
+      furniture: '—',
+      image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80',
+      status: 'Còn phòng',
+    }));
 
   const filteredRooms = featuredRooms.filter(room => {
     // Filter Type
@@ -170,7 +201,9 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredRooms.length > 0 ? (
+            {roomsLoading ? (
+              <div className="text-nest-text-secondary font-medium">Đang tải danh sách phòng...</div>
+            ) : filteredRooms.length > 0 ? (
               filteredRooms.map(room => (
                 <div key={room.id} className="group relative flex flex-col items-stretch h-full">
                   {/* Image Container */}
@@ -374,28 +407,43 @@ export default function HomePage() {
                   <div className="w-12 h-12 bg-[#14B8A6] rounded-xl text-white flex items-center justify-center shrink-0 shadow-sm"><Phone className="w-5 h-5" /></div>
                   <div>
                     <div className="text-[11px] text-nest-text-secondary uppercase font-bold tracking-widest mb-1">Hotline 24/7</div>
-                    <div className="text-base font-bold text-nest-text-primary">+84 123 456 789</div>
+                    <div className="text-base font-bold text-nest-text-primary">+84 857 667 533</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-[#14B8A6] rounded-xl text-white flex items-center justify-center shrink-0 shadow-sm"><MapPin className="w-5 h-5" /></div>
                   <div>
                     <div className="text-[11px] text-nest-text-secondary uppercase font-bold tracking-widest mb-1">Địa chỉ</div>
-                    <div className="text-base font-bold text-nest-text-primary">Thành phố Thủ Đức, TP. Hồ Chí Minh</div>
+                    <div className="text-base font-bold text-nest-text-primary">Trường Đại học Công nghệ Thông tin, ĐHQG-HCM</div>
                   </div>
                 </div>
               </div>
 
               <div>
-                <button className="bg-[#14B8A6] hover:bg-[#0fa696] text-white px-8 py-3.5 rounded-full text-sm font-bold transition-all hover:scale-105 inline-flex items-center gap-2.5 shadow-[0_4px_20px_rgba(20,184,166,0.3)]">
+                <button
+                  onClick={() => window.open('https://zalo.me/84857667533', '_blank', 'noopener')}
+                  className="bg-[#14B8A6] hover:bg-[#0fa696] text-white px-8 py-3.5 rounded-full text-sm font-bold transition-all hover:scale-105 inline-flex items-center gap-2.5 shadow-[0_4px_20px_rgba(20,184,166,0.3)]"
+                >
                   Nhắn tin Zalo ngay <MessageCircle className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 w-full h-[450px] md:h-[550px] rounded-[2.5rem] overflow-hidden bg-gray-200 shadow-inner border border-white/40">
+            <div
+              className="flex-1 w-full h-[450px] md:h-[550px] rounded-[2.5rem] overflow-hidden bg-gray-200 shadow-inner border border-white/40 cursor-pointer"
+              onClick={() => window.open(googleMapsUrl, '_blank', 'noopener,noreferrer')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
+                }
+              }}
+              aria-label="Mở vị trí Trường Đại học Công nghệ Thông tin trên Google Maps"
+            >
               <iframe
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d62711.0116893693!2d106.7208!3d10.8491!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3175276336365d75%3A0x6e9d6515efbb5083!2zVGjhu6cgxJDhu6ljLCBUaMOgbmggcGjhu5EgSOG7kyBDaMOtIE1pbmgsIFZp4buHdCBOYW0!5e0!3m2!1svi!2s!4v1713431982847!5m2!1svi!2s"
+                src="https://www.google.com/maps?q=Tr%C6%B0%E1%BB%9Dng%20%C4%90%E1%BA%A1i%20h%E1%BB%8Dc%20C%C3%B4ng%20ngh%E1%BB%87%20Th%C3%B4ng%20tin%2C%20%C4%90HQG-HCM&z=17&output=embed"
                 width="100%"
                 height="100%"
                 style={{ border: 0 }}
