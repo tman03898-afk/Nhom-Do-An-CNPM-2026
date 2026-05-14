@@ -2,9 +2,49 @@ const express = require('express');
 
 const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
+const { insertRemovalLog } = require('./adminRemovalLog');
 const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
 
 const router = express.Router();
+
+/**
+ * Gỡ toàn bộ phụ thuộc trước khi xóa `contracts`.
+ * Thứ tự quan trọng: invoice_service_fees / payments → invoices (tránh FK 23503).
+ */
+async function purgeContractDependencies(client, contractId) {
+  const cid = Number(contractId);
+  const csf = await client.query(`SELECT to_regclass('public.contract_service_fees') AS t`);
+  if (csf.rows[0]?.t) {
+    await client.query(`DELETE FROM contract_service_fees WHERE contract_id = $1`, [cid]);
+  }
+  const urCol = await client.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'utility_readings' AND column_name = 'contract_id'`
+  );
+  if (urCol.rowCount > 0) {
+    await client.query(`DELETE FROM utility_readings WHERE contract_id = $1`, [cid]);
+  }
+
+  const isf = await client.query(`SELECT to_regclass('public.invoice_service_fees') AS t`);
+  if (isf.rows[0]?.t) {
+    await client.query(
+      `DELETE FROM invoice_service_fees
+       WHERE invoice_id IN (SELECT invoice_id FROM invoices WHERE contract_id = $1)`,
+      [cid]
+    );
+  }
+
+  const pay = await client.query(`SELECT to_regclass('public.payments') AS t`);
+  if (pay.rows[0]?.t) {
+    await client.query(
+      `DELETE FROM payments
+       WHERE invoice_id IN (SELECT invoice_id FROM invoices WHERE contract_id = $1)`,
+      [cid]
+    );
+  }
+
+  await client.query(`DELETE FROM invoices WHERE contract_id = $1`, [cid]);
+}
 
 async function ensureNotificationsTable() {
   await pool.query(`
@@ -408,6 +448,102 @@ router.put('/admin/contracts/:id', requireAuth, requireAdmin, async (req, res) =
   }
 });
 
+/** Xóa một hợp đồng; không xóa khách thuê. Xóa hóa đơn / thanh toán gắn hợp đồng; ghi log. */
+router.delete('/admin/contracts/:id', requireAuth, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const contractId = Number(req.params.id);
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return res.status(400).json({ ok: false, message: 'invalid contract id' });
+    }
+
+    await ensureUsersTable();
+    await ensureRoomsTable();
+    await ensureTenantsTable();
+    await ensureContractsTable();
+
+    const before = await client.query(
+      `SELECT c.*, u.full_name, u.email, u.user_id, r.room_number, r.room_id
+       FROM contracts c
+       JOIN tenants t ON t.tenant_id = c.tenant_id
+       JOIN users u ON u.user_id = t.user_id
+       LEFT JOIN rooms r ON r.room_id = c.room_id
+       WHERE c.contract_id = $1`,
+      [contractId]
+    );
+    if (before.rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'contract not found' });
+    }
+
+    const row = before.rows[0];
+    const roomId =
+      row.room_id != null && row.room_id !== '' ? Number(row.room_id) : null;
+
+    await client.query('BEGIN');
+
+    await purgeContractDependencies(client, contractId);
+
+    const payload = {
+      contract: {
+        contract_id: row.contract_id,
+        tenant_id: row.tenant_id,
+        room_id: row.room_id,
+        room_number: row.room_number,
+        start_date: row.start_date,
+        end_date: row.end_date,
+        rent_price: row.rent_price ?? row.monthly_rent,
+        deposit: row.deposit,
+        status: row.status,
+        notes: row.notes,
+      },
+      tenant_snapshot: {
+        full_name: row.full_name,
+        email: row.email,
+        user_id: row.user_id,
+      },
+    };
+    const summary = `Hợp đồng #${contractId} (${row.full_name}, phòng ${row.room_number})`;
+
+    await insertRemovalLog(client, {
+      kind: 'CONTRACT',
+      entityId: contractId,
+      summary,
+      payload,
+      deletedBy: req.auth?.sub || null,
+    });
+
+    await client.query(`DELETE FROM contracts WHERE contract_id = $1`, [contractId]);
+
+    if (roomId != null && !Number.isNaN(roomId)) {
+      await client.query(
+        `UPDATE rooms
+         SET status = 'AVAILABLE'::room_status, updated_at = NOW()
+         WHERE room_id = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM contracts c2
+             WHERE c2.room_id = $1 AND c2.status = 'ACTIVE'::contract_status
+           )`,
+        [roomId]
+      );
+    }
+
+    await client.query('COMMIT');
+    return res.json({ ok: true, message: 'deleted' });
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (e) {}
+    console.error('Delete contract error:', err);
+    const hint =
+      err && err.code === '23503'
+        ? 'Còn dữ liệu khác ràng buộc hợp đồng—đã thử gỡ hóa đơn/phụ phí; kiểm tra DB.'
+        : 'internal error';
+    return res.status(500).json({ ok: false, message: hint });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
   try {
     await ensureUsersTable();
@@ -450,4 +586,6 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
   }
 });
 
+router.ensureContractsTable = ensureContractsTable;
+router.purgeContractDependencies = purgeContractDependencies;
 module.exports = router;

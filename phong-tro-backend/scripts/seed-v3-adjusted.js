@@ -115,8 +115,6 @@ async function main() {
         ('Rác',         'Phí vệ sinh rác',              20000, 'tháng', 'FIXED'::fee_type,   true),
         ('Gửi xe máy',  'Phí giữ xe máy',               80000, 'tháng', 'FIXED'::fee_type,   true),
         ('Gửi xe đạp',  'Phí giữ xe đạp',               20000, 'tháng', 'FIXED'::fee_type,   true),
-        ('Thang máy',   'Phí thang máy',                50000, 'tháng', 'FIXED'::fee_type,   true),
-        ('Bảo vệ',      'Phí bảo vệ tòa nhà',           30000, 'tháng', 'FIXED'::fee_type,   true),
         ('Điều hòa',    'Phí sử dụng điều hòa',         50000, 'tháng', 'FIXED'::fee_type,   true),
         ('Máy giặt',    'Phí sử dụng máy giặt',         30000, 'lần',   'FIXED'::fee_type,   true)
       ) AS v(fee_name, description, unit_price, unit, fee_type, is_active)
@@ -224,20 +222,6 @@ async function main() {
       JOIN service_fees sf ON sf.fee_name = 'Gửi xe máy'
       WHERE ct.status = 'ACTIVE'
         AND r.room_number IN ('103', '204', '302', '403')
-        AND NOT EXISTS (
-          SELECT 1 FROM contract_service_fees csf
-          WHERE csf.contract_id = ct.contract_id AND csf.fee_id = sf.fee_id
-        )
-    `);
-
-    await client.query(`
-      INSERT INTO contract_service_fees (contract_id, fee_id, agreed_price)
-      SELECT ct.contract_id, sf.fee_id, sf.unit_price
-      FROM contracts ct
-      JOIN rooms r ON r.room_id = ct.room_id
-      JOIN service_fees sf ON sf.fee_name = 'Thang máy'
-      WHERE ct.status = 'ACTIVE'
-        AND r.floor IN (4, 5)
         AND NOT EXISTS (
           SELECT 1 FROM contract_service_fees csf
           WHERE csf.contract_id = ct.contract_id AND csf.fee_id = sf.fee_id

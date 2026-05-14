@@ -90,6 +90,19 @@ async function resolveInvoicePaidStatusValue() {
   return 'PAID';
 }
 
+async function backfillPaymentsPaidAt(poolRef) {
+  try {
+    await poolRef.query(`
+      UPDATE payments p
+      SET paid_at = COALESCE(paid_at, p.created_at)
+      WHERE COALESCE(p.status::text, '') = 'APPROVED'
+        AND p.paid_at IS NULL
+    `);
+  } catch (err) {
+    console.error('backfillPaymentsPaidAt:', err);
+  }
+}
+
 async function ensurePaymentsTable() {
   await ensureEnumType('payment_method', ['BANK_TRANSFER', 'CASH', 'ZALO_PAY', 'MOMO', 'OTHER']);
   await ensureEnumType('payment_status', ['PENDING', 'APPROVED', 'REJECTED']);
@@ -180,6 +193,8 @@ async function ensurePaymentsTable() {
        WHERE method IS NULL OR method = '${transferMethodLabel}'::payment_method`
     );
   }
+
+  await backfillPaymentsPaidAt(pool);
 }
 
 /** Legacy DB uses amount_paid + payment_method; newer schema uses amount + method. Populate whichever exists. */
@@ -232,6 +247,11 @@ async function insertPendingTenantPayment(poolRef, payload) {
 
   if (cols.has('note')) {
     push('note', note);
+  }
+
+  /** Ngày tenant gửi xác nhận thanh toán (giữ khi duyệt, xóa khi từ chối). */
+  if (cols.has('paid_at')) {
+    push('paid_at', new Date());
   }
 
   const columnSql = fragments.map((f) => f.col).join(', ');
@@ -448,7 +468,10 @@ router.post('/admin/payments/:id/approve', requireAuth, requireAdmin, async (req
 
     await client.query(
       `UPDATE payments
-       SET status = 'APPROVED'::payment_status, recorded_by = $2, updated_at = NOW()
+       SET status = 'APPROVED'::payment_status,
+           recorded_by = $2,
+           updated_at = NOW(),
+           paid_at = COALESCE(paid_at, NOW())
        WHERE payment_id = $1`,
       [paymentId, req.auth.sub]
     );
@@ -487,7 +510,10 @@ router.post('/admin/payments/:id/reject', requireAuth, requireAdmin, async (req,
 
     const result = await pool.query(
       `UPDATE payments
-       SET status = 'REJECTED'::payment_status, recorded_by = $2, updated_at = NOW()
+       SET status = 'REJECTED'::payment_status,
+           recorded_by = $2,
+           updated_at = NOW(),
+           paid_at = NULL
        WHERE payment_id = $1
        RETURNING payment_id`,
       [paymentId, req.auth.sub]
@@ -505,4 +531,5 @@ router.post('/admin/payments/:id/reject', requireAuth, requireAdmin, async (req,
 });
 
 module.exports = router;
+module.exports.ensurePaymentsTable = ensurePaymentsTable;
 

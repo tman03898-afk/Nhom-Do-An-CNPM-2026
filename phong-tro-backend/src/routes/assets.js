@@ -109,5 +109,23 @@ router.put('/admin/assets/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+router.delete('/admin/assets/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await ensureAssetsTable();
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'invalid asset id' });
+    }
+    const result = await pool.query('DELETE FROM assets WHERE asset_id = $1 RETURNING asset_id', [id]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'asset not found' });
+    }
+    return res.json({ ok: true, deleted: id });
+  } catch (err) {
+    console.error('Delete asset error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
 module.exports = router;
 
