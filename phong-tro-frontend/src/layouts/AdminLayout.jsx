@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/api';
 import {
   LayoutDashboard, Home, Users, Receipt,
-  Wallet, Zap, Hammer, Bell, Bird, ChevronLeft, ChevronRight, Package, ClipboardList, Menu, X
+  Wallet, Zap, Hammer, Bell, Bird, ChevronLeft, ChevronRight, Package, ClipboardList, Menu, X, History
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
@@ -134,6 +134,7 @@ export default function AdminLayout() {
     { name: 'Trang thiết bị', path: '/admin/assets', icon: Package },
     { name: 'Bảo trì', path: '/admin/tickets', icon: Hammer },
     { name: 'Thông báo', path: '/admin/notifications', icon: Bell },
+    { name: 'Lịch sử xóa', path: '/admin/removal-log', icon: History },
   ];
 
   return (

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Zap, Droplet, Wifi, Trash2, Save, Plus, X,
-  Settings2, User, Hash, Box, Info
+  Settings2, User, Hash, Box, Info, UserCheck, XCircle, RefreshCw
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
@@ -13,6 +13,9 @@ export default function ServiceManagePage() {
 
   const [services, setServices] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingFeeSubs, setPendingFeeSubs] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [busyFeeId, setBusyFeeId] = useState(null);
 
   const [isAdding, setIsAdding] = useState(false);
   const [newSvc, setNewSvc] = useState({ title: '', desc: '', value: '', method: 'fixed' });
@@ -75,6 +78,52 @@ export default function ServiceManagePage() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  const loadPendingFeeSubs = useCallback(async () => {
+    if (!token) return;
+    setPendingLoading(true);
+    try {
+      const d = await apiFetch('/admin/fee-subscriptions/pending', { token });
+      setPendingFeeSubs(d.pending || []);
+    } catch {
+      setPendingFeeSubs([]);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadPendingFeeSubs();
+  }, [loadPendingFeeSubs]);
+
+  const approveFeeSub = async (id) => {
+    if (!token) return;
+    setBusyFeeId(id);
+    try {
+      await apiFetch(`/admin/fee-subscriptions/${id}/approve`, { token, method: 'POST', body: {} });
+      addToast('Đã duyệt. Phí sẽ cộng vào hóa đơn từ tháng sau.', 'success');
+      await loadPendingFeeSubs();
+    } catch (e) {
+      addToast(e?.message || 'Không duyệt được.', 'error');
+    } finally {
+      setBusyFeeId(null);
+    }
+  };
+
+  const rejectFeeSub = async (id) => {
+    if (!token) return;
+    const reason = window.prompt('Lý do từ chối (có thể để trống):') ?? '';
+    setBusyFeeId(id);
+    try {
+      await apiFetch(`/admin/fee-subscriptions/${id}/reject`, { token, method: 'POST', body: { reason } });
+      addToast('Đã từ chối yêu cầu.', 'success');
+      await loadPendingFeeSubs();
+    } catch (e) {
+      addToast(e?.message || 'Không từ chối được.', 'error');
+    } finally {
+      setBusyFeeId(null);
+    }
+  };
 
   const getMethodLabel = (method) => {
     switch (method) {
@@ -161,6 +210,86 @@ export default function ServiceManagePage() {
           >
             <Plus className="w-5 h-5" /> Thêm dịch vụ
           </button>
+        </div>
+
+        {/* Duyệt đăng ký tiện ích (tenant → service_fees) */}
+        <div className="mb-10 rounded-[32px] border border-[#BCE1E5]/60 bg-white p-6 shadow-[0_4px_24px_rgba(15,58,64,0.04)]">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#F2FCFD] text-[#14B8A6] flex items-center justify-center">
+                <UserCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-[#0F3A40]">Duyệt đăng ký tiện ích</h2>
+                <p className="text-xs text-[#4A787C] font-medium">
+                  Tenant gửi từ trang dịch vụ. Sau khi duyệt, phí được cộng vào hóa đơn từ <span className="font-bold">kỳ tháng tiếp theo</span>.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadPendingFeeSubs()}
+              disabled={pendingLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#BCE1E5] text-[13px] font-bold text-[#0F3A40] hover:bg-[#F2FCFD] disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${pendingLoading ? 'animate-spin' : ''}`} /> Làm mới
+            </button>
+          </div>
+          {pendingLoading && pendingFeeSubs.length === 0 ? (
+            <p className="text-sm text-[#4A787C] py-4">Đang tải…</p>
+          ) : pendingFeeSubs.length === 0 ? (
+            <p className="text-sm text-[#4A787C] py-2">Không có yêu cầu chờ duyệt.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-[#BCE1E5]/40">
+              <table className="w-full text-left text-sm min-w-[640px]">
+                <thead>
+                  <tr className="bg-[#F2FCFD] text-[10px] font-bold uppercase tracking-wider text-[#82ABB0]">
+                    <th className="px-3 py-2.5">Phòng</th>
+                    <th className="px-3 py-2.5">Tenant</th>
+                    <th className="px-3 py-2.5">Tiện ích</th>
+                    <th className="px-3 py-2.5 whitespace-nowrap">Phí/tháng</th>
+                    <th className="px-3 py-2.5 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingFeeSubs.map((row) => {
+                    const busy = busyFeeId === row.id;
+                    return (
+                      <tr key={row.id} className="border-t border-[#BCE1E5]/30">
+                        <td className="px-3 py-2.5 font-bold text-[#0F3A40]">{row.room_number || '—'}</td>
+                        <td className="px-3 py-2.5 text-[#4A787C]">
+                          <div className="font-medium text-[#0F3A40]">{row.tenant_name || '—'}</div>
+                          <div className="text-xs">{row.tenant_email || ''}</div>
+                        </td>
+                        <td className="px-3 py-2.5 text-[#0F3A40]">{row.fee_name}</td>
+                        <td className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                          {Number(row.monthly_price || 0).toLocaleString('vi-VN')}đ
+                        </td>
+                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => approveFeeSub(row.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#14B8A6] text-white text-xs font-bold mr-2 hover:bg-[#0da090] disabled:opacity-50"
+                          >
+                            Duyệt
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => rejectFeeSub(row.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> Từ chối
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Adding New Service Form (Inline Card) */}

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { 
-  FileSignature, ClipboardList, Search, Filter, 
-  Download, MoreVertical, Plus, Calendar, 
-  Wallet, AlertCircle, CheckCircle2, XCircle,
-  FileText, History, Info
+import {
+  ClipboardList, Search,
+  Download, Plus,
+  Wallet, AlertCircle, XCircle,
+  Info, Trash2, AlertTriangle, X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
@@ -18,6 +18,9 @@ export default function ContractManagePage() {
   const pageSize = 10;
   const [isLoading, setIsLoading] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [deleteModalContract, setDeleteModalContract] = useState(null);
+  const [deleteModalDeleting, setDeleteModalDeleting] = useState(false);
+  const [deleteModalError, setDeleteModalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
@@ -131,6 +134,33 @@ export default function ContractManagePage() {
     if (status === 'ACTIVE') return 'bg-[#EBFDFB] text-[#14B8A6]';
     if (status === 'EXPIRED') return 'bg-[#FFF3E0] text-[#E68A00]';
     return 'bg-slate-100 text-slate-500';
+  };
+
+  const openDeleteContractModal = (c) => {
+    setDeleteModalError('');
+    setDeleteModalContract(c);
+  };
+
+  const closeDeleteContractModal = () => {
+    if (deleteModalDeleting) return;
+    setDeleteModalContract(null);
+    setDeleteModalError('');
+  };
+
+  const confirmDeleteContract = async () => {
+    if (!token || !deleteModalContract) return;
+    setDeleteModalDeleting(true);
+    setDeleteModalError('');
+    try {
+      await apiFetch(`/admin/contracts/${deleteModalContract.contract_id}`, { token, method: 'DELETE' });
+      window.dispatchEvent(new Event('admin-nav-badges-refresh'));
+      setDeleteModalContract(null);
+      await refresh();
+    } catch (err) {
+      setDeleteModalError(err?.data?.message || err.message || 'Không xóa được hợp đồng.');
+    } finally {
+      setDeleteModalDeleting(false);
+    }
   };
 
   const handleExportCsv = () => {
@@ -291,8 +321,14 @@ export default function ContractManagePage() {
                       </span>
                     </td>
                     <td className="py-5 px-2 text-right">
-                      <button className="p-2 rounded-xl text-[#82ABB0] hover:text-[#0F3A40] hover:bg-[#F2FCFD] transition-all">
-                        <MoreVertical size={18} />
+                      <button
+                        type="button"
+                        onClick={() => openDeleteContractModal(c)}
+                        className="p-2 rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 transition-all inline-flex"
+                        title="Xóa hợp đồng (giữ khách thuê)"
+                        aria-label={`Xóa hợp đồng ${c.contract_id}`}
+                      >
+                        <Trash2 size={18} />
                       </button>
                     </td>
                   </tr>
@@ -386,6 +422,142 @@ export default function ContractManagePage() {
           </div>
         </div>
       </div>
+
+      {deleteModalContract && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
+          onClick={() => !deleteModalDeleting && closeDeleteContractModal()}
+        >
+          <div
+            className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-[28px] shadow-2xl border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-contract-title"
+          >
+            <button
+              type="button"
+              onClick={closeDeleteContractModal}
+              disabled={deleteModalDeleting}
+              className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-50"
+              aria-label="Đóng"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="p-6 sm:p-8 border-b border-slate-100">
+              <h3 id="delete-contract-title" className="text-xl font-bold text-[#0F3A40] pr-10">
+                Xác nhận xóa hợp đồng
+              </h3>
+              <p className="mt-2 text-[13px] font-medium text-[#4A787C] leading-relaxed">
+                Khách thuê <span className="font-bold text-[#0F3A40]">vẫn được giữ</span> trong hệ thống. Chỉ hợp đồng này và các hóa đơn / thanh toán gắn hợp đồng sẽ bị gỡ.
+              </p>
+            </div>
+
+            <div className="p-6 sm:p-8 space-y-5">
+              <div className="rounded-2xl bg-[#F8FAFB] border border-slate-100 p-4">
+                <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide mb-3">Khách thuê</p>
+                <dl className="grid grid-cols-1 gap-2 text-[13px]">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-[#4A787C] font-medium">Họ tên</dt>
+                    <dd className="font-bold text-[#0F3A40] text-right">{deleteModalContract.full_name}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-[#4A787C] font-medium">Email</dt>
+                    <dd className="font-semibold text-[#0F3A40] text-right break-all">{deleteModalContract.email}</dd>
+                  </div>
+                  {deleteModalContract.tenant_id != null ? (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-[#4A787C] font-medium">Mã khách (tenant)</dt>
+                      <dd className="font-mono font-semibold text-[#0F3A40]">#{deleteModalContract.tenant_id}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 overflow-hidden">
+                <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide px-4 pt-4 pb-2 bg-white">
+                  Hợp đồng sẽ xóa
+                </p>
+                <table className="w-full text-[12px]">
+                  <tbody>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-[#4A787C] font-medium w-[38%]">Mã hợp đồng</td>
+                      <td className="px-4 py-2 font-mono font-bold text-[#0F3A40]">#{deleteModalContract.contract_id}</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-[#4A787C] font-medium">Phòng</td>
+                      <td className="px-4 py-2 font-semibold text-[#0F3A40]">{deleteModalContract.room_number ?? '—'}</td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-[#4A787C] font-medium">Thời hạn</td>
+                      <td className="px-4 py-2 text-[#4A787C]">
+                        {deleteModalContract.start_date && deleteModalContract.end_date
+                          ? `${deleteModalContract.start_date} → ${deleteModalContract.end_date}`
+                          : '—'}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-[#4A787C] font-medium">Giá thuê</td>
+                      <td className="px-4 py-2 font-semibold text-[#0F3A40]">
+                        {Number(deleteModalContract.rent_price ?? 0).toLocaleString('vi-VN')}đ
+                      </td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-[#4A787C] font-medium">Tiền cọc</td>
+                      <td className="px-4 py-2 font-semibold text-[#0F3A40]">
+                        {Number(deleteModalContract.deposit ?? 0).toLocaleString('vi-VN')}đ
+                      </td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-[#4A787C] font-medium">Trạng thái</td>
+                      <td className="px-4 py-2">
+                        <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${pill(deleteModalContract.status)}`}>
+                          {deleteModalContract.status}
+                        </span>
+                      </td>
+                    </tr>
+                    {deleteModalContract.notes ? (
+                      <tr className="border-t border-slate-100">
+                        <td className="px-4 py-2 text-[#4A787C] font-medium align-top">Ghi chú</td>
+                        <td className="px-4 py-2 text-[#4A787C] whitespace-pre-wrap">{deleteModalContract.notes}</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-3 rounded-2xl bg-amber-50 border border-amber-100/80 p-4 text-[13px] text-amber-900">
+                <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+                <p className="font-medium leading-relaxed">
+                  Xác nhận xóa hợp đồng <span className="font-bold">#{deleteModalContract.contract_id}</span>? Thao tác không hoàn tác.
+                </p>
+              </div>
+
+              {deleteModalError ? <p className="text-sm font-medium text-red-600">{deleteModalError}</p> : null}
+
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={closeDeleteContractModal}
+                  disabled={deleteModalDeleting}
+                  className="w-full sm:w-auto px-6 py-3 rounded-full font-bold text-[#4A787C] hover:bg-slate-100 transition-colors disabled:opacity-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteContract}
+                  disabled={deleteModalDeleting}
+                  className="w-full sm:w-auto px-6 py-3 rounded-full font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-600/20 disabled:opacity-60"
+                >
+                  {deleteModalDeleting ? 'Đang xóa...' : 'Xác nhận xóa'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isCreateOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">

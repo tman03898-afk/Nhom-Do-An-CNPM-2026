@@ -119,8 +119,25 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    const currentToken = token || localStorage.getItem('access_token');
+    if (!currentToken) return null;
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      const data = await parseJsonSafe(response);
+      if (!response.ok || !data?.ok) return null;
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data.user);
+      return data.user;
+    } catch {
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, authLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, authLoading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

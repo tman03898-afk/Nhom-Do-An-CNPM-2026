@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
    ClipboardList, Download, MessageSquare,
    Calendar, CreditCard, ShieldCheck,
-   Trash2, Home, CheckCircle2, ChevronRight, SearchX, Search, X
+   Trash2, Home, CheckCircle2, ChevronRight, SearchX, Search, X, Eye
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
@@ -27,6 +27,7 @@ export default function ContractPage() {
    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
    const [tenantProfile, setTenantProfile] = useState(null);
    const [contract, setContract] = useState(null);
+   const [detailOpen, setDetailOpen] = useState(false);
 
    useEffect(() => {
       const fetchTenant = async () => {
@@ -114,7 +115,16 @@ export default function ContractPage() {
                {/* <p className="text-[11px] font-bold text-[#14B8A6] uppercase tracking-widest mb-1.5">QUẢN LÝ THUÊ NHÀ</p> */}
                <h1 className="text-[34px] font-sans font-bold text-[#0F3A40] tracking-tight">Hợp đồng thuê nhà</h1>
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4">
+               <button
+                  type="button"
+                  onClick={() => setDetailOpen(true)}
+                  disabled={!contract}
+                  className="bg-white/80 hover:bg-white text-[#0F3A40] border border-[#BCE1E5] px-6 py-3 rounded-full text-[14px] font-bold shadow-sm transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Xem chi tiết hợp đồng"
+               >
+                  <Eye size={18} /> Chi tiết
+               </button>
                <button className="bg-[#0F3A40] hover:bg-[#1F545B] text-white px-6 py-3 rounded-full text-[14px] font-bold shadow-lg shadow-[#0F3A40]/10 transition-all flex items-center gap-2">
                   <Download size={18} /> Tải PDF
                </button>
@@ -232,8 +242,13 @@ export default function ContractPage() {
                      )}
                   </div>
 
-                  <button className="w-full mt-12 py-4 rounded-3xl bg-white border border-[#BCE1E5]/50 text-[#14B8A6] font-bold text-[14px] hover:bg-[#F2FCFD] transition-all flex items-center justify-center gap-2">
-                     Xem toàn bộ chi tiết điều khoản <ChevronRight size={16} />
+                  <button
+                     type="button"
+                     onClick={() => setDetailOpen(true)}
+                     disabled={!contract}
+                     className="w-full mt-12 py-4 rounded-3xl bg-white border border-[#BCE1E5]/50 text-[#14B8A6] font-bold text-[14px] hover:bg-[#F2FCFD] transition-all flex items-center justify-center gap-2 disabled:opacity-40"
+                  >
+                     <Eye size={16} /> Xem chi tiết hợp đồng <ChevronRight size={16} />
                   </button>
                </div>
 
@@ -254,6 +269,77 @@ export default function ContractPage() {
                </div>
             </div>
          </div>
+
+         {detailOpen ? (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0F3A40]/40 backdrop-blur-sm">
+               <div className="bg-white rounded-[32px] shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col border border-white">
+                  <div className="flex items-center justify-between px-8 py-6 border-b border-[#BCE1E5]/30">
+                     <h3 className="text-lg font-bold text-[#0F3A40]">Chi tiết hợp đồng</h3>
+                     <button
+                        type="button"
+                        onClick={() => setDetailOpen(false)}
+                        className="p-2 rounded-xl hover:bg-[#F2FCFD] text-[#4A787C]"
+                        aria-label="Đóng"
+                     >
+                        <X size={20} />
+                     </button>
+                  </div>
+                  <div className="px-8 py-6 overflow-y-auto text-[14px] space-y-4">
+                     {!contract ? (
+                        <p className="text-[#82ABB0] text-center py-6">Chưa có dữ liệu hợp đồng.</p>
+                     ) : (
+                        <>
+                           <div className="grid grid-cols-2 gap-3 text-[13px]">
+                              <div>
+                                 <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Mã HĐ</p>
+                                 <p className="font-bold text-[#0F3A40] mt-1">#{contract.contract_id}</p>
+                              </div>
+                              <div>
+                                 <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Phòng</p>
+                                 <p className="font-bold text-[#0F3A40] mt-1">{contract.room_number || roomNumber}</p>
+                              </div>
+                              <div>
+                                 <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Bắt đầu</p>
+                                 <p className="font-bold text-[#0F3A40] mt-1">{formatDate(contract.start_date)}</p>
+                              </div>
+                              <div>
+                                 <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Kết thúc</p>
+                                 <p className="font-bold text-[#0F3A40] mt-1">{formatDate(contract.end_date)}</p>
+                              </div>
+                              <div>
+                                 <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Tiền thuê</p>
+                                 <p className="font-bold text-[#14B8A6] mt-1">{formatMoney(contract.rent_price)}</p>
+                              </div>
+                              <div>
+                                 <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Tiền cọc</p>
+                                 <p className="font-bold text-[#0F3A40] mt-1">{formatMoney(contract.deposit)}</p>
+                              </div>
+                              <div>
+                                 <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Trạng thái</p>
+                                 <p className="font-bold text-[#0F3A40] mt-1">{contractStatus}</p>
+                              </div>
+                              {contract.max_tenants != null ? (
+                                 <div>
+                                    <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Số người tối đa</p>
+                                    <p className="font-bold text-[#0F3A40] mt-1">{contract.max_tenants}</p>
+                                 </div>
+                              ) : null}
+                           </div>
+                           {contract.notes ? (
+                              <div className="rounded-2xl bg-[#F2FCFD]/80 border border-[#BCE1E5]/30 p-4">
+                                 <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest mb-2">Ghi chú</p>
+                                 <p className="text-[#4A787C] leading-relaxed whitespace-pre-wrap">{contract.notes}</p>
+                              </div>
+                           ) : null}
+                           <p className="text-[11px] text-[#82ABB0]">
+                              Cập nhật: {formatDate(contract.updated_at || contract.created_at)}
+                           </p>
+                        </>
+                     )}
+                  </div>
+               </div>
+            </div>
+         ) : null}
       </div>
    );
 }
