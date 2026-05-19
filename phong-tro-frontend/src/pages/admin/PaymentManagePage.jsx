@@ -15,6 +15,7 @@ export default function PaymentManagePage() {
    const [isLoading, setIsLoading] = useState(false);
    const [actionLoadingId, setActionLoadingId] = useState(null);
    const [previewImage, setPreviewImage] = useState('');
+   const [reminderLoading, setReminderLoading] = useState(false);
    const recentTransactionsRef = useRef(null);
 
    const refresh = async () => {
@@ -34,6 +35,27 @@ export default function PaymentManagePage() {
       refresh();
       // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [token]);
+
+   const sendInvoiceDueReminders = async () => {
+      if (!token) return;
+      setReminderLoading(true);
+      try {
+         const data = await apiFetch('/admin/notifications/send-invoice-due-reminders', {
+            token,
+            method: 'POST',
+            body: {},
+         });
+         const detail =
+            data.sent > 0
+               ? ` (${data.overdue ?? 0} quá hạn, ${data.dueSoon ?? 0} sắp đến hạn)`
+               : '';
+         addToast((data.message || 'Hoàn tất') + detail, 'success');
+      } catch (e) {
+         addToast(e.message || 'Gửi nhắc nợ thất bại', 'error');
+      } finally {
+         setReminderLoading(false);
+      }
+   };
 
    const pendingApprovals = useMemo(
       () =>
@@ -330,8 +352,13 @@ export default function PaymentManagePage() {
                   </div>
                </div>
 
-               <button className="w-full bg-white hover:bg-[#F2FCFD] text-[#0F3A40] py-4 rounded-2xl text-[14px] font-bold transition-colors mt-12 shadow-md">
-                  Gửi nhắc nợ tự động
+               <button
+                  type="button"
+                  disabled={reminderLoading || !token}
+                  onClick={sendInvoiceDueReminders}
+                  className="w-full bg-white hover:bg-[#F2FCFD] disabled:opacity-60 disabled:cursor-not-allowed text-[#0F3A40] py-4 rounded-2xl text-[14px] font-bold transition-colors mt-12 shadow-md"
+               >
+                  {reminderLoading ? 'Đang gửi…' : 'Gửi nhắc nợ tự động'}
                </button>
             </div>
          </section>

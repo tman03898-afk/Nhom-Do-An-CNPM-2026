@@ -18,6 +18,7 @@ export default function PaymentPage() {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [invoiceDetail, setInvoiceDetail] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -64,21 +65,47 @@ export default function PaymentPage() {
     run();
   }, [token]);
 
+  const isPayableInvoice = (i) => {
+    const s = String(i?.status || '').toUpperCase();
+    return s !== 'PAID' && s !== 'CANCELLED';
+  };
+
   const invoiceToPay = useMemo(() => {
     const requestedId = Number(searchParams.get('invoiceId'));
     if (Number.isInteger(requestedId) && requestedId > 0) {
       const found = invoices.find((i) => Number(i.invoice_id) === requestedId);
-      if (found) return found;
+      if (found && isPayableInvoice(found)) return found;
     }
 
-    const unpaid = invoices.find((i) => String(i.status || '').toUpperCase() !== 'PAID');
+    const unpaid = invoices.find((i) => isPayableInvoice(i));
     if (unpaid) return unpaid;
 
     return invoices[0] || null;
   }, [invoices, searchParams]);
 
-  const isPaid = String(invoiceToPay?.status || '').toUpperCase() === 'PAID';
-  const needsPayment = Boolean(invoiceToPay) && !isPaid;
+  useEffect(() => {
+    if (!token || !invoiceToPay?.invoice_id) {
+      setInvoiceDetail(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch(`/tenant/invoices/${invoiceToPay.invoice_id}`, { token });
+        if (!cancelled) setInvoiceDetail(data?.invoice || null);
+      } catch {
+        if (!cancelled) setInvoiceDetail(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, invoiceToPay?.invoice_id]);
+
+  const invoiceStatus = String(invoiceToPay?.status || '').toUpperCase();
+  const isPaid = invoiceStatus === 'PAID';
+  const isCancelled = invoiceStatus === 'CANCELLED';
+  const needsPayment = Boolean(invoiceToPay) && !isPaid && !isCancelled;
   const latestPaymentForInvoice = useMemo(() => {
     if (!invoiceToPay) return null;
     const invoiceId = Number(invoiceToPay.invoice_id);
@@ -238,9 +265,26 @@ export default function PaymentPage() {
                               <span className="text-[#0F3A40] font-bold">{formatMoney(invoiceToPay.water_amount)}₫</span>
                            </div>
                            <div className="flex justify-between items-center text-[13.5px]">
-                              <span className="text-[#82ABB0] font-medium">Dịch vụ khác</span>
+                              <span className="text-[#82ABB0] font-medium">Dịch vụ khác (tổng)</span>
                               <span className="text-[#0F3A40] font-bold">{formatMoney(invoiceToPay.other_fees_amount)}₫</span>
                            </div>
+                           {Array.isArray(invoiceDetail?.subscription_services) &&
+                           invoiceDetail.subscription_services.length > 0 ? (
+                              <div className="px-4 pt-1 pb-2 space-y-2 border-l-2 border-[#BCE1E5]/40 ml-1">
+                                 {invoiceDetail.subscription_services.map((line, idx) => (
+                                    <div key={`${line.source}-${line.service_id ?? line.fee_id}-${idx}`} className="flex justify-between text-[12.5px]">
+                                       <span className="text-[#4A787C]">{line.service_name}</span>
+                                       <span className="font-bold text-[#0F3A40]">{formatMoney(line.monthly_price)}₫</span>
+                                    </div>
+                                 ))}
+                                 {Number(invoiceDetail.other_fees_manual || 0) > 0 ? (
+                                    <div className="flex justify-between text-[12.5px]">
+                                       <span className="text-[#4A787C]">Phí khác (thủ công)</span>
+                                       <span className="font-bold text-[#0F3A40]">{formatMoney(invoiceDetail.other_fees_manual)}₫</span>
+                                    </div>
+                                 ) : null}
+                              </div>
+                           ) : null}
                         </div>
 
                         <div className="pt-8 border-t border-[#BCE1E5]/30">

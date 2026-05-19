@@ -18,6 +18,9 @@ export default function TenantInvoicePage() {
    const [invoices, setInvoices] = useState([]);
    const [payments, setPayments] = useState([]);
    const [isLoading, setIsLoading] = useState(false);
+   const [detailOpen, setDetailOpen] = useState(false);
+   const [detailLoading, setDetailLoading] = useState(false);
+   const [detailInvoice, setDetailInvoice] = useState(null);
 
    const formatMoney = (v) => Number(v || 0).toLocaleString('vi-VN');
    const formatMonth = (periodMonth, periodYear) => `${String(periodMonth).padStart(2, '0')}/${periodYear}`;
@@ -84,6 +87,7 @@ export default function TenantInvoicePage() {
             rent: formatMoney(inv.rent_amount),
             electric: formatMoney(inv.electricity_amount),
             water: formatMoney(inv.water_amount),
+            otherFees: formatMoney(inv.other_fees_amount),
             total: formatMoney(inv.total_amount),
             status: meta.text,
             statusType: meta.type,
@@ -125,6 +129,21 @@ export default function TenantInvoicePage() {
    };
    const latestDueDate = formatDueDate(latestActionableInvoiceRaw?.due_date);
    const hasUnpaid = Boolean(latestActionableInvoiceRaw);
+
+   const openInvoiceDetail = async (invoiceId) => {
+      if (!token || !invoiceId) return;
+      setDetailOpen(true);
+      setDetailLoading(true);
+      setDetailInvoice(null);
+      try {
+         const data = await apiFetch(`/tenant/invoices/${invoiceId}`, { token });
+         setDetailInvoice(data?.invoice || null);
+      } catch {
+         setDetailInvoice(null);
+      } finally {
+         setDetailLoading(false);
+      }
+   };
 
    return (
       <div className="flex flex-col gap-8 pb-10">
@@ -241,6 +260,7 @@ export default function TenantInvoicePage() {
                         <th className="px-6 py-5">Tiền phòng</th>
                         <th className="px-6 py-5">Điện</th>
                         <th className="px-6 py-5">Nước</th>
+                        <th className="px-6 py-5">Phí khác</th>
                         <th className="px-6 py-5">Tổng tiền</th>
                         <th className="px-6 py-5">Trạng thái</th>
                         <th className="px-6 py-5 text-center">Thao tác</th>
@@ -255,6 +275,7 @@ export default function TenantInvoicePage() {
                            <td className="px-6 py-6 font-medium text-[#4A787C] text-[15px]">{inv.rent}</td>
                            <td className="px-6 py-6 font-medium text-[#4A787C] text-[15px]">{inv.electric}</td>
                            <td className="px-6 py-6 font-medium text-[#4A787C] text-[15px]">{inv.water}</td>
+                           <td className="px-6 py-6 font-medium text-[#4A787C] text-[15px]">{inv.otherFees}</td>
                            <td className="px-6 py-6">
                               <span className="font-bold text-[#0F3A40] text-[16px]">{inv.total}</span>
                            </td>
@@ -272,7 +293,12 @@ export default function TenantInvoicePage() {
                            </td>
                            <td className="px-6 py-6 last:rounded-r-3xl text-center">
                               <div className="flex items-center justify-center gap-3">
-                                 <button className="p-2.5 rounded-xl bg-[#F2FCFD] border border-[#BCE1E5]/40 text-[#4A787C] hover:text-[#14B8A6] hover:bg-white transition-all shadow-sm">
+                                 <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); openInvoiceDetail(inv.invoice_id); }}
+                                    className="p-2.5 rounded-xl bg-[#F2FCFD] border border-[#BCE1E5]/40 text-[#4A787C] hover:text-[#14B8A6] hover:bg-white transition-all shadow-sm"
+                                    title="Xem chi tiết"
+                                 >
                                     <Eye size={16} />
                                  </button>
                                  {(inv.statusType === 'unpaid' || inv.statusType === 'failed') && (
@@ -305,6 +331,86 @@ export default function TenantInvoicePage() {
                </div>
             </div>
          </div>
+
+         {detailOpen ? (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0F3A40]/40 backdrop-blur-sm">
+               <div className="bg-white rounded-[32px] shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col border border-white">
+                  <div className="flex items-center justify-between px-8 py-6 border-b border-[#BCE1E5]/30">
+                     <h3 className="text-lg font-bold text-[#0F3A40]">Chi tiết hóa đơn</h3>
+                     <button
+                        type="button"
+                        onClick={() => { setDetailOpen(false); setDetailInvoice(null); }}
+                        className="p-2 rounded-xl hover:bg-[#F2FCFD] text-[#4A787C]"
+                        aria-label="Đóng"
+                     >
+                        <X size={20} />
+                     </button>
+                  </div>
+                  <div className="px-8 py-6 overflow-y-auto text-[14px]">
+                     {detailLoading ? (
+                        <p className="text-[#82ABB0] font-medium py-8 text-center">Đang tải…</p>
+                     ) : !detailInvoice ? (
+                        <p className="text-[#82ABB0] font-medium py-8 text-center">Không tải được chi tiết.</p>
+                     ) : (
+                        <div className="space-y-4">
+                           <p className="text-[#4A787C]">
+                              Kỳ{' '}
+                              <span className="font-bold text-[#0F3A40]">
+                                 {String(detailInvoice.period_month).padStart(2, '0')}/{detailInvoice.period_year}
+                              </span>
+                              {detailInvoice.room_number ? (
+                                 <> · Phòng <span className="font-bold text-[#0F3A40]">{detailInvoice.room_number}</span></>
+                              ) : null}
+                           </p>
+                           <div className="rounded-2xl border border-[#BCE1E5]/30 divide-y divide-[#BCE1E5]/20">
+                              <div className="flex justify-between px-4 py-3">
+                                 <span className="text-[#82ABB0]">Tiền phòng</span>
+                                 <span className="font-bold text-[#0F3A40]">{formatMoney(detailInvoice.rent_amount)}₫</span>
+                              </div>
+                              <div className="flex justify-between px-4 py-3">
+                                 <span className="text-[#82ABB0]">Điện</span>
+                                 <span className="font-bold text-[#0F3A40]">{formatMoney(detailInvoice.electricity_amount)}₫</span>
+                              </div>
+                              <div className="flex justify-between px-4 py-3">
+                                 <span className="text-[#82ABB0]">Nước</span>
+                                 <span className="font-bold text-[#0F3A40]">{formatMoney(detailInvoice.water_amount)}₫</span>
+                              </div>
+                              <div className="px-4 py-3">
+                                 <div className="flex justify-between">
+                                    <span className="text-[#82ABB0]">Dịch vụ &amp; tiện ích</span>
+                                    <span className="font-bold text-[#0F3A40]">{formatMoney(detailInvoice.other_fees_amount)}₫</span>
+                                 </div>
+                                 {Array.isArray(detailInvoice.subscription_services) && detailInvoice.subscription_services.length > 0 ? (
+                                    <ul className="mt-3 space-y-2 pl-3 border-l-2 border-[#14B8A6]/25">
+                                       {detailInvoice.subscription_services.map((line, idx) => (
+                                          <li key={`${line.source}-${line.service_id ?? line.fee_id}-${idx}`} className="flex justify-between text-[13px]">
+                                             <span className="text-[#4A787C]">{line.service_name}</span>
+                                             <span className="font-bold text-[#0F3A40]">{formatMoney(line.monthly_price)}₫</span>
+                                          </li>
+                                       ))}
+                                       {Number(detailInvoice.other_fees_manual || 0) > 0 ? (
+                                          <li className="flex justify-between text-[13px]">
+                                             <span className="text-[#4A787C]">Phí khác (thủ công)</span>
+                                             <span className="font-bold text-[#0F3A40]">{formatMoney(detailInvoice.other_fees_manual)}₫</span>
+                                          </li>
+                                       ) : null}
+                                    </ul>
+                                 ) : null}
+                              </div>
+                              <div className="flex justify-between px-4 py-3 bg-[#F2FCFD]/50">
+                                 <span className="font-bold text-[#0F3A40]">Tổng cộng</span>
+                                 <span className="font-bold text-[#14B8A6] text-lg">{formatMoney(detailInvoice.total_amount)}₫</span>
+                              </div>
+                           </div>
+                           <p className="text-[12px] text-[#82ABB0]">
+                              Hạn thanh toán: {formatDueDate(detailInvoice.due_date)}
+                           </p>
+                        </div>
+                     )}
+                  </div>
+               </div>
+            </div>
+         ) : null}
       </div>
    );
 }

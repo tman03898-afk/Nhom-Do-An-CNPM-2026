@@ -2,7 +2,13 @@ const express = require('express');
 
 const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
-const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
+const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable, formatCalendarDateString } = require('./_dbHelpers');
+const paymentsRoute = require('./payments');
+const {
+  sumAllRecurringExtrasForTenant,
+  ensureTenantServiceSubscriptionsTable,
+  listAllSubscriptionLinesForTenant,
+} = require('./_subscriptionFees');
 
 const router = express.Router();
 
@@ -29,6 +35,7 @@ async function ensureInvoicesTable() {
 
   // Current DB may not have created_at/updated_at, add created_at for stable API responses.
   await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_invoices_tenant_id ON invoices(tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`);
@@ -37,9 +44,26 @@ async function ensureInvoicesTable() {
 
 function normalizeDate(value) {
   if (!value) return null;
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  return formatCalendarDateString(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+function normInvoiceStatus(s) {
+  return String(s ?? '').trim().toUpperCase();
+}
+
+/** Đảm bảo nhãn enum tồn tại (DB cũ có thể chỉ có UNPAID/PARTIAL/PAID). */
+async function ensureInvoiceStatusLabel(label) {
+  const lab = String(label || '').trim().toUpperCase();
+  if (!lab) return;
+  try {
+    await pool.query(`ALTER TYPE invoice_status ADD VALUE IF NOT EXISTS '${lab.replace(/'/g, "''")}'`);
+  } catch (e) {
+    /* ignore — giá trị có thể đã tồn tại hoặc PG cũ không hỗ trợ IF NOT EXISTS */
+  }
 }
 
 router.get('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
@@ -48,6 +72,7 @@ router.get('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
     await ensureRoomsTable();
     await ensureTenantsTable();
     await ensureInvoicesTable();
+    await paymentsRoute.ensurePaymentsTable();
 
     const result = await pool.query(
       `SELECT
@@ -57,20 +82,37 @@ router.get('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
          EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
          i.electricity_amount,
          i.water_amount,
+         i.other_fees_amount,
          i.total_amount,
          i.due_date,
          i.status,
          i.created_at,
+         COALESCE(
+           lp.paid_at,
+           CASE
+             WHEN UPPER(TRIM(i.status::text)) = 'PAID'
+               THEN COALESCE(i.updated_at, i.created_at, i.due_date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+           END
+         ) AS payment_paid_at,
          t.tenant_id,
          u.user_id,
-         u.full_name,
-         u.email,
-         r.room_number
+         COALESCE(u.full_name, '') AS full_name,
+         COALESCE(u.email, '') AS email,
+         COALESCE(r_contract.room_number, r_tenant.room_number) AS room_number
        FROM invoices i
        JOIN tenants t ON t.tenant_id = i.tenant_id
-       JOIN users u ON u.user_id = t.user_id
+       LEFT JOIN users u ON u.user_id = t.user_id
        LEFT JOIN contracts c ON c.contract_id = i.contract_id
-       LEFT JOIN rooms r ON r.room_id = c.room_id
+       LEFT JOIN rooms r_contract ON r_contract.room_id = c.room_id
+       LEFT JOIN rooms r_tenant ON r_tenant.room_id = t.room_id
+       LEFT JOIN LATERAL (
+         SELECT p.paid_at
+         FROM payments p
+         WHERE p.invoice_id = i.invoice_id
+           AND COALESCE(p.status::text, '') = 'APPROVED'
+         ORDER BY p.payment_id DESC
+         LIMIT 1
+       ) lp ON TRUE
        ORDER BY i.invoice_id DESC`
     );
 
@@ -87,6 +129,7 @@ router.get('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
     await ensureRoomsTable();
     await ensureTenantsTable();
     await ensureInvoicesTable();
+    await paymentsRoute.ensurePaymentsTable();
 
     const invoiceId = Number(req.params.id);
     if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
@@ -106,22 +149,58 @@ router.get('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
          i.due_date,
          i.status,
          i.created_at,
+         COALESCE(
+           lp.paid_at,
+           CASE
+             WHEN UPPER(TRIM(i.status::text)) = 'PAID'
+               THEN COALESCE(i.updated_at, i.created_at, i.due_date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+           END
+         ) AS payment_paid_at,
          t.tenant_id,
-         u.full_name,
-         u.email,
-         r.room_number
+         COALESCE(u.full_name, '') AS full_name,
+         COALESCE(u.email, '') AS email,
+         COALESCE(r_contract.room_number, r_tenant.room_number) AS room_number
        FROM invoices i
        JOIN tenants t ON t.tenant_id = i.tenant_id
-       JOIN users u ON u.user_id = t.user_id
+       LEFT JOIN users u ON u.user_id = t.user_id
        LEFT JOIN contracts c ON c.contract_id = i.contract_id
-       LEFT JOIN rooms r ON r.room_id = c.room_id
+       LEFT JOIN rooms r_contract ON r_contract.room_id = c.room_id
+       LEFT JOIN rooms r_tenant ON r_tenant.room_id = t.room_id
+       LEFT JOIN LATERAL (
+         SELECT p.paid_at
+         FROM payments p
+         WHERE p.invoice_id = i.invoice_id
+           AND COALESCE(p.status::text, '') = 'APPROVED'
+         ORDER BY p.payment_id DESC
+         LIMIT 1
+       ) lp ON TRUE
        WHERE i.invoice_id = $1
        LIMIT 1`,
       [invoiceId]
     );
 
     if (!result.rowCount) return res.json({ ok: true, invoice: null });
-    return res.json({ ok: true, invoice: result.rows[0] });
+
+    const row = result.rows[0];
+    const { ensureServicesTable } = require('./services');
+    await ensureServicesTable();
+    await ensureTenantServiceSubscriptionsTable();
+    // Dùng năm/tháng từ billing_month (EXTRACT), không dùng String(Date) — slice(0,10) sẽ thành "Thu May 01" và làm lỗi ::date.
+    const bmKey = formatCalendarDateString(Number(row.period_year), Number(row.period_month), 1);
+    const subscription_services = bmKey
+      ? await listAllSubscriptionLinesForTenant(row.tenant_id, bmKey)
+      : [];
+    const subscription_fees_subtotal = subscription_services.reduce((acc, s) => acc + Number(s.monthly_price || 0), 0);
+    const otherFeesNum = Number(row.other_fees_amount || 0);
+    const other_fees_manual = Math.max(0, Math.round((otherFeesNum - subscription_fees_subtotal) * 100) / 100);
+
+    const invoice = {
+      ...row,
+      subscription_services,
+      subscription_fees_subtotal,
+      other_fees_manual,
+    };
+    return res.json({ ok: true, invoice });
   } catch (err) {
     console.error('Get invoice error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
@@ -134,6 +213,7 @@ router.post('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
     await ensureRoomsTable();
     await ensureTenantsTable();
     await ensureInvoicesTable();
+    await ensureTenantServiceSubscriptionsTable();
 
     const {
       tenant_id,
@@ -154,9 +234,14 @@ router.post('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, message: 'tenant_id, period_month, period_year, due_date are required' });
     }
 
-    const billingMonth = new Date(year, month - 1, 1).toISOString().slice(0, 10);
+    const billingMonth = formatCalendarDateString(year, month, 1);
+    if (!billingMonth) {
+      return res.status(400).json({ ok: false, message: 'invalid period_month / period_year' });
+    }
     const rent = Number(rent_amount || 0);
-    const otherFees = Number(services_amount || 0);
+    const manualOther = Number(services_amount || 0);
+    const subscriptionFees = await sumAllRecurringExtrasForTenant(Number(tenant_id), billingMonth);
+    const otherFees = manualOther + subscriptionFees;
     const total = rent + otherFees;
 
     // contract_id is required in current schema
@@ -185,6 +270,22 @@ router.post('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
 
     if (!contractId) {
       return res.status(400).json({ ok: false, message: 'contract not found for tenant/room' });
+    }
+
+    const dup = await pool.query(
+      `SELECT invoice_id, status::text AS status
+       FROM invoices
+       WHERE tenant_id = $1 AND billing_month = $2::date
+       LIMIT 1`,
+      [Number(tenant_id), billingMonth]
+    );
+    if (dup.rowCount > 0) {
+      const ex = dup.rows[0];
+      return res.status(409).json({
+        ok: false,
+        message: `Đã có hóa đơn kỳ ${String(month).padStart(2, '0')}/${year} cho tenant này (#${ex.invoice_id}, ${ex.status}). Chọn tháng/năm khác (thường là kỳ tiếp theo) hoặc sửa hóa đơn hiện có.`,
+        existing_invoice_id: ex.invoice_id,
+      });
     }
 
     const rawStatus = String(status || '').toUpperCase();
@@ -226,10 +327,27 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
     await ensureRoomsTable();
     await ensureTenantsTable();
     await ensureInvoicesTable();
+    await paymentsRoute.ensurePaymentsTable();
 
     const invoiceId = Number(req.params.id);
     if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
       return res.status(400).json({ ok: false, message: 'invalid invoice id' });
+    }
+
+    const existing = await pool.query(
+      `SELECT invoice_id, status FROM invoices WHERE invoice_id = $1`,
+      [invoiceId]
+    );
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'invoice not found' });
+    }
+
+    const curStatus = normInvoiceStatus(existing.rows[0].status);
+    if (curStatus === 'PAID') {
+      return res.status(400).json({ ok: false, message: 'cannot modify paid invoice' });
+    }
+    if (curStatus === 'CANCELLED') {
+      return res.status(400).json({ ok: false, message: 'invoice already cancelled' });
     }
 
     const allowed = [
@@ -245,6 +363,17 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
       return res.status(400).json({ ok: false, message: 'no valid fields provided for update' });
     }
 
+    const nextStatusEntry = entries.find(([k]) => k === 'status');
+    if (nextStatusEntry) {
+      const nextStatus = normInvoiceStatus(nextStatusEntry[1]);
+      if (nextStatus === 'CANCELLED') {
+        await ensureInvoiceStatusLabel('CANCELLED');
+      }
+      if (nextStatus && !['CANCELLED', 'ISSUED', 'DRAFT', 'OVERDUE', 'UNPAID', 'PARTIAL'].includes(nextStatus)) {
+        return res.status(400).json({ ok: false, message: 'invalid invoice status' });
+      }
+    }
+
     const values = [];
     const setClauses = entries.map(([key, value], idx) => {
       if (key === 'due_date') {
@@ -253,10 +382,14 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
         return `${key} = $${idx + 1}::date`;
       }
       if (key === 'status') {
-        values.push(String(value));
+        values.push(String(value).trim().toUpperCase());
         return `${key} = $${idx + 1}::invoice_status`;
       }
-      values.push(value);
+      const num = Number(value);
+      if (!Number.isFinite(num) || num < 0) {
+        throw Object.assign(new Error('amounts must be non-negative numbers'), { code: 'INVALID_AMOUNT' });
+      }
+      values.push(num);
       return `${key} = $${idx + 1}`;
     });
 
@@ -268,9 +401,9 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
 
     const result = await pool.query(
       `UPDATE invoices
-       SET ${setClauses.join(', ')}${totalClause}
+       SET ${setClauses.join(', ')}${totalClause}, updated_at = NOW()
        WHERE invoice_id = $${values.length}
-       RETURNING invoice_id, tenant_id, contract_id, billing_month, rent_amount, electricity_amount, water_amount, other_fees_amount, total_amount, due_date, status, created_at`,
+       RETURNING invoice_id, tenant_id, contract_id, billing_month, rent_amount, electricity_amount, water_amount, other_fees_amount, total_amount, due_date, status, created_at, updated_at`,
       values
     );
 
@@ -280,7 +413,93 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
 
     return res.json({ ok: true, invoice: result.rows[0] });
   } catch (err) {
+    if (err.code === 'INVALID_AMOUNT') {
+      return res.status(400).json({ ok: false, message: 'amounts must be non-negative numbers' });
+    }
     console.error('Update invoice error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
+router.get('/tenant/invoices/:id', requireAuth, requireTenant, async (req, res) => {
+  try {
+    await ensureUsersTable();
+    await ensureRoomsTable();
+    await ensureTenantsTable();
+    await ensureInvoicesTable();
+    await paymentsRoute.ensurePaymentsTable();
+
+    const invoiceId = Number(req.params.id);
+    if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
+      return res.status(400).json({ ok: false, message: 'invalid invoice id' });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         i.invoice_id,
+         EXTRACT(MONTH FROM i.billing_month)::int AS period_month,
+         EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
+         i.rent_amount,
+         i.electricity_amount,
+         i.water_amount,
+         i.other_fees_amount,
+         i.total_amount,
+         i.due_date,
+         i.status,
+         i.created_at,
+         COALESCE(
+           lp.paid_at,
+           CASE
+             WHEN UPPER(TRIM(i.status::text)) = 'PAID'
+               THEN COALESCE(i.updated_at, i.created_at, i.due_date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+           END
+         ) AS payment_paid_at,
+         t.tenant_id,
+         COALESCE(r_contract.room_number, r_tenant.room_number) AS room_number
+       FROM invoices i
+       JOIN tenants t ON t.tenant_id = i.tenant_id
+       JOIN users u ON u.user_id = t.user_id
+       LEFT JOIN contracts c ON c.contract_id = i.contract_id
+       LEFT JOIN rooms r_contract ON r_contract.room_id = c.room_id
+       LEFT JOIN rooms r_tenant ON r_tenant.room_id = t.room_id
+       LEFT JOIN LATERAL (
+         SELECT p.paid_at
+         FROM payments p
+         WHERE p.invoice_id = i.invoice_id
+           AND COALESCE(p.status::text, '') = 'APPROVED'
+         ORDER BY p.payment_id DESC
+         LIMIT 1
+       ) lp ON TRUE
+       WHERE i.invoice_id = $1 AND u.user_id = $2
+       LIMIT 1`,
+      [invoiceId, req.auth.sub]
+    );
+
+    if (!result.rowCount) {
+      return res.json({ ok: true, invoice: null });
+    }
+
+    const row = result.rows[0];
+    const { ensureServicesTable } = require('./services');
+    await ensureServicesTable();
+    await ensureTenantServiceSubscriptionsTable();
+    const bmKey = formatCalendarDateString(Number(row.period_year), Number(row.period_month), 1);
+    const subscription_services = bmKey
+      ? await listAllSubscriptionLinesForTenant(row.tenant_id, bmKey)
+      : [];
+    const subscription_fees_subtotal = subscription_services.reduce((acc, s) => acc + Number(s.monthly_price || 0), 0);
+    const otherFeesNum = Number(row.other_fees_amount || 0);
+    const other_fees_manual = Math.max(0, Math.round((otherFeesNum - subscription_fees_subtotal) * 100) / 100);
+
+    const invoice = {
+      ...row,
+      subscription_services,
+      subscription_fees_subtotal,
+      other_fees_manual,
+    };
+    return res.json({ ok: true, invoice });
+  } catch (err) {
+    console.error('Tenant get invoice error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
 });
@@ -291,6 +510,7 @@ router.get('/tenant/invoices', requireAuth, requireTenant, async (req, res) => {
     await ensureRoomsTable();
     await ensureTenantsTable();
     await ensureInvoicesTable();
+    await paymentsRoute.ensurePaymentsTable();
 
     const result = await pool.query(
       `SELECT
@@ -305,12 +525,28 @@ router.get('/tenant/invoices', requireAuth, requireTenant, async (req, res) => {
          i.due_date,
          i.status,
          i.created_at,
-         r.room_number
+         COALESCE(
+           lp.paid_at,
+           CASE
+             WHEN UPPER(TRIM(i.status::text)) = 'PAID'
+               THEN COALESCE(i.updated_at, i.created_at, i.due_date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+           END
+         ) AS payment_paid_at,
+         COALESCE(r_contract.room_number, r_tenant.room_number) AS room_number
        FROM users u
        JOIN tenants t ON t.user_id = u.user_id
        JOIN invoices i ON i.tenant_id = t.tenant_id
        LEFT JOIN contracts c ON c.contract_id = i.contract_id
-       LEFT JOIN rooms r ON r.room_id = c.room_id
+       LEFT JOIN rooms r_contract ON r_contract.room_id = c.room_id
+       LEFT JOIN rooms r_tenant ON r_tenant.room_id = t.room_id
+       LEFT JOIN LATERAL (
+         SELECT p.paid_at
+         FROM payments p
+         WHERE p.invoice_id = i.invoice_id
+           AND COALESCE(p.status::text, '') = 'APPROVED'
+         ORDER BY p.payment_id DESC
+         LIMIT 1
+       ) lp ON TRUE
        WHERE u.user_id = $1
        ORDER BY i.invoice_id DESC`,
       [req.auth.sub]
@@ -324,4 +560,5 @@ router.get('/tenant/invoices', requireAuth, requireTenant, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.ensureInvoicesTable = ensureInvoicesTable;
 

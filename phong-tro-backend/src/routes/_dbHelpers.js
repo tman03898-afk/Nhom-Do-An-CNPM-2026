@@ -1,5 +1,18 @@
 const pool = require('../config/db');
 
+/**
+ * Ngày dạng YYYY-MM-DD theo đúng năm/tháng/ngày lịch (không dùng Date#toISOString — tránh lệch múi giờ VN).
+ */
+function formatCalendarDateString(year, month1to12, day = 1) {
+  const y = Number(year);
+  const m = Number(month1to12);
+  const d = Number(day);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(d) || d < 1 || d > 31) {
+    return null;
+  }
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 async function ensureEnumType(typeName, values) {
   const escaped = values.map((v) => `'${String(v).replace(/'/g, "''")}'`).join(', ');
   await pool.query(`
@@ -51,6 +64,7 @@ async function ensureUsersTable() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
 }
 
 async function ensureTenantsTable() {
@@ -76,5 +90,6 @@ module.exports = {
   ensureRoomsTable,
   ensureUsersTable,
   ensureTenantsTable,
+  formatCalendarDateString,
 };
 

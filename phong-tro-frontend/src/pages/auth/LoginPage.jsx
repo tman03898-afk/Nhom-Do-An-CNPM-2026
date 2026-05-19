@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Bird, Mail, Lock, LogIn, 
   ShieldCheck, HelpCircle, Eye, EyeOff
@@ -9,11 +9,20 @@ import {
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [resetNotice, setResetNotice] = useState(false);
+
+  useEffect(() => {
+    if (location.state?.resetOk) {
+      setResetNotice(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.pathname, location.state, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -50,6 +59,11 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
+          {resetNotice && (
+            <p className="text-emerald-600 text-sm font-medium text-center bg-emerald-50 rounded-2xl py-3 px-4 border border-emerald-100">
+              Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.
+            </p>
+          )}
           {/* Email Field */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-nest-text-primary uppercase tracking-[0.2em] px-1">Email</label>
@@ -70,7 +84,12 @@ export default function LoginPage() {
           <div className="space-y-2">
             <div className="flex justify-between items-center px-1">
               <label className="text-[11px] font-bold text-nest-text-primary uppercase tracking-[0.2em]">Mật khẩu</label>
-              <button type="button" className="text-[11px] font-bold text-nest-primary hover:underline uppercase tracking-wide">Quên mật khẩu?</button>
+              <Link
+                to="/forgot-password"
+                className="text-[11px] font-bold text-nest-primary hover:underline uppercase tracking-wide"
+              >
+                Quên mật khẩu?
+              </Link>
             </div>
             <div className="relative group">
               <input 
