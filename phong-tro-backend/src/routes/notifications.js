@@ -49,6 +49,35 @@ async function ensureNotificationsTable() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
 }
 
+/** Cùng người nhận + tiêu đề + nội dung trong khoảng thời gian → coi là trùng. */
+async function hasRecentDuplicateNotification(client, userId, title, body, hours = 24) {
+  const r = await client.query(
+    `SELECT 1
+     FROM notifications
+     WHERE user_id = $1
+       AND title = $2
+       AND COALESCE(body, '') = COALESCE($3, '')
+       AND created_at > NOW() - ($4::int * INTERVAL '1 hour')
+     LIMIT 1`,
+    [userId, String(title).trim(), body ? String(body) : '', Number(hours) || 24]
+  );
+  return r.rowCount > 0;
+}
+
+/** Đã có thông báo nhắc (bất kỳ) gắn mã hóa đơn #id cho user này. */
+async function hasInvoiceReminderNotification(client, userId, invoiceId) {
+  const needle = `%#${Number(invoiceId)}%`;
+  const r = await client.query(
+    `SELECT 1
+     FROM notifications
+     WHERE user_id = $1
+       AND (title LIKE $2 OR COALESCE(body, '') LIKE $2)
+     LIMIT 1`,
+    [userId, needle]
+  );
+  return r.rowCount > 0;
+}
+
 router.get('/tenant/notifications', requireAuth, async (req, res) => {
   try {
     await ensureUsersTable();
@@ -145,25 +174,102 @@ router.get('/admin/notifications', requireAuth, requireAdmin, async (req, res) =
     await ensureUsersTable();
     await ensureNotificationsTable();
 
+    const mode = String(req.query.mode || 'sent').trim().toLowerCase();
+    const adminId = req.auth.sub;
+
+    if (mode === 'inbox') {
+      const inbox = await pool.query(
+        `SELECT
+           n.notification_id,
+           n.user_id,
+           u.full_name,
+           u.email,
+           n.title,
+           n.body,
+           n.is_read,
+           n.created_at,
+           n.updated_at,
+           1 AS recipient_count
+         FROM notifications n
+         LEFT JOIN users u ON u.user_id = n.user_id
+         WHERE n.user_id = $1
+         ORDER BY n.notification_id DESC`,
+        [adminId]
+      );
+      return res.json({ ok: true, notifications: inbox.rows });
+    }
+
+    // sent: gom nhóm broadcast / gửi hàng loạt — admin không thấy N dòng giống nhau
     const result = await pool.query(
       `SELECT
-         n.notification_id,
-         n.user_id,
-         u.full_name,
-         u.email,
+         MIN(n.notification_id) AS notification_id,
+         MIN(n.user_id) AS user_id,
+         MAX(u.full_name) AS full_name,
+         MAX(u.email) AS email,
          n.title,
          n.body,
-         n.is_read,
-         n.created_at,
-         n.updated_at
+         BOOL_OR(NOT n.is_read) AS is_read,
+         MAX(n.created_at) AS created_at,
+         MAX(n.updated_at) AS updated_at,
+         COUNT(*)::int AS recipient_count,
+         STRING_AGG(DISTINCT COALESCE(NULLIF(TRIM(u.full_name), ''), u.email, 'User #' || u.user_id::text), ', '
+           ORDER BY COALESCE(NULLIF(TRIM(u.full_name), ''), u.email, 'User #' || u.user_id::text)) AS recipients_label
        FROM notifications n
        LEFT JOIN users u ON u.user_id = n.user_id
-       ORDER BY n.notification_id DESC`
+       WHERE n.created_by = $1
+       GROUP BY n.title, COALESCE(n.body, ''), DATE_TRUNC('minute', n.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')
+       ORDER BY MAX(n.created_at) DESC`,
+      [adminId]
     );
 
     return res.json({ ok: true, notifications: result.rows });
   } catch (err) {
     console.error('List admin notifications error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
+/** Admin xóa một thông báo (gỡ khỏi hộp thư người nhận tương ứng). */
+router.delete('/admin/notifications/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await ensureUsersTable();
+    await ensureNotificationsTable();
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'invalid notification id' });
+    }
+
+    const snap = await pool.query(
+      `SELECT title, body, created_by, DATE_TRUNC('minute', created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS sent_minute
+       FROM notifications WHERE notification_id = $1`,
+      [id]
+    );
+    if (snap.rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'notification not found' });
+    }
+    const row = snap.rows[0];
+
+    const result = await pool.query(
+      `DELETE FROM notifications n
+       WHERE n.title = $1
+         AND COALESCE(n.body, '') = COALESCE($2, '')
+         AND (
+           ($3::int IS NOT NULL AND n.created_by = $3)
+           OR n.notification_id = $4
+         )
+         AND DATE_TRUNC('minute', n.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = $5
+       RETURNING notification_id`,
+      [row.title, row.body, row.created_by, id, row.sent_minute]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'notification not found' });
+    }
+
+    return res.json({ ok: true, message: 'notification deleted', deleted: result.rowCount });
+  } catch (err) {
+    console.error('Delete notification error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
 });
@@ -181,29 +287,52 @@ router.post('/admin/notifications', requireAuth, requireAdmin, async (req, res) 
 
     await client.query('BEGIN');
 
+    const trimmedTitle = String(title).trim();
+    const trimmedBody = body ? String(body) : null;
+
     if (user_id) {
+      const uid = Number(user_id);
+      if (await hasRecentDuplicateNotification(client, uid, trimmedTitle, trimmedBody)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          ok: false,
+          message: 'duplicate notification for this user within 24 hours',
+        });
+      }
       const result = await client.query(
         `INSERT INTO notifications (user_id, title, body, created_by)
          VALUES ($1, $2, $3, $4)
          RETURNING notification_id, user_id, title, body, is_read, created_at, updated_at`,
-        [Number(user_id), String(title).trim(), body ? String(body) : null, req.auth.sub]
+        [uid, trimmedTitle, trimmedBody, req.auth.sub]
       );
       await client.query('COMMIT');
       return res.status(201).json({ ok: true, notification: result.rows[0] });
     }
 
-    // broadcast: insert a notification per active user
+    // broadcast: insert a notification per active user (bỏ qua người đã có cùng nội dung 24h)
     const users = await client.query(`SELECT user_id FROM users WHERE is_active = TRUE`);
+    let sent = 0;
+    let skipped = 0;
     for (const u of users.rows) {
+      if (await hasRecentDuplicateNotification(client, u.user_id, trimmedTitle, trimmedBody)) {
+        skipped += 1;
+        continue;
+      }
       await client.query(
         `INSERT INTO notifications (user_id, title, body, created_by)
          VALUES ($1, $2, $3, $4)`,
-        [u.user_id, String(title).trim(), body ? String(body) : null, req.auth.sub]
+        [u.user_id, trimmedTitle, trimmedBody, req.auth.sub]
       );
+      sent += 1;
     }
 
     await client.query('COMMIT');
-    return res.status(201).json({ ok: true, message: 'broadcast sent', recipients: users.rowCount });
+    return res.status(201).json({
+      ok: true,
+      message: 'broadcast sent',
+      recipients: sent,
+      skipped_duplicates: skipped,
+    });
   } catch (err) {
     try {
       await client.query('ROLLBACK');
@@ -258,7 +387,6 @@ router.post(
              SELECT 1
              FROM notifications n
              WHERE n.user_id = u.user_id
-               AND n.created_at > NOW() - interval '18 hours'
                AND (
                  n.title LIKE '%#' || i.invoice_id::text || '%'
                  OR COALESCE(n.body, '') LIKE '%#' || i.invoice_id::text || '%'
@@ -268,11 +396,17 @@ router.post(
       );
 
       let sent = 0;
+      let skipped = 0;
       let overdue = 0;
       let dueSoon = 0;
 
       await client.query('BEGIN');
       for (const row of list.rows) {
+        if (await hasInvoiceReminderNotification(client, row.user_id, row.invoice_id)) {
+          skipped += 1;
+          continue;
+        }
+
         const due = row.due_date ? new Date(row.due_date).toLocaleDateString('vi-VN') : '—';
         const amt = Number(row.total_amount || 0).toLocaleString('vi-VN');
         const room = row.room_number ? `Phòng ${row.room_number}` : '—';
@@ -299,13 +433,16 @@ router.post(
       return res.json({
         ok: true,
         sent,
+        skipped_duplicates: skipped,
         eligible: list.rowCount,
         overdue,
         dueSoon,
         message:
           sent === 0
-            ? 'Không có hóa đơn cần nhắc (hoặc đã nhắc trong 18 giờ qua).'
-            : `Đã gửi ${sent} thông báo nhắc nợ.`,
+            ? skipped > 0
+              ? 'Không gửi thêm — các hóa đơn này đã có thông báo nhắc trước đó.'
+              : 'Không có hóa đơn cần nhắc.'
+            : `Đã gửi ${sent} thông báo nhắc nợ${skipped > 0 ? ` (bỏ qua ${skipped} hóa đơn đã nhắc).` : '.'}`,
       });
     } catch (err) {
       try {
