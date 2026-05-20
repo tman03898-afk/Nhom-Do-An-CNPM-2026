@@ -9,11 +9,22 @@ const {
   ensureTenantServiceSubscriptionsTable,
   listAllSubscriptionLinesForTenant,
 } = require('./_subscriptionFees');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
 async function ensureInvoicesTable() {
-  await ensureEnumType('invoice_status', ['UNPAID', 'PARTIAL', 'PAID']);
+  return once('schema:invoices', async () => {
+  // Hợp nhất mọi nhãn đã dùng (invoices + payments) để ALTER TYPE bổ sung khi DB cũ thiếu (vd. CANCELLED).
+  await ensureEnumType('invoice_status', [
+    'UNPAID',
+    'PARTIAL',
+    'PAID',
+    'DRAFT',
+    'ISSUED',
+    'OVERDUE',
+    'CANCELLED',
+  ]);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS invoices (
@@ -40,6 +51,11 @@ async function ensureInvoicesTable() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_invoices_tenant_id ON invoices(tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date)`);
+  await pool.query(
+    `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS electricity_breakdown JSONB`
+  );
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS utility_meter_snapshot JSONB`);
+  });
 }
 
 function normalizeDate(value) {
@@ -53,11 +69,13 @@ function normalizeDate(value) {
 
 router.get('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
   try {
-    await ensureUsersTable();
-    await ensureRoomsTable();
-    await ensureTenantsTable();
-    await ensureInvoicesTable();
-    await paymentsRoute.ensurePaymentsTable();
+    await Promise.all([
+      ensureUsersTable(),
+      ensureRoomsTable(),
+      ensureTenantsTable(),
+      ensureInvoicesTable(),
+      paymentsRoute.ensurePaymentsTable(),
+    ]);
 
     const result = await pool.query(
       `SELECT
@@ -128,6 +146,8 @@ router.get('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
          EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
          i.rent_amount,
          i.electricity_amount,
+         i.electricity_breakdown,
+         i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,
          i.total_amount,
@@ -391,6 +411,8 @@ router.get('/tenant/invoices/:id', requireAuth, requireTenant, async (req, res) 
          EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
          i.rent_amount,
          i.electricity_amount,
+         i.electricity_breakdown,
+         i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,
          i.total_amount,
@@ -469,6 +491,8 @@ router.get('/tenant/invoices', requireAuth, requireTenant, async (req, res) => {
          EXTRACT(MONTH FROM i.billing_month)::int AS period_month,
          EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
          i.electricity_amount,
+         i.electricity_breakdown,
+         i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,
          i.total_amount,

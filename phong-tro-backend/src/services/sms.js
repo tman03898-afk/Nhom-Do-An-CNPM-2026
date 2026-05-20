@@ -61,7 +61,7 @@ async function sendProfileOtpSms(phone, code) {
     throw new Error('INVALID_PHONE');
   }
 
-  const text = `[The Nest Living] Ma xac thuc ho so: ${code}. Hieu luc 10 phut. Khong chia se ma nay.`;
+  const text = `[The Sun] Ma xac thuc ho so: ${code}. Hieu luc 10 phut. Khong chia se ma nay.`;
 
   if (twilioConfigured()) {
     await sendViaTwilio(to, text);
@@ -95,7 +95,7 @@ async function sendPasswordRecoverySms(phone, code) {
     throw new Error('INVALID_PHONE');
   }
 
-  const text = `[The Nest Living] Ma doi mat khau tai khoan: ${code}. Hieu luc 10 phut. Khong chia se ma nay.`;
+  const text = `[The Sun] Ma doi mat khau tai khoan: ${code}. Hieu luc 10 phut. Khong chia se ma nay.`;
 
   if (twilioConfigured()) {
     await sendViaTwilio(to, text);

@@ -5,7 +5,8 @@ const jwt = require('jsonwebtoken');
 
 const pool = require('../config/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { ensureTenantsTable } = require('./tenants');
+const { ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
+const { once } = require('./_schemaCache');
 const { sendPasswordResetOtpEmail } = require('../services/mail');
 const {
   clientIp,
@@ -39,66 +40,26 @@ function toPublicUser(row) {
   };
 }
 
-async function ensureUsersTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      user_id SERIAL PRIMARY KEY,
-      full_name VARCHAR(150) NOT NULL,
-      email VARCHAR(255) NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      role VARCHAR(20) NOT NULL CHECK (role IN ('ADMIN', 'TENANT')),
-      is_active BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(150)`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100)`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20)`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
-
-  await pool.query(`
-    UPDATE users
-    SET role = 'TENANT'
-    WHERE role IS NULL
-  `);
-
-  await pool.query(`
-    UPDATE users
-    SET full_name = COALESCE(NULLIF(TRIM(full_name), ''), email)
-    WHERE full_name IS NULL OR TRIM(full_name) = ''
-  `);
-
-  await pool.query(`
-    UPDATE users
-    SET username = COALESCE(NULLIF(TRIM(username), ''), SPLIT_PART(email, '@', 1))
-    WHERE username IS NULL OR TRIM(username) = ''
-  `);
-}
-
 function hashResetToken(rawToken) {
   return crypto.createHash('sha256').update(String(rawToken), 'utf8').digest('hex');
 }
 
 async function ensurePasswordResetTokensTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS password_reset_tokens (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-      token_hash VARCHAR(64) NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      used_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(
-    `CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens (token_hash)`
-  );
+  return once('schema:password_reset_tokens', async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        token_hash VARCHAR(64) NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens (token_hash)`
+    );
+  });
 }
 
 const FORGOT_PASSWORD_OTP_TTL_MS = 15 * 60 * 1000;
@@ -106,33 +67,37 @@ const FORGOT_PASSWORD_SESSION_TTL_MS = 15 * 60 * 1000;
 const FORGOT_PASSWORD_RESEND_COOLDOWN_MS = 60 * 1000;
 
 async function ensurePasswordResetOtpsTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS password_reset_otps (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-      code_hash TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(
-    `CREATE INDEX IF NOT EXISTS idx_password_reset_otps_user_id ON password_reset_otps (user_id)`
-  );
+  return once('schema:password_reset_otps', async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_otps (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_password_reset_otps_user_id ON password_reset_otps (user_id)`
+    );
+  });
 }
 
 async function ensurePasswordResetSessionsTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS password_reset_sessions (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-      token_hash VARCHAR(64) NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(
-    `CREATE INDEX IF NOT EXISTS idx_password_reset_sessions_user_token ON password_reset_sessions (user_id, token_hash)`
-  );
+  return once('schema:password_reset_sessions', async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        token_hash VARCHAR(64) NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_password_reset_sessions_user_token ON password_reset_sessions (user_id, token_hash)`
+    );
+  });
 }
 
 const FORGOT_PASSWORD_OK_MESSAGE =

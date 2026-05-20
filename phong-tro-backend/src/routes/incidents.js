@@ -6,6 +6,7 @@ const fs = require('fs');
 const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
 const { ensureEnumType, ensureRoomsTable, ensureUsersTable } = require('./_dbHelpers');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
@@ -61,6 +62,7 @@ const incidentUpload = multer({
 });
 
 async function ensureIncidentsTable() {
+  return once('schema:incidents', async () => {
   await ensureEnumType('incident_status', ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']);
   await ensureEnumType('incident_priority', ['LOW', 'MEDIUM', 'HIGH']);
 
@@ -100,9 +102,11 @@ async function ensureIncidentsTable() {
   await pool.query(`ALTER TABLE incidents ALTER COLUMN status SET DEFAULT 'OPEN'::incident_status`);
   await pool.query(`UPDATE incidents SET status = 'OPEN'::incident_status WHERE status::text = 'PENDING'`);
   await pool.query(`UPDATE incidents SET status = 'RESOLVED'::incident_status WHERE status::text = 'DONE'`);
+  });
 }
 
 async function ensureNotificationsTableForIncidents() {
+  return once('schema:notifications', async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       notification_id SERIAL PRIMARY KEY,
@@ -121,6 +125,7 @@ async function ensureNotificationsTableForIncidents() {
   await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
+  });
 }
 
 function statusLabelVi(status) {

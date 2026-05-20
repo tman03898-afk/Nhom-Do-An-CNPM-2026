@@ -3,26 +3,29 @@ const express = require('express');
 const pool = require('../config/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { ensureEnumType, ensureRoomsTable } = require('./_dbHelpers');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
 async function ensureAssetsTable() {
-  await ensureEnumType('asset_status', ['OK', 'BROKEN', 'MAINTENANCE', 'LOST']);
-  await ensureRoomsTable();
+  return once('schema:assets', async () => {
+    await ensureEnumType('asset_status', ['OK', 'BROKEN', 'MAINTENANCE', 'LOST']);
+    await ensureRoomsTable();
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS assets (
-      asset_id SERIAL PRIMARY KEY,
-      room_id INTEGER REFERENCES rooms(room_id) ON DELETE SET NULL,
-      name VARCHAR(160) NOT NULL,
-      quantity INTEGER NOT NULL DEFAULT 1,
-      status asset_status NOT NULL DEFAULT 'OK',
-      note TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_assets_room_id ON assets(room_id)`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS assets (
+        asset_id SERIAL PRIMARY KEY,
+        room_id INTEGER REFERENCES rooms(room_id) ON DELETE SET NULL,
+        name VARCHAR(160) NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        status asset_status NOT NULL DEFAULT 'OK',
+        note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_assets_room_id ON assets(room_id)`);
+  });
 }
 
 router.get('/admin/assets', requireAuth, requireAdmin, async (req, res) => {

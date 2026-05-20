@@ -4,10 +4,12 @@ const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
 const { ensureUsersTable } = require('./_dbHelpers');
 const { ensureInvoicesTable } = require('./invoices');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
 async function ensureNotificationsTable() {
+  return once('schema:notifications', async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       notification_id SERIAL PRIMARY KEY,
@@ -47,7 +49,28 @@ async function ensureNotificationsTable() {
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
+  });
 }
+
+router.get('/tenant/notifications/unread-count', requireAuth, async (req, res) => {
+  try {
+    await ensureUsersTable();
+    await ensureNotificationsTable();
+
+    const userId = req.auth.sub;
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM notifications
+       WHERE user_id = $1 AND is_read = FALSE`,
+      [userId]
+    );
+
+    return res.json({ ok: true, unread_count: result.rows[0]?.count ?? 0 });
+  } catch (err) {
+    console.error('Tenant unread count error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
 
 router.get('/tenant/notifications', requireAuth, async (req, res) => {
   try {

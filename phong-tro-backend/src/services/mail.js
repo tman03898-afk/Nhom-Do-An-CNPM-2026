@@ -45,7 +45,7 @@ function maskEmail(email) {
 }
 
 async function sendTenantEmailVerificationCode(toEmail, code, displayName) {
-  const subject = 'Mã xác nhận đổi email — The Nest Living';
+  const subject = 'Mã xác nhận đổi email — The Sun';
   const text = `Xin chào${displayName ? ` ${displayName}` : ''},
 
 Mã xác nhận đổi email tài khoản của bạn là: ${code}
@@ -64,7 +64,7 @@ Mã có hiệu lực 10 phút. Nếu bạn không yêu cầu, hãy bỏ qua emai
   const transport = getTransport();
   if (transport) {
     await transport.sendMail({
-      from: `"The Nest Living" <${from}>`,
+      from: `"The Sun" <${from}>`,
       to: toEmail,
       subject,
       text,
@@ -92,7 +92,7 @@ function escapeHtml(s) {
 }
 
 async function sendPasswordResetOtpEmail(toEmail, code, displayName) {
-  const subject = 'Mã đặt lại mật khẩu — The Nest Living';
+  const subject = 'Mã đặt lại mật khẩu — The Sun';
   const text = `Xin chào${displayName ? ` ${displayName}` : ''},
 
 Mã xác nhận đặt lại mật khẩu của bạn là: ${code}
@@ -110,7 +110,7 @@ Mã có hiệu lực 15 phút. Nếu bạn không yêu cầu, hãy bỏ qua emai
   const transport = getTransport();
   if (transport) {
     await transport.sendMail({
-      from: `"The Nest Living" <${from}>`,
+      from: `"The Sun" <${from}>`,
       to: toEmail,
       subject,
       text,
@@ -130,7 +130,7 @@ Mã có hiệu lực 15 phút. Nếu bạn không yêu cầu, hãy bỏ qua emai
 }
 
 async function sendPasswordResetEmail(toEmail, resetUrl, displayName) {
-  const subject = 'Đặt lại mật khẩu — The Nest Living';
+  const subject = 'Đặt lại mật khẩu — The Sun';
   const text = `Xin chào${displayName ? ` ${displayName}` : ''},
 
 Bạn (hoặc ai đó) đã yêu cầu đặt lại mật khẩu. Mở liên kết sau (có hiệu lực 1 giờ):
@@ -150,7 +150,7 @@ Nếu bạn không yêu cầu, hãy bỏ qua email này — mật khẩu không 
   const transport = getTransport();
   if (transport) {
     await transport.sendMail({
-      from: `"The Nest Living" <${from}>`,
+      from: `"The Sun" <${from}>`,
       to: toEmail,
       subject,
       text,

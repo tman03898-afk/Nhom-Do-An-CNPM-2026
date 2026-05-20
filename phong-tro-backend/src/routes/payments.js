@@ -6,6 +6,7 @@ const fs = require('fs');
 const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
 const { ensureEnumType, ensureUsersTable, ensureTenantsTable, ensureRoomsTable } = require('./_dbHelpers');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
@@ -72,6 +73,7 @@ function resolveMethodValue(rawMethod, labels) {
 }
 
 async function ensureInvoicesTableMinimal() {
+  return once('schema:invoices-minimal', async () => {
   // invoices.js also creates this; keep minimal dependency here.
   await ensureEnumType('invoice_status', ['DRAFT', 'ISSUED', 'PAID', 'OVERDUE', 'CANCELLED']);
   // Không tạo lại bảng invoices vì đã tồn tại với schema khác
@@ -80,6 +82,7 @@ async function ensureInvoicesTableMinimal() {
   await pool.query(
     `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`
   );
+  });
 }
 
 /** Khớp nhãn enum thực tế (UNPAID/PARTIAL/PAID vs DRAFT/ISSUED/PAID…). */
@@ -104,6 +107,7 @@ async function backfillPaymentsPaidAt(poolRef) {
 }
 
 async function ensurePaymentsTable() {
+  return once('schema:payments', async () => {
   await ensureEnumType('payment_method', ['BANK_TRANSFER', 'CASH', 'ZALO_PAY', 'MOMO', 'OTHER']);
   await ensureEnumType('payment_status', ['PENDING', 'APPROVED', 'REJECTED']);
   const methodLabels = await getEnumLabels('payment_method');
@@ -195,6 +199,7 @@ async function ensurePaymentsTable() {
   }
 
   await backfillPaymentsPaidAt(pool);
+  });
 }
 
 /** Legacy DB uses amount_paid + payment_method; newer schema uses amount + method. Populate whichever exists. */
@@ -249,10 +254,7 @@ async function insertPendingTenantPayment(poolRef, payload) {
     push('note', note);
   }
 
-  /** Ngày tenant gửi xác nhận thanh toán (giữ khi duyệt, xóa khi từ chối). */
-  if (cols.has('paid_at')) {
-    push('paid_at', new Date());
-  }
+  /** paid_at chỉ được set khi admin duyệt (APPROVED) — ràng buộc chk_pay_paid_at trong DB có thể cấm có paid_at khi PENDING */
 
   const columnSql = fragments.map((f) => f.col).join(', ');
   const placeholders = fragments.map((f, idx) => `$${idx + 1}${f.cast}`).join(', ');

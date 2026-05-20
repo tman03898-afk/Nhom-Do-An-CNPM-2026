@@ -2,30 +2,12 @@ const express = require('express');
 
 const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
-const { ensureRoomsTable, ensureUsersTable } = require('./_dbHelpers');
+const { ensureRoomsTable, ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
 const { ensureTenantProfileSchema } = require('./tenantProfile');
 const contractRouter = require('./contracts');
 const { insertRemovalLog } = require('./adminRemovalLog');
 
 const router = express.Router();
-
-async function ensureTenantsTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS tenants (
-      tenant_id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
-      phone VARCHAR(30),
-      room_id INTEGER REFERENCES rooms(room_id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS phone VARCHAR(30)`);
-  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS room_id INTEGER`);
-  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
-  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
-}
 
 router.get('/admin/tenants', requireAuth, requireAdmin, async (req, res) => {
   try {

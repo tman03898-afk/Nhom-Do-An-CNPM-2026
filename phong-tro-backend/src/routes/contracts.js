@@ -4,6 +4,7 @@ const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
 const { insertRemovalLog } = require('./adminRemovalLog');
 const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
@@ -47,6 +48,7 @@ async function purgeContractDependencies(client, contractId) {
 }
 
 async function ensureNotificationsTable() {
+  return once('schema:notifications', async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       notification_id SERIAL PRIMARY KEY,
@@ -86,9 +88,11 @@ async function ensureNotificationsTable() {
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
+  });
 }
 
 async function ensureContractsTable() {
+  return once('schema:contracts', async () => {
   await ensureEnumType('contract_status', ['ACTIVE', 'EXPIRED', 'TERMINATED']);
 
   await pool.query(`
@@ -191,6 +195,7 @@ async function ensureContractsTable() {
          WHERE i.contract_id = contracts.contract_id
        )
   `);
+  });
 }
 
 function normalizeDate(value) {
