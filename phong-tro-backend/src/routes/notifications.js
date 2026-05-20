@@ -64,30 +64,18 @@ async function hasRecentDuplicateNotification(client, userId, title, body, hours
   return r.rowCount > 0;
 }
 
-/** Đã có thông báo nhắc (bất kỳ) gắn mã hóa đơn #id cho user này. */
-async function hasInvoiceReminderNotification(client, userId, invoiceId) {
-  const needle = `%#${Number(invoiceId)}%`;
-  const r = await client.query(
-    `SELECT 1
-     FROM notifications
-     WHERE user_id = $1
-       AND (title LIKE $2 OR COALESCE(body, '') LIKE $2)
-     LIMIT 1`,
-    [userId, needle]
-  );
-  return r.rowCount > 0;
-}
-
 router.get('/tenant/notifications', requireAuth, async (req, res) => {
   try {
     await ensureUsersTable();
     await ensureNotificationsTable();
 
+    // Cùng tiêu đề + nội dung → chỉ hiển thị bản mới nhất (không trùng dòng trên UI)
     const result = await pool.query(
-      `SELECT notification_id, title, body, is_read, created_at, updated_at
+      `SELECT DISTINCT ON (title, COALESCE(body, ''))
+         notification_id, title, body, is_read, created_at, updated_at
        FROM notifications
        WHERE user_id = $1
-       ORDER BY notification_id DESC`,
+       ORDER BY title, COALESCE(body, ''), notification_id DESC`,
       [req.auth.sub]
     );
 
@@ -174,12 +162,12 @@ router.get('/admin/notifications', requireAuth, requireAdmin, async (req, res) =
     await ensureUsersTable();
     await ensureNotificationsTable();
 
-    const mode = String(req.query.mode || 'sent').trim().toLowerCase();
+    const mode = String(req.query.mode || 'all').trim().toLowerCase();
     const adminId = req.auth.sub;
 
     if (mode === 'inbox') {
       const inbox = await pool.query(
-        `SELECT
+        `SELECT DISTINCT ON (title, COALESCE(body, ''))
            n.notification_id,
            n.user_id,
            u.full_name,
@@ -189,37 +177,42 @@ router.get('/admin/notifications', requireAuth, requireAdmin, async (req, res) =
            n.is_read,
            n.created_at,
            n.updated_at,
+           n.created_by,
            1 AS recipient_count
          FROM notifications n
          LEFT JOIN users u ON u.user_id = n.user_id
          WHERE n.user_id = $1
-         ORDER BY n.notification_id DESC`,
+         ORDER BY title, COALESCE(body, ''), n.notification_id DESC`,
         [adminId]
       );
       return res.json({ ok: true, notifications: inbox.rows });
     }
 
-    // sent: gom nhóm broadcast / gửi hàng loạt — admin không thấy N dòng giống nhau
+    // Gom theo người gửi + nội dung — mỗi cặp (created_by, title, body) chỉ 1 dòng trên UI
     const result = await pool.query(
       `SELECT
-         MIN(n.notification_id) AS notification_id,
-         MIN(n.user_id) AS user_id,
+         MAX(n.notification_id) AS notification_id,
+         n.created_by,
+         MAX(sender.full_name) AS sender_name,
+         MAX(sender.email) AS sender_email,
+         MAX(n.user_id) AS user_id,
          MAX(u.full_name) AS full_name,
          MAX(u.email) AS email,
          n.title,
-         n.body,
+         MAX(n.body) AS body,
          BOOL_OR(NOT n.is_read) AS is_read,
          MAX(n.created_at) AS created_at,
          MAX(n.updated_at) AS updated_at,
          COUNT(*)::int AS recipient_count,
-         STRING_AGG(DISTINCT COALESCE(NULLIF(TRIM(u.full_name), ''), u.email, 'User #' || u.user_id::text), ', '
-           ORDER BY COALESCE(NULLIF(TRIM(u.full_name), ''), u.email, 'User #' || u.user_id::text)) AS recipients_label
+         STRING_AGG(
+           COALESCE(NULLIF(TRIM(u.full_name), ''), u.email, 'User #' || u.user_id::text),
+           ', '
+         ) AS recipients_label
        FROM notifications n
        LEFT JOIN users u ON u.user_id = n.user_id
-       WHERE n.created_by = $1
-       GROUP BY n.title, COALESCE(n.body, ''), DATE_TRUNC('minute', n.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')
-       ORDER BY MAX(n.created_at) DESC`,
-      [adminId]
+       LEFT JOIN users sender ON sender.user_id = n.created_by
+       GROUP BY n.created_by, n.title, COALESCE(n.body, '')
+       ORDER BY MAX(n.created_at) DESC`
     );
 
     return res.json({ ok: true, notifications: result.rows });
@@ -241,8 +234,7 @@ router.delete('/admin/notifications/:id', requireAuth, requireAdmin, async (req,
     }
 
     const snap = await pool.query(
-      `SELECT title, body, created_by, DATE_TRUNC('minute', created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS sent_minute
-       FROM notifications WHERE notification_id = $1`,
+      `SELECT title, body, created_by FROM notifications WHERE notification_id = $1`,
       [id]
     );
     if (snap.rowCount === 0) {
@@ -255,12 +247,10 @@ router.delete('/admin/notifications/:id', requireAuth, requireAdmin, async (req,
        WHERE n.title = $1
          AND COALESCE(n.body, '') = COALESCE($2, '')
          AND (
-           ($3::int IS NOT NULL AND n.created_by = $3)
-           OR n.notification_id = $4
+           (n.created_by IS NOT DISTINCT FROM $3)
          )
-         AND DATE_TRUNC('minute', n.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = $5
        RETURNING notification_id`,
-      [row.title, row.body, row.created_by, id, row.sent_minute]
+      [row.title, row.body, row.created_by]
     );
 
     if (result.rowCount === 0) {
@@ -387,6 +377,7 @@ router.post(
              SELECT 1
              FROM notifications n
              WHERE n.user_id = u.user_id
+               AND n.created_at > NOW() - interval '18 hours'
                AND (
                  n.title LIKE '%#' || i.invoice_id::text || '%'
                  OR COALESCE(n.body, '') LIKE '%#' || i.invoice_id::text || '%'
@@ -396,17 +387,11 @@ router.post(
       );
 
       let sent = 0;
-      let skipped = 0;
       let overdue = 0;
       let dueSoon = 0;
 
       await client.query('BEGIN');
       for (const row of list.rows) {
-        if (await hasInvoiceReminderNotification(client, row.user_id, row.invoice_id)) {
-          skipped += 1;
-          continue;
-        }
-
         const due = row.due_date ? new Date(row.due_date).toLocaleDateString('vi-VN') : '—';
         const amt = Number(row.total_amount || 0).toLocaleString('vi-VN');
         const room = row.room_number ? `Phòng ${row.room_number}` : '—';
@@ -433,16 +418,13 @@ router.post(
       return res.json({
         ok: true,
         sent,
-        skipped_duplicates: skipped,
         eligible: list.rowCount,
         overdue,
         dueSoon,
         message:
           sent === 0
-            ? skipped > 0
-              ? 'Không gửi thêm — các hóa đơn này đã có thông báo nhắc trước đó.'
-              : 'Không có hóa đơn cần nhắc.'
-            : `Đã gửi ${sent} thông báo nhắc nợ${skipped > 0 ? ` (bỏ qua ${skipped} hóa đơn đã nhắc).` : '.'}`,
+            ? 'Không có hóa đơn cần nhắc (hoặc đã nhắc trong 18 giờ qua).'
+            : `Đã gửi ${sent} thông báo nhắc nợ.`,
       });
     } catch (err) {
       try {

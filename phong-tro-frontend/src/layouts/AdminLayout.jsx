@@ -3,8 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/api';
 import {
   LayoutDashboard, Home, Users, Receipt,
-  Wallet, Zap, Hammer, Bell, Bird, ChevronLeft, ChevronRight, Package, ClipboardList, Menu, X, History
+  Wallet, Zap, Hammer, Bell, Bird, ChevronLeft, ChevronRight, Package, ClipboardList, Menu, X, History, UserCircle
 } from 'lucide-react';
+import { resolveBackendAssetUrl } from '../lib/api';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 /** Khóa badge khớp GET /admin/nav-badges → badges */
@@ -135,6 +136,7 @@ export default function AdminLayout() {
     { name: 'Bảo trì', path: '/admin/tickets', icon: Hammer },
     { name: 'Thông báo', path: '/admin/notifications', icon: Bell },
     { name: 'Lịch sử xóa', path: '/admin/removal-log', icon: History },
+    { name: 'Hồ sơ', path: '/admin/profile', icon: UserCircle },
   ];
 
   return (
@@ -277,20 +279,32 @@ export default function AdminLayout() {
             {/* Profile Section */}
             <div className="flex items-center gap-2 lg:gap-4 pl-3 lg:pl-6 border-l border-nest-text-primary/10">
               <div className="hidden sm:flex flex-col items-end justify-center">
-                <span className="font-bold text-nest-text-primary text-[13px] lg:text-[14px] leading-none tracking-tight">{user?.name || 'Administrator'}</span>
+                <Link
+                  to="/admin/profile"
+                  className="font-bold text-nest-text-primary text-[13px] lg:text-[14px] leading-none tracking-tight hover:text-nest-primary"
+                >
+                  {user?.full_name || user?.name || 'Administrator'}
+                </Link>
                 <button onClick={logout} className="text-nest-primary text-[10px] font-extrabold hover:text-red-500 uppercase tracking-[1px] transition-colors mt-1.5 opacity-70 hover:opacity-100">
                    Sign Out
                 </button>
               </div>
-              <div className="relative group cursor-pointer">
+              <Link to="/admin/profile" className="relative group cursor-pointer">
                 <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl p-[2px] lg:p-[3px] bg-gradient-to-tr from-nest-primary to-nest-bg shadow-md group-hover:shadow-nest-primary/30 transition-all group-hover:scale-105">
                   <div className="w-full h-full rounded-[9px] lg:rounded-[13px] overflow-hidden border-2 border-white">
-                    <img src="https://ui-avatars.com/api/?name=Admin&background=14B8A6&color=fff" alt="Admin" className="w-full h-full object-cover" />
+                    <img
+                      src={
+                        user?.avatar_url
+                          ? resolveBackendAssetUrl(user.avatar_url)
+                          : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || user?.email || 'Admin')}&background=14B8A6&color=fff`
+                      }
+                      alt="Admin"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 </div>
-                {/* Active Status Dot */}
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 lg:w-3.5 lg:h-3.5 bg-green-500 rounded-full border-[2.5px] lg:border-[3px] border-white shadow-sm ring-1 ring-black/5"></div>
-              </div>
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 lg:w-3.5 lg:h-3.5 bg-green-500 rounded-full border-[2.5px] lg:border-[3px] border-white shadow-sm ring-1 ring-black/5" />
+              </Link>
             </div>
           </div>
         </header>

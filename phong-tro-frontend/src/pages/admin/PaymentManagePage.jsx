@@ -16,6 +16,8 @@ export default function PaymentManagePage() {
    const [actionLoadingId, setActionLoadingId] = useState(null);
    const [previewImage, setPreviewImage] = useState('');
    const [reminderLoading, setReminderLoading] = useState(false);
+   const [collectionSummary, setCollectionSummary] = useState(null);
+   const [monthlyBars, setMonthlyBars] = useState([]);
    const recentTransactionsRef = useRef(null);
 
    const refresh = async () => {
@@ -34,6 +36,33 @@ export default function PaymentManagePage() {
    useEffect(() => {
       refresh();
       // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [token]);
+
+   useEffect(() => {
+      const loadStats = async () => {
+         if (!token) return;
+         try {
+            const year = new Date().getFullYear();
+            const [collection, series] = await Promise.all([
+               apiFetch('/admin/analytics/collection-summary', { token }),
+               apiFetch(`/admin/analytics/monthly-series?year=${year}`, { token }),
+            ]);
+            setCollectionSummary(collection || null);
+            const months = series?.months || [];
+            const last6 = months.slice(-6);
+            const maxRev = Math.max(...last6.map((m) => Number(m.revenue || 0)), 1);
+            setMonthlyBars(
+               last6.map((m) => ({
+                  label: m.label,
+                  pct: Math.round((Number(m.revenue || 0) / maxRev) * 100),
+               }))
+            );
+         } catch {
+            setCollectionSummary(null);
+            setMonthlyBars([]);
+         }
+      };
+      loadStats();
    }, [token]);
 
    const sendInvoiceDueReminders = async () => {
@@ -304,22 +333,30 @@ export default function PaymentManagePage() {
             <div className="lg:col-span-8 bg-[#F2FCFD] rounded-[32px] p-8 shadow-sm flex flex-col justify-between border border-transparent relative overflow-hidden min-h-[220px]">
                {/* Background Bars Decoration */}
                <div className="absolute -bottom-8 right-0 left-0 flex items-end justify-between px-10 gap-4 opacity-70 pointer-events-none">
-                  <div className="w-full bg-[#BCE1E5] rounded-t-lg h-16"></div>
-                  <div className="w-full bg-[#BCE1E5] rounded-t-lg h-24"></div>
-                  <div className="w-full bg-[#BCE1E5] rounded-t-lg h-20"></div>
-                  <div className="w-full bg-[#BCE1E5] rounded-t-lg h-32"></div>
-                  <div className="w-full bg-[#BCE1E5] rounded-t-lg h-40"></div>
-                  <div className="w-full bg-[#0F3A40] rounded-t-lg h-56 shadow-lg"></div>
-                  <div className="w-full bg-[#BCE1E5] rounded-t-lg h-32"></div>
+                  {(monthlyBars.length ? monthlyBars : [{ pct: 20 }, { pct: 35 }, { pct: 50 }]).map((bar, i) => (
+                     <div
+                        key={bar.label || i}
+                        className={`w-full rounded-t-lg ${i === monthlyBars.length - 1 && monthlyBars.length ? 'bg-[#0F3A40] shadow-lg' : 'bg-[#BCE1E5]'}`}
+                        style={{ height: `${Math.max(16, Math.min(100, bar.pct || 20))}%` }}
+                        title={bar.label || ''}
+                     />
+                  ))}
                </div>
 
                <div className="relative z-10">
-                  <h3 className="text-[20px] font-bold text-[#0F3A40] mb-2">Thống kê doanh thu tháng 9</h3>
-                  <p className="text-[14px] text-[#4A787C] font-medium">Tăng 12.5% so với tháng trước</p>
+                  <h3 className="text-[20px] font-bold text-[#0F3A40] mb-2">
+                     Doanh thu tháng {collectionSummary?.period?.month || new Date().getMonth() + 1}/{collectionSummary?.period?.year || new Date().getFullYear()}
+                  </h3>
+                  <p className="text-[14px] text-[#4A787C] font-medium">
+                     {collectionSummary?.revenue?.change_pct != null
+                        ? `${collectionSummary.revenue.change_pct >= 0 ? 'Tăng' : 'Giảm'} ${Math.abs(collectionSummary.revenue.change_pct)}% so với tháng trước`
+                        : 'Từ hóa đơn đã thanh toán trong kỳ'}
+                  </p>
                </div>
                <div className="relative z-10 mt-16">
                   <h1 className="text-[48px] font-bold text-[#0F3A40] tracking-tight leading-none">
-                     452.800.000 <span className="text-[20px] text-[#14B8A6] font-bold">VND</span>
+                     {Number(collectionSummary?.revenue?.current || 0).toLocaleString('vi-VN')}{' '}
+                     <span className="text-[20px] text-[#14B8A6] font-bold">VND</span>
                   </h1>
                </div>
             </div>
@@ -333,20 +370,20 @@ export default function PaymentManagePage() {
                      <div>
                         <div className="flex justify-between items-center mb-3">
                            <span className="text-[11px] font-bold tracking-widest uppercase text-[#BCE1E5]">Tiền phòng</span>
-                           <span className="text-[14px] font-bold">85%</span>
+                           <span className="text-[14px] font-bold">{collectionSummary?.rent?.pct ?? 0}%</span>
                         </div>
                         <div className="w-full h-2.5 bg-[#1F545B] rounded-full overflow-hidden">
-                           <div className="h-full bg-[#14B8A6] rounded-full" style={{ width: '85%' }}></div>
+                           <div className="h-full bg-[#14B8A6] rounded-full" style={{ width: `${collectionSummary?.rent?.pct ?? 0}%` }} />
                         </div>
                      </div>
 
                      <div>
                         <div className="flex justify-between items-center mb-3">
                            <span className="text-[11px] font-bold tracking-widest uppercase text-[#BCE1E5]">Dịch vụ & Điện nước</span>
-                           <span className="text-[14px] font-bold">62%</span>
+                           <span className="text-[14px] font-bold">{collectionSummary?.utilities?.pct ?? 0}%</span>
                         </div>
                         <div className="w-full h-2.5 bg-[#1F545B] rounded-full overflow-hidden">
-                           <div className="h-full bg-[#14B8A6] rounded-full" style={{ width: '62%' }}></div>
+                           <div className="h-full bg-[#14B8A6] rounded-full" style={{ width: `${collectionSummary?.utilities?.pct ?? 0}%` }}></div>
                         </div>
                      </div>
                   </div>

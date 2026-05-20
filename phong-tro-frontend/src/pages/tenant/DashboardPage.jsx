@@ -1,7 +1,9 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { apiFetch } from '../../lib/api';
+import { SUPPORT_HOTLINE, contactHotline, contactZalo } from '../../lib/supportContact';
 import {
     CreditCard, AlertCircle, Megaphone,
     Calendar, Users, Wifi, Phone,
@@ -26,12 +28,15 @@ function fmtDateShort(d) {
 
 export default function TenantDashboard() {
     const { user, token } = useAuth();
+    const { addToast } = useToast();
     const [greeting, setGreeting] = useState('');
     const [tenantProfile, setTenantProfile] = useState(null);
     const [dashLoading, setDashLoading] = useState(true);
     const [invoices, setInvoices] = useState([]);
     const [notifications, setNotifications] = useState([]);
     const [contract, setContract] = useState(null);
+    const [room, setRoom] = useState(null);
+    const [activeServiceCount, setActiveServiceCount] = useState(0);
 
     useEffect(() => {
         const hour = new Date().getHours();
@@ -59,15 +64,26 @@ export default function TenantDashboard() {
         (async () => {
             setDashLoading(true);
             try {
-                const [inv, notif, cont] = await Promise.allSettled([
+                const [inv, notif, cont, subs] = await Promise.allSettled([
                     apiFetch('/tenant/invoices', { token }),
                     apiFetch('/tenant/notifications', { token }),
                     apiFetch('/tenant/contract', { token }),
+                    apiFetch('/tenant/fee-subscriptions', { token }),
                 ]);
                 if (cancelled) return;
                 setInvoices(inv.status === 'fulfilled' ? inv.value?.invoices || [] : []);
                 setNotifications(notif.status === 'fulfilled' ? notif.value?.notifications || [] : []);
-                setContract(cont.status === 'fulfilled' ? cont.value?.contract ?? null : null);
+                if (cont.status === 'fulfilled') {
+                    setContract(cont.value?.contract ?? null);
+                    setRoom(cont.value?.room ?? null);
+                } else {
+                    setContract(null);
+                    setRoom(null);
+                }
+                const subsList = subs.status === 'fulfilled' ? subs.value?.subscriptions || [] : [];
+                setActiveServiceCount(
+                    subsList.filter((s) => String(s.status || '').toUpperCase() === 'ACTIVE').length
+                );
             } finally {
                 if (!cancelled) setDashLoading(false);
             }
@@ -133,8 +149,10 @@ export default function TenantDashboard() {
             moveIn,
             maxPeople,
             rentPrice: contract?.rent_price != null ? fmtMoney(contract.rent_price) : null,
+            contractEnd: contract?.end_date ? fmtDateShort(contract.end_date) : null,
+            roomArea: room?.area != null ? `${Number(room.area).toLocaleString('vi-VN')} m²` : null,
         };
-    }, [tenantProfile, user, contract]);
+    }, [tenantProfile, user, contract, room]);
 
     const paymentHref = useMemo(() => {
         if (invoiceSummary.firstUnpaidId) {
@@ -279,23 +297,22 @@ export default function TenantDashboard() {
                         </div>
                     </div>
 
-                    {/* Promotion Banner */}
-                    <div className="relative h-[240px] rounded-[40px] overflow-hidden group shadow-xl">
-                        <img
-                            src="https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?q=80&w=1200"
-                            alt="Banner"
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-r from-[#0F3A40] via-[#0F3A40]/40 to-transparent flex flex-col justify-center p-12">
-                            <h3 className="text-[28px] font-bold text-white mb-2 leading-tight">Nâng cấp không gian sống</h3>
-                            <p className="text-white/80 text-[14px] max-w-[360px] leading-relaxed mb-6">
-                                Khám phá các gói trang trí nội thất độc quyền dành riêng cho cư dân The Nest.
-                            </p>
-                            <button type="button" className="flex items-center gap-2 text-white font-bold text-[13.5px] group/btn">
-                                Khám phá ngay <ArrowRight size={16} className="group-hover/btn:translate-x-1 transition-transform" />
-                            </button>
-                        </div>
-                    </div>
+                    <Link
+                        to="/tenant/contract"
+                        className="relative h-[240px] rounded-[40px] overflow-hidden shadow-xl bg-gradient-to-br from-[#0F3A40] via-[#1F545B] to-[#14B8A6] flex flex-col justify-center p-12 group"
+                    >
+                        <h3 className="text-[28px] font-bold text-white mb-2 leading-tight">
+                            {view.roomNumber !== '—' ? `Phòng ${view.roomNumber}` : 'Hợp đồng thuê phòng'}
+                        </h3>
+                        <p className="text-white/80 text-[14px] max-w-[360px] leading-relaxed mb-4">
+                            {view.rentPrice ? `Giá thuê ${view.rentPrice}/tháng` : 'Xem thông tin hợp đồng và phòng'}
+                            {view.contractEnd ? ` · Hết hạn ${view.contractEnd}` : ''}
+                            {view.roomArea ? ` · ${view.roomArea}` : ''}
+                        </p>
+                        <span className="flex items-center gap-2 text-white font-bold text-[13.5px] group-hover:gap-3 transition-all">
+                            Xem hợp đồng <ArrowRight size={16} />
+                        </span>
+                    </Link>
                 </div>
 
                 {/* Right Column: Room Info & Support */}
@@ -340,9 +357,13 @@ export default function TenantDashboard() {
                                     <Wifi size={18} />
                                 </div>
                                 <div>
-                                    <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide">Gói Internet</p>
+                                    <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide">Dịch vụ đăng ký</p>
                                     <p className="text-[14.5px] font-bold text-[#0F3A40]">
-                                        {dashLoading ? '…' : 'WiFi chung khu (chi tiết trong hợp đồng)'}
+                                        {dashLoading
+                                            ? '…'
+                                            : activeServiceCount > 0
+                                              ? `${activeServiceCount} gói đang hoạt động`
+                                              : 'Chưa đăng ký gói phí'}
                                     </p>
                                 </div>
                             </div>
@@ -351,6 +372,11 @@ export default function TenantDashboard() {
                                 <p className="text-[12px] font-medium text-[#82ABB0]">
                                     Giá thuê tham chiếu: <span className="text-[#0F3A40] font-bold">{view.rentPrice}</span>
                                 </p>
+                            ) : null}
+                            {!dashLoading && activeServiceCount === 0 ? (
+                                <Link to="/tenant/services" className="text-[12px] font-bold text-[#14B8A6] hover:underline">
+                                    Đăng ký dịch vụ & phí →
+                                </Link>
                             ) : null}
                         </div>
 
@@ -369,21 +395,34 @@ export default function TenantDashboard() {
                             Đội ngũ vận hành luôn sẵn sàng giải đáp mọi thắc mắc của bạn.
                         </p>
 
-                        <div className="flex items-center gap-4 p-4 bg-white/60 rounded-[28px] border border-white/80">
+                        <button
+                            type="button"
+                            onClick={() => contactHotline(addToast)}
+                            className="w-full flex items-center gap-4 p-4 bg-white/60 rounded-[28px] border border-white/80 hover:bg-white transition-colors text-left"
+                            title="Gọi hotline"
+                        >
                             <div className="w-11 h-11 rounded-full bg-[#14B8A6] flex items-center justify-center text-white shrink-0 shadow-lg shadow-[#14B8A6]/20">
                                 <Phone size={18} className="fill-current" />
                             </div>
                             <div className="flex flex-col min-w-0">
-                                <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-tight">Hotline: 1900 6789</p>
-                                <p className="text-[13px] font-bold text-[#0F3A40] truncate">Phản hồi trong 5 phút</p>
+                                <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-tight">Hotline: {SUPPORT_HOTLINE}</p>
+                                <p className="text-[13px] font-bold text-[#0F3A40] truncate">Bấm để gọi — phản hồi trong 5 phút</p>
                             </div>
-                        </div>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => contactZalo(addToast)}
+                            className="w-full mt-3 py-4 rounded-3xl bg-[#14B8A6] text-white font-bold text-[14px] hover:bg-[#109284] transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#14B8A6]/20"
+                        >
+                            <MessageSquare size={16} /> Nhắn Zalo ban quản lý
+                        </button>
 
                         <Link
                             to="/tenant/tickets"
-                            className="w-full mt-6 py-4 rounded-3xl bg-[#0F3A40] text-white font-bold text-[14px] hover:bg-[#1F545B] transition-all flex items-center justify-center gap-2"
+                            className="w-full mt-3 py-4 rounded-3xl bg-[#0F3A40] text-white font-bold text-[14px] hover:bg-[#1F545B] transition-all flex items-center justify-center gap-2"
                         >
-                            <MessageSquare size={16} /> Nhắn tin cho Admin
+                            <MessageSquare size={16} /> Gửi phiếu sửa chữa
                         </Link>
                     </div>
                 </div>

@@ -1,8 +1,8 @@
 const express = require('express');
 
 const pool = require('../config/db');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { ensureEnumType, ensureRoomsTable } = require('./_dbHelpers');
+const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
+const { ensureEnumType, ensureRoomsTable, ensureTenantsTable } = require('./_dbHelpers');
 
 const router = express.Router();
 
@@ -109,6 +109,54 @@ router.put('/admin/assets/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+/** Phòng của tenant: ưu tiên phòng hợp đồng ACTIVE, không thì tenants.room_id */
+async function resolveTenantRoomId(userId) {
+  await ensureRoomsTable();
+  await ensureTenantsTable();
+  const contractsModule = require('./contracts');
+  if (typeof contractsModule.ensureContractsTable === 'function') {
+    await contractsModule.ensureContractsTable();
+  }
+  const r = await pool.query(
+    `SELECT COALESCE(c.room_id, t.room_id) AS room_id
+     FROM users u
+     JOIN tenants t ON t.user_id = u.user_id
+     LEFT JOIN LATERAL (
+       SELECT room_id FROM contracts
+       WHERE tenant_id = t.tenant_id AND status = 'ACTIVE'
+       ORDER BY contract_id DESC
+       LIMIT 1
+     ) c ON TRUE
+     WHERE u.user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  const id = r.rows[0]?.room_id;
+  return id != null ? Number(id) : null;
+}
+
+/** Tenant: danh sách tài sản bàn giao trong phòng của mình (read-only). */
+router.get('/tenant/assets', requireAuth, requireTenant, async (req, res) => {
+  try {
+    await ensureAssetsTable();
+    const roomId = await resolveTenantRoomId(req.auth.sub);
+    if (!roomId) {
+      return res.json({ ok: true, assets: [], room_id: null });
+    }
+    const result = await pool.query(
+      `SELECT asset_id, name, quantity, status, note, created_at, updated_at
+       FROM assets
+       WHERE room_id = $1
+       ORDER BY name ASC, asset_id ASC`,
+      [roomId]
+    );
+    return res.json({ ok: true, assets: result.rows, room_id: roomId });
+  } catch (err) {
+    console.error('Tenant assets error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
 router.delete('/admin/assets/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     await ensureAssetsTable();
@@ -128,4 +176,6 @@ router.delete('/admin/assets/:id', requireAuth, requireAdmin, async (req, res) =
 });
 
 module.exports = router;
+module.exports.ensureAssetsTable = ensureAssetsTable;
+module.exports.resolveTenantRoomId = resolveTenantRoomId;
 

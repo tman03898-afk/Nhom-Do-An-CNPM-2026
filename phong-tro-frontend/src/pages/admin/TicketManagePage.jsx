@@ -799,13 +799,10 @@ export default function TicketManagePage() {
 
       <div className="bg-white rounded-[32px] p-3 shadow-sm border border-[#BCE1E5]/30 flex flex-col md:flex-row gap-10 items-center min-h-[200px]">
         <div className="w-full md:w-[42%] h-[200px] rounded-[24px] overflow-hidden relative shadow-inner group">
-          <img
-            src="https://images.unsplash.com/photo-1581092921461-eab62e97a780?q=80&w=800&auto=format&fit=crop"
-            alt="Technical Staff"
-            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0F3A40]/80 via-[#0F3A40]/30 to-transparent flex items-end p-6">
-            <p className="text-white text-[12px] font-medium leading-loose max-w-[90%]">Hotline kỹ thuật dùng chung với trang tenant (biến môi trường).</p>
+          <div className="absolute inset-0 bg-gradient-to-br from-[#0F3A40] to-[#14B8A6] flex items-end p-6">
+            <p className="text-white text-[12px] font-medium leading-loose max-w-[90%]">
+              Hotline kỹ thuật: <span className="font-bold">{HOTLINE || 'Chưa cấu hình'}</span>
+            </p>
           </div>
         </div>
         <div className="flex-1 px-4 md:px-8 py-6 flex flex-col justify-center">

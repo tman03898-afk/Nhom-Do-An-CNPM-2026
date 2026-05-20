@@ -432,7 +432,12 @@ export default function ServiceManagePage() {
 
         {/* Action Buttons */}
         <div className="flex justify-end gap-4 mt-auto pt-8 pb-12 items-center z-10">
-          <button className="text-[#4A787C] hover:text-[#0F3A40] font-bold px-6 py-3.5 transition-colors text-[14px]">
+          <button
+            type="button"
+            onClick={() => refresh()}
+            disabled={isLoading || dirtyIds.size === 0}
+            className="text-[#4A787C] hover:text-[#0F3A40] font-bold px-6 py-3.5 transition-colors text-[14px] disabled:opacity-40"
+          >
             Hủy mọi thay đổi
           </button>
           <button

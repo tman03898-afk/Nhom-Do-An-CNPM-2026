@@ -15,6 +15,8 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { SUPPORT_HOTLINE, contactHotline, contactZalo } from '../../lib/supportContact';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -52,6 +54,7 @@ function resolveTenantAvatarSrc(row) {
 /** modal: identity | phone | email | password — mỗi loại chỉ sửa đúng phần đó */
 export default function ProfilePage() {
   const { user, token, logout, refreshUser } = useAuth();
+  const { addToast } = useToast();
   const [tenantProfile, setTenantProfile] = useState(null);
 
   const [modal, setModal] = useState(null);
@@ -693,12 +696,18 @@ export default function ProfilePage() {
           </p>
 
           <div className="space-y-4">
-            <div className="bg-white rounded-full py-4 px-8 flex items-center justify-between text-[#1E4D54] shadow-lg">
-              <span className="font-extrabold text-[18px]">1800 1234</span>
-              <PhoneCall size={20} className="fill-current" />
-            </div>
             <button
               type="button"
+              onClick={() => contactHotline(addToast)}
+              className="w-full bg-white rounded-full py-4 px-8 flex items-center justify-between text-[#1E4D54] shadow-lg hover:bg-[#F2FCFD] transition-colors"
+              title="Gọi hotline hỗ trợ"
+            >
+              <span className="font-extrabold text-[18px]">{SUPPORT_HOTLINE}</span>
+              <PhoneCall size={20} className="fill-current" />
+            </button>
+            <button
+              type="button"
+              onClick={() => contactZalo(addToast)}
               className="w-full bg-[#14B8A6] hover:bg-[#109284] text-white py-4 px-8 rounded-full flex items-center justify-center gap-3 font-bold text-[15px] transition-all shadow-lg shadow-[#14B8A6]/20 group/btn"
             >
               Nhắn tin Zalo ngay

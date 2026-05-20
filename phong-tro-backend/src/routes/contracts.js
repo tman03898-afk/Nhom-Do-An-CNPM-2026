@@ -551,6 +551,8 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
     await ensureTenantsTable();
     await ensureContractsTable();
 
+    const { resolveTenantRoomId } = require('./assets');
+
     const result = await pool.query(
       `SELECT
          c.contract_id,
@@ -575,11 +577,21 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
       [req.auth.sub]
     );
 
-    if (result.rowCount === 0 || !result.rows[0].contract_id) {
-      return res.json({ ok: true, contract: null });
+    const contract =
+      result.rowCount > 0 && result.rows[0].contract_id ? result.rows[0] : null;
+
+    const roomId = await resolveTenantRoomId(req.auth.sub);
+    let room = null;
+    if (roomId) {
+      const roomRes = await pool.query(
+        `SELECT room_id, room_number, floor, area, max_tenants, price, status, description, created_at, updated_at
+         FROM rooms WHERE room_id = $1 LIMIT 1`,
+        [roomId]
+      );
+      room = roomRes.rows[0] || null;
     }
 
-    return res.json({ ok: true, contract: result.rows[0] });
+    return res.json({ ok: true, contract, room });
   } catch (err) {
     console.error('Tenant contract error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });

@@ -5,6 +5,7 @@ import {
   Bird, Mail, Lock, LogIn, 
   ShieldCheck, HelpCircle, Eye, EyeOff
 } from 'lucide-react';
+import { callSupportHotline, openSupportZalo, SUPPORT_HOTLINE } from '../../lib/supportContact';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -135,7 +136,15 @@ export default function LoginPage() {
         {/* Footer Link */}
         <div className="mt-10 text-center">
           <p className="text-[14px] text-nest-text-secondary font-medium">
-            Bạn chưa có tài khoản? <button className="text-nest-primary font-bold hover:underline">Liên hệ quản lý</button>
+            Bạn chưa có tài khoản?{' '}
+            <button
+              type="button"
+              onClick={() => callSupportHotline() || openSupportZalo()}
+              className="text-nest-primary font-bold hover:underline"
+              title={`Hotline ${SUPPORT_HOTLINE}`}
+            >
+              Liên hệ quản lý
+            </button>
           </p>
         </div>
       </div>

@@ -21,17 +21,18 @@ export default function NotificationManagePage() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('UNREAD');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
   const refresh = async () => {
     if (!token) return;
     setIsLoading(true);
     try {
-      const data = await apiFetch('/admin/notifications?mode=sent', { token });
+      const data = await apiFetch('/admin/notifications', { token });
       setNotifications(data.notifications || []);
-    } catch {
+    } catch (e) {
       setNotifications([]);
+      addToast(e?.message || 'Không tải được danh sách thông báo.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -112,10 +113,11 @@ export default function NotificationManagePage() {
     return notifications.map((n) => ({
       id: n.notification_id,
       time: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : '',
+      sender: n.sender_name || n.sender_email || (n.created_by ? `Admin #${n.created_by}` : 'Hệ thống'),
       audience:
         Number(n.recipient_count) > 1
-          ? `${n.recipient_count} người nhận${n.recipients_label ? `: ${n.recipients_label}` : ''}`
-          : n.full_name || n.email || (n.user_id ? `User #${n.user_id}` : 'Tất cả'),
+          ? `${n.recipient_count} người nhận`
+          : n.full_name || n.email || (n.user_id ? `User #${n.user_id}` : '—'),
       recipientCount: Number(n.recipient_count) || 1,
       title: n.title || 'Thông báo',
       content: n.body || '',
@@ -132,7 +134,7 @@ export default function NotificationManagePage() {
       if (statusFilter === 'UNREAD' && !n.isNew) return false;
       if (statusFilter === 'READ' && n.isNew) return false;
       if (!q) return true;
-      return `${n.title} ${n.content} ${n.audience}`.toLowerCase().includes(q);
+      return `${n.title} ${n.content} ${n.audience} ${n.sender}`.toLowerCase().includes(q);
     });
   }, [uiNotifs, searchQuery, statusFilter]);
 
@@ -147,8 +149,8 @@ export default function NotificationManagePage() {
       <header className="flex flex-col gap-3">
         <h1 className="text-[36px] font-sans font-bold text-[#0F3A40] tracking-tight leading-none">Thông báo</h1>
         <p className="text-[15px] font-medium text-[#4A787C] leading-relaxed max-w-[680px]">
-          Gửi thông báo và quản lý danh sách đã gửi (gom theo nội dung, không trùng dòng). Cùng nội dung gửi lại trong 24h
-          sẽ được bỏ qua; nhắc nợ mỗi hóa đơn chỉ gửi một lần cho đến khi bạn xóa thông báo cũ.
+          Danh sách gom theo <strong className="font-bold text-[#0F3A40]">cùng người gửi + cùng nội dung</strong> — mỗi
+          cặp chỉ hiển thị một dòng (dữ liệu gốc vẫn giữ trong hệ thống).
         </p>
       </header>
 
@@ -281,7 +283,9 @@ export default function NotificationManagePage() {
                         {notif.isNew ? <span className="w-2 h-2 rounded-full bg-[#14B8A6] shrink-0" /> : null}
                       </div>
                       <p className="text-[12.5px] text-[#4A787C] font-medium line-clamp-1 mt-0.5">{notif.content || '—'}</p>
-                      <p className="text-[10.5px] text-[#82ABB0] font-bold mt-1 truncate">{notif.time} • {notif.audience}</p>
+                      <p className="text-[10.5px] text-[#82ABB0] font-bold mt-1 truncate">
+                        {notif.time} • Gửi bởi {notif.sender} • {notif.audience}
+                      </p>
                     </div>
                     <button
                       type="button"
@@ -316,18 +320,14 @@ export default function NotificationManagePage() {
               Xác nhận xóa thông báo
             </h3>
             <p className="mt-2 text-[13px] font-medium text-[#4A787C] leading-relaxed">
+              Xóa mọi bản gửi có cùng người gửi và nội dung này
               {deleteModal.recipientCount > 1 ? (
                 <>
-                  Sẽ xóa <span className="font-bold text-[#0F3A40]">{deleteModal.recipientCount} bản gửi</span> cùng
-                  nội dung (broadcast).
+                  {' '}
+                  (<span className="font-bold text-[#0F3A40]">{deleteModal.recipientCount} người nhận</span>)
                 </>
-              ) : (
-                <>
-                  Thông báo sẽ bị gỡ khỏi hộp thư của{' '}
-                  <span className="font-bold text-[#0F3A40]">{deleteModal.audience}</span>.
-                </>
-              )}{' '}
-              Khách thuê sẽ không còn thấy mục này.
+              ) : null}
+              . Khách thuê sẽ không còn thấy thông báo này.
             </p>
             <div className="mt-4 rounded-2xl bg-[#F8FAFB] border border-slate-100 p-4">
               <p className="text-[14px] font-bold text-[#0F3A40]">{deleteModal.title}</p>

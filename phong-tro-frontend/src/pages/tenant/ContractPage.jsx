@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
    ClipboardList, Download, MessageSquare,
-   Calendar, CreditCard, ShieldCheck,
-   Trash2, Home, CheckCircle2, ChevronRight, SearchX, Search, X, Eye
+   ShieldCheck,
+   Home, ChevronRight, SearchX, Search, X, Eye,
+   Package, Ruler, Layers, Users, Phone
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { apiFetch } from '../../lib/api';
+import { SUPPORT_HOTLINE, contactHotline, contactZalo } from '../../lib/supportContact';
+import { parseContractNotesToRules } from '../../lib/contractRules';
+import { RoomHeroPanel } from '../../lib/roomHero';
 
 function formatDate(value) {
    if (!value) return '—';
@@ -21,13 +26,156 @@ function formatMoney(value) {
    return `${num.toLocaleString('vi-VN')}đ`;
 }
 
+function formatArea(value) {
+   if (value === null || value === undefined) return '—';
+   const num = Number(value);
+   if (Number.isNaN(num)) return '—';
+   return `${num.toLocaleString('vi-VN')} m²`;
+}
+
+function roomStatusLabel(status) {
+   if (status === 'AVAILABLE') return 'Còn trống';
+   if (status === 'RENTED') return 'Đang cho thuê';
+   if (status === 'MAINTENANCE') return 'Đang bảo trì';
+   return status || '—';
+}
+
+function assetStatusLabel(status) {
+   if (status === 'OK') return 'Tốt';
+   if (status === 'BROKEN') return 'Hỏng';
+   if (status === 'MAINTENANCE') return 'Bảo trì';
+   if (status === 'LOST') return 'Mất';
+   return status || '—';
+}
+
+function assetStatusClass(status) {
+   if (status === 'OK') return 'bg-[#EBFDFB] text-[#14B8A6] border-[#14B8A6]/20';
+   if (status === 'BROKEN') return 'bg-[#FFF0F0] text-[#D14D4D] border-[#D14D4D]/20';
+   if (status === 'MAINTENANCE') return 'bg-[#FFF8E6] text-[#E68A00] border-[#E68A00]/20';
+   if (status === 'LOST') return 'bg-slate-100 text-slate-600 border-slate-200';
+   return 'bg-slate-100 text-slate-600 border-slate-200';
+}
+
+function RoomAndAssetsSection({ room, assets, roomNumber, roomArea, roomFloor, roomDescription, roomPrice }) {
+   return (
+      <div className="flex flex-col gap-8">
+         <div className="bg-white/60 backdrop-blur-md rounded-[40px] p-8 lg:p-10 border border-white shadow-sm">
+            <div className="flex items-center gap-4 mb-8">
+               <div className="w-14 h-14 rounded-[22px] bg-[#EAF7F8] flex items-center justify-center text-[#14B8A6]">
+                  <Home size={28} />
+               </div>
+               <div>
+                  <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Phòng của bạn</p>
+                  <h2 className="text-[26px] font-bold text-[#0F3A40]">{roomNumber}</h2>
+                  <p className="text-[13px] text-[#82ABB0] font-medium mt-0.5">{roomStatusLabel(room?.status)}</p>
+               </div>
+            </div>
+
+            {!room ? (
+               <p className="text-[#82ABB0] text-center py-10 text-[14px]">
+                  Chưa gán phòng hoặc chưa có dữ liệu phòng. Vui lòng liên hệ ban quản lý.
+               </p>
+            ) : (
+               <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+                     <div className="flex flex-col gap-1.5 p-4 rounded-2xl bg-[#F2FCFD]/80 border border-[#BCE1E5]/30">
+                        <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest flex items-center gap-1">
+                           <Ruler size={12} /> Diện tích
+                        </p>
+                        <p className="text-[17px] font-bold text-[#0F3A40]">{roomArea}</p>
+                     </div>
+                     <div className="flex flex-col gap-1.5 p-4 rounded-2xl bg-[#F2FCFD]/80 border border-[#BCE1E5]/30">
+                        <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest flex items-center gap-1">
+                           <Layers size={12} /> Tầng
+                        </p>
+                        <p className="text-[17px] font-bold text-[#0F3A40]">{roomFloor}</p>
+                     </div>
+                     <div className="flex flex-col gap-1.5 p-4 rounded-2xl bg-[#F2FCFD]/80 border border-[#BCE1E5]/30">
+                        <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest flex items-center gap-1">
+                           <Users size={12} /> Tối đa
+                        </p>
+                        <p className="text-[17px] font-bold text-[#0F3A40]">{room.max_tenants ?? '—'} người</p>
+                     </div>
+                     <div className="flex flex-col gap-1.5 p-4 rounded-2xl bg-[#F2FCFD]/80 border border-[#BCE1E5]/30">
+                        <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest">Giá niêm yết</p>
+                        <p className="text-[17px] font-bold text-[#14B8A6]">{roomPrice}</p>
+                     </div>
+                  </div>
+                  <div className="rounded-3xl bg-[#F2FCFD]/60 border border-[#BCE1E5]/30 p-6">
+                     <p className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest mb-3">Mô tả phòng</p>
+                     <p className="text-[14px] text-[#4A787C] leading-relaxed whitespace-pre-wrap">{roomDescription}</p>
+                  </div>
+               </>
+            )}
+         </div>
+
+         <div className="bg-white/60 backdrop-blur-md rounded-[40px] p-8 lg:p-10 border border-white shadow-sm">
+            <div className="flex items-center gap-4 mb-8">
+               <div className="w-12 h-12 rounded-2xl bg-[#EAF7F8] flex items-center justify-center text-[#14B8A6]">
+                  <Package size={22} />
+               </div>
+               <div>
+                  <h3 className="text-xl font-bold text-[#0F3A40]">Tài sản bàn giao</h3>
+                  <p className="text-[13px] text-[#82ABB0] font-medium">Nội thất và thiết bị kèm theo phòng {roomNumber}</p>
+               </div>
+            </div>
+
+            {assets.length === 0 ? (
+               <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="w-16 h-16 rounded-full bg-[#F2FCFD] flex items-center justify-center text-[#82ABB0] mb-4">
+                     <Package size={32} />
+                  </div>
+                  <p className="text-[15px] font-bold text-[#0F3A40]">Chưa có tài sản bàn giao</p>
+                  <p className="text-[13px] text-[#82ABB0] mt-1 max-w-sm">
+                     Ban quản lý sẽ cập nhật danh sách khi bàn giao phòng.
+                  </p>
+               </div>
+            ) : (
+               <div className="overflow-x-auto -mx-2">
+                  <table className="w-full min-w-[520px] text-left text-[14px]">
+                     <thead>
+                        <tr className="text-[10px] font-extrabold text-[#82ABB0] uppercase tracking-widest border-b border-[#BCE1E5]/40">
+                           <th className="pb-4 px-3">Tên tài sản</th>
+                           <th className="pb-4 px-3 text-center">SL</th>
+                           <th className="pb-4 px-3">Trạng thái</th>
+                           <th className="pb-4 px-3">Ghi chú</th>
+                        </tr>
+                     </thead>
+                     <tbody>
+                        {assets.map((a) => (
+                           <tr key={a.asset_id} className="border-b border-[#BCE1E5]/20 last:border-0">
+                              <td className="py-4 px-3 font-bold text-[#0F3A40]">{a.name}</td>
+                              <td className="py-4 px-3 text-center font-semibold text-[#4A787C]">{a.quantity ?? 1}</td>
+                              <td className="py-4 px-3">
+                                 <span className={`inline-flex px-3 py-1 rounded-full text-[11px] font-extrabold border ${assetStatusClass(a.status)}`}>
+                                    {assetStatusLabel(a.status)}
+                                 </span>
+                              </td>
+                              <td className="py-4 px-3 text-[#4A787C]">{a.note?.trim() || '—'}</td>
+                           </tr>
+                        ))}
+                     </tbody>
+                  </table>
+               </div>
+            )}
+         </div>
+      </div>
+   );
+}
+
 export default function ContractPage() {
    const [searchQuery, setSearchQuery] = useState('');
    const { token } = useAuth();
+   const { addToast } = useToast();
    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
    const [tenantProfile, setTenantProfile] = useState(null);
    const [contract, setContract] = useState(null);
+   const [room, setRoom] = useState(null);
+   const [assets, setAssets] = useState([]);
+   const [activeTab, setActiveTab] = useState('contract');
    const [detailOpen, setDetailOpen] = useState(false);
+   const [contactOpen, setContactOpen] = useState(false);
+   const [pdfBusy, setPdfBusy] = useState(false);
 
    useEffect(() => {
       const fetchTenant = async () => {
@@ -46,22 +194,39 @@ export default function ContractPage() {
    }, [API_BASE_URL, token]);
 
    useEffect(() => {
-      const fetchContract = async () => {
+      const fetchContractContext = async () => {
          if (!token) return;
          try {
-            const data = await apiFetch('/tenant/contract', { token });
-            setContract(data?.contract || null);
-         } catch (error) {
+            const [contractData, assetsData] = await Promise.all([
+               apiFetch('/tenant/contract', { token }),
+               apiFetch('/tenant/assets', { token }),
+            ]);
+            setContract(contractData?.contract || null);
+            setRoom(contractData?.room || null);
+            setAssets(assetsData?.assets || []);
+         } catch {
             setContract(null);
+            setRoom(null);
+            setAssets([]);
          }
       };
-      fetchContract();
+      fetchContractContext();
    }, [token]);
 
    const roomNumber = useMemo(
-      () => contract?.room_number || tenantProfile?.room_number || '—',
-      [contract, tenantProfile]
+      () => room?.room_number || contract?.room_number || tenantProfile?.room_number || '—',
+      [room, contract, tenantProfile]
    );
+   const roomArea = useMemo(() => formatArea(room?.area), [room]);
+   const roomFloor = useMemo(() => {
+      if (room?.floor === null || room?.floor === undefined) return '—';
+      return `Tầng ${room.floor}`;
+   }, [room]);
+   const roomDescription = useMemo(
+      () => (room?.description && String(room.description).trim()) || 'Chưa có mô tả phòng.',
+      [room]
+   );
+   const roomPrice = useMemo(() => formatMoney(room?.price), [room]);
    const startDate = useMemo(() => formatDate(contract?.start_date), [contract]);
    const endDate = useMemo(() => formatDate(contract?.end_date), [contract]);
    const rentPrice = useMemo(() => formatMoney(contract?.rent_price), [contract]);
@@ -74,38 +239,45 @@ export default function ContractPage() {
       if (status === 'TERMINATED') return 'Đã thanh lý';
       return status;
    }, [contract]);
-   const rules = [
-      {
-         id: 1,
-         title: "1. Quy định về thanh toán",
-         desc: "Tiền nhà phải được thanh toán trước ngày 05 hàng tháng. Quá hạn sẽ tính phí phạt 100.000đ/ngày."
-      },
-      {
-         id: 2,
-         title: "2. Quy định an ninh",
-         desc: "Giờ giấc tự do nhưng hạn chế làm ồn sau 22:00. Khách đến chơi qua đêm phải đăng ký với ban quản lý."
-      },
-      {
-         id: 3,
-         title: "3. Vệ sinh chung",
-         desc: "Cư dân có trách nhiệm giữ gìn vệ sinh khu vực hành lang và thang máy. Rác thải phải được phân loại đúng nơi quy định."
-      },
-      {
-         id: 4,
-         title: "4. Sử dụng tiện ích",
-         desc: "Hồ bơi và phòng Gym mở cửa từ 06:00 đến 21:00 hàng ngày dành riêng cho cư dân The Nest."
-      },
-      {
-         id: 5,
-         title: "5. Bảo trì thiết bị",
-         desc: "Ban quản lý chịu trách nhiệm sửa chữa các hư hỏng do hao mòn tự nhiên. Các hư hỏng do lỗi người dùng sẽ tính phí theo bảng giá niêm yết."
-      }
-   ];
+   const rules = useMemo(() => parseContractNotesToRules(contract?.notes), [contract?.notes]);
 
-   const filteredRules = rules.filter(rule => 
+   const filteredRules = rules.filter((rule) =>
       rule.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
       rule.desc.toLowerCase().includes(searchQuery.toLowerCase())
    );
+
+   const handleOpenZalo = () => {
+      if (contactZalo(addToast)) setContactOpen(false);
+   };
+
+   const handleCallHotline = () => {
+      if (contactHotline(addToast)) setContactOpen(false);
+   };
+
+   const handleDownloadPdf = async () => {
+      if (!contract) {
+         addToast('Chưa có hợp đồng để tải PDF.', 'error');
+         return;
+      }
+      setPdfBusy(true);
+      try {
+         const { exportContractPdf } = await import('../../lib/exportContractPdf');
+         const ok = exportContractPdf({
+            contract,
+            room,
+            assets,
+            tenant: tenantProfile,
+            rules,
+         });
+         if (ok) addToast('Đã tải file PDF hợp đồng.', 'success');
+         else addToast('Không xuất được PDF hợp đồng.', 'error');
+      } catch (err) {
+         console.error('Export contract PDF:', err);
+         addToast('Không xuất được PDF hợp đồng.', 'error');
+      } finally {
+         setPdfBusy(false);
+      }
+   };
 
    return (
       <div className="flex flex-col gap-8 pb-10">
@@ -125,15 +297,54 @@ export default function ContractPage() {
                >
                   <Eye size={18} /> Chi tiết
                </button>
-               <button className="bg-[#0F3A40] hover:bg-[#1F545B] text-white px-6 py-3 rounded-full text-[14px] font-bold shadow-lg shadow-[#0F3A40]/10 transition-all flex items-center gap-2">
-                  <Download size={18} /> Tải PDF
+               <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={!contract || pdfBusy}
+                  className="bg-[#0F3A40] hover:bg-[#1F545B] text-white px-6 py-3 rounded-full text-[14px] font-bold shadow-lg shadow-[#0F3A40]/10 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Tải hợp đồng dạng PDF"
+               >
+                  <Download size={18} /> {pdfBusy ? 'Đang tạo PDF...' : 'Tải PDF'}
                </button>
-               <button className="bg-white/60 hover:bg-white text-[#0F3A40] border border-white px-6 py-3 rounded-full text-[14px] font-bold shadow-sm transition-all flex items-center gap-2">
+               <button
+                  type="button"
+                  onClick={() => setContactOpen(true)}
+                  className="bg-white/60 hover:bg-white text-[#0F3A40] border border-white px-6 py-3 rounded-full text-[14px] font-bold shadow-sm transition-all flex items-center gap-2"
+                  title="Liên hệ ban quản lý qua Zalo hoặc hotline"
+               >
                   <MessageSquare size={18} /> Liên hệ Admin
                </button>
             </div>
          </div>
 
+         <div className="flex flex-wrap gap-2 p-1.5 bg-white/50 border border-white rounded-full w-fit shadow-sm">
+            <button
+               type="button"
+               onClick={() => setActiveTab('contract')}
+               className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all ${activeTab === 'contract' ? 'bg-[#0F3A40] text-white shadow-md' : 'text-[#4A787C] hover:bg-white/80'}`}
+            >
+               Hợp đồng
+            </button>
+            <button
+               type="button"
+               onClick={() => setActiveTab('room')}
+               className={`px-5 py-2.5 rounded-full text-[13px] font-bold transition-all flex items-center gap-2 ${activeTab === 'room' ? 'bg-[#0F3A40] text-white shadow-md' : 'text-[#4A787C] hover:bg-white/80'}`}
+            >
+               <Package size={15} /> Phòng & Tài sản bàn giao
+            </button>
+         </div>
+
+         {activeTab === 'room' ? (
+            <RoomAndAssetsSection
+               room={room}
+               assets={assets}
+               roomNumber={roomNumber}
+               roomArea={roomArea}
+               roomFloor={roomFloor}
+               roomDescription={roomDescription}
+               roomPrice={roomPrice}
+            />
+         ) : (
          <div className="flex flex-col lg:flex-row gap-8">
             {/* Main Contract Details (Left) */}
             <div className="flex-1 bg-white/60 backdrop-blur-md rounded-[40px] p-10 border border-white shadow-sm h-fit">
@@ -172,19 +383,23 @@ export default function ContractPage() {
                   </div>
                </div>
 
-               {/* Visual Decor Element */}
-               <div className="relative h-[280px] rounded-[40px] overflow-hidden mb-12 group">
-                  <img
-                     src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=1200"
-                     alt="Modern Living Space"
-                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000"
+               <div className="mb-12">
+                  <RoomHeroPanel
+                     roomNumber={roomNumber !== '—' ? `Phòng ${roomNumber}` : 'Phòng của bạn'}
+                     subtitle={[roomArea, roomFloor, roomPrice !== '—' ? `Giá phòng ${roomPrice}` : null].filter(Boolean).join(' · ') || roomDescription}
+                     badge={contractStatus}
+                     footer={
+                        <div className="flex items-center gap-3 text-white/90">
+                           <ShieldCheck size={20} className="text-[#14B8A6]" />
+                           <span className="font-medium text-[14px]">
+                              {assets.length > 0
+                                 ? `${assets.length} tài sản bàn giao đã ghi nhận`
+                                 : 'Xem tab Phòng & Tài sản để kiểm tra bàn giao'}
+                           </span>
+                        </div>
+                     }
+                     className="h-full min-h-[280px]"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0F3A40]/80 via-transparent to-transparent flex items-end p-10">
-                     <div className="flex items-center gap-3 text-white">
-                        <ShieldCheck size={20} className="text-[#14B8A6]" />
-                        <span className="font-medium text-[15px]">Căn hộ đã được kiểm định an toàn & đầy đủ nội thất</span>
-                     </div>
-                  </div>
                </div>
             </div>
 
@@ -231,13 +446,20 @@ export default function ContractPage() {
                               </p>
                            </div>
                         ))
-                     ) : (
+                     ) : searchQuery ? (
                         <div className="flex flex-col items-center justify-center py-10 text-center">
                            <div className="w-16 h-16 rounded-full bg-[#F2FCFD] flex items-center justify-center text-[#82ABB0] mb-4">
                               <SearchX size={32} />
                            </div>
                            <p className="text-[15px] font-bold text-[#0F3A40]">Không tìm thấy quy định nào</p>
                            <p className="text-[13px] text-[#82ABB0] mt-1">Vui lòng thử từ khóa khác</p>
+                        </div>
+                     ) : (
+                        <div className="py-8 text-center">
+                           <p className="text-[15px] font-bold text-[#0F3A40]">Chưa có điều khoản trên hợp đồng</p>
+                           <p className="text-[13px] text-[#82ABB0] mt-2 leading-relaxed">
+                              Ban quản lý sẽ cập nhật ghi chú hợp đồng. Liên hệ hotline {SUPPORT_HOTLINE} nếu cần hỗ trợ.
+                           </p>
                         </div>
                      )}
                   </div>
@@ -259,16 +481,65 @@ export default function ContractPage() {
                      Mọi thắc mắc về hợp đồng vui lòng liên hệ Admin qua Zalo hoặc Hotline.
                   </p>
                   <div className="flex gap-4">
-                     <button className="flex-1 py-3.5 rounded-2xl bg-white/15 hover:bg-white/25 transition-all text-white font-bold text-[13.5px] border border-white/20">
+                     <button
+                        type="button"
+                        onClick={handleOpenZalo}
+                        className="flex-1 py-3.5 rounded-2xl bg-white/15 hover:bg-white/25 transition-all text-white font-bold text-[13.5px] border border-white/20"
+                     >
                         Zalo hỗ trợ
                      </button>
-                     <button className="flex-1 py-3.5 rounded-2xl bg-white text-[#0F3A40] hover:bg-[#DDF5F7] transition-all font-bold text-[13.5px] shadow-lg">
+                     <button
+                        type="button"
+                        onClick={handleCallHotline}
+                        className="flex-1 py-3.5 rounded-2xl bg-white text-[#0F3A40] hover:bg-[#DDF5F7] transition-all font-bold text-[13.5px] shadow-lg"
+                     >
                         Hotline
                      </button>
                   </div>
                </div>
             </div>
          </div>
+         )}
+
+         {contactOpen ? (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0F3A40]/40 backdrop-blur-sm">
+               <div className="bg-white rounded-[32px] shadow-2xl max-w-md w-full border border-white p-8">
+                  <div className="flex items-center justify-between mb-6">
+                     <h3 className="text-lg font-bold text-[#0F3A40]">Liên hệ Admin</h3>
+                     <button
+                        type="button"
+                        onClick={() => setContactOpen(false)}
+                        className="p-2 rounded-xl hover:bg-[#F2FCFD] text-[#4A787C]"
+                        aria-label="Đóng"
+                     >
+                        <X size={20} />
+                     </button>
+                  </div>
+                  <p className="text-[14px] text-[#4A787C] leading-relaxed mb-6">
+                     Mọi thắc mắc về hợp đồng phòng{' '}
+                     <strong className="text-[#0F3A40]">{roomNumber}</strong>
+                     {contract?.contract_id ? <> (HĐ #{contract.contract_id})</> : null}
+                     , vui lòng chọn kênh liên hệ:
+                  </p>
+                  <div className="flex flex-col gap-3">
+                     <button
+                        type="button"
+                        onClick={handleOpenZalo}
+                        className="w-full py-4 rounded-2xl bg-[#14B8A6] hover:bg-[#109284] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-lg shadow-[#14B8A6]/20"
+                     >
+                        <MessageSquare size={18} /> Nhắn Zalo ban quản lý
+                     </button>
+                     <button
+                        type="button"
+                        onClick={handleCallHotline}
+                        className="w-full py-4 rounded-2xl bg-[#0F3A40] hover:bg-[#1F545B] text-white font-bold text-[14px] flex items-center justify-center gap-2"
+                     >
+                        <Phone size={18} /> Gọi hotline {SUPPORT_HOTLINE}
+                     </button>
+                  </div>
+               </div>
+            </div>
+         ) : null}
 
          {detailOpen ? (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0F3A40]/40 backdrop-blur-sm">

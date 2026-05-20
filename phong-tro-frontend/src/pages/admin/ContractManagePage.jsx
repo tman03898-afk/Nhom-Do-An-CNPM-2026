@@ -72,7 +72,11 @@ export default function ContractManagePage() {
     const total = contracts.length;
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const expiringSoon = contracts.filter((c) => c.status === 'ACTIVE' && c.end_date && new Date(c.end_date) <= in30Days).length;
+    const expiringSoon = contracts.filter((c) => {
+      if (c.status !== 'ACTIVE' || !c.end_date) return false;
+      const end = new Date(c.end_date);
+      return end >= now && end <= in30Days;
+    }).length;
     const ended = contracts.filter((c) => c.status !== 'ACTIVE').length;
     const deposits = contracts.reduce((sum, c) => sum + Number(c.deposit || 0), 0);
     return { total, expiringSoon, ended, deposits };
@@ -488,7 +492,9 @@ export default function ContractManagePage() {
           <div>
             <h4 className="text-[16px] font-bold text-[#0F3A40] mb-2">Lưu ý gia hạn hợp đồng</h4>
             <p className="text-[13px] text-[#4A787C] font-medium leading-relaxed">
-              Có 8 hợp đồng sẽ hết hạn trong vòng 30 ngày tới. Hệ thống đã tự động gửi thông báo nhắc nhở đến khách thuê. Vui lòng kiểm tra phản hồi để chuẩn bị thủ tục gia hạn hoặc thanh lý.
+              {stats.expiringSoon > 0
+                ? `Có ${stats.expiringSoon} hợp đồng sẽ hết hạn trong 30 ngày tới. Vui lòng liên hệ khách thuê để gia hạn hoặc thanh lý.`
+                : 'Không có hợp đồng nào sắp hết hạn trong 30 ngày tới.'}
             </p>
           </div>
         </div>
@@ -498,12 +504,16 @@ export default function ContractManagePage() {
             <Info size={24} />
           </div>
           <div>
-            <h4 className="text-[16px] font-bold text-[#0F3A40] mb-2">Hợp đồng điện tử mẫu</h4>
+            <h4 className="text-[16px] font-bold text-[#0F3A40] mb-2">Tạo hợp đồng mới</h4>
             <p className="text-[13px] text-[#4A787C] font-medium leading-relaxed">
-               Bạn có thể sử dụng các mẫu hợp đồng chuẩn đã được phê duyệt để tạo nhanh hợp đồng mới cho khách thuê. Mọi thay đổi về điều khoản cần được lưu lại thành bản phụ lục.
+               Ghi chú điều khoản trong trường &quot;Ghi chú&quot; khi tạo/sửa hợp đồng — khách thuê sẽ thấy nội dung này trên trang Hợp đồng.
             </p>
-            <button className="mt-4 text-[13px] font-bold text-[#14B8A6] hover:underline flex items-center gap-1.5 group">
-              Tải xuống biểu mẫu <Download size={14} className="group-hover:translate-y-0.5 transition-transform" />
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(true)}
+              className="mt-4 text-[13px] font-bold text-[#14B8A6] hover:underline flex items-center gap-1.5 group"
+            >
+              Tạo hợp đồng <Download size={14} className="group-hover:translate-y-0.5 transition-transform" />
             </button>
           </div>
         </div>
