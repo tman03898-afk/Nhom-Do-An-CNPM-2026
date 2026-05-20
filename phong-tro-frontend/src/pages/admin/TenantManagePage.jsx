@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { UserPlus, X, Trash2, AlertTriangle } from 'lucide-react';
+import { UserPlus, X, Trash2, AlertTriangle, Pencil } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
 
 export default function TenantManagePage() {
   const { token } = useAuth();
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editModal, setEditModal] = useState(null);
+  const [editForm, setEditForm] = useState({ full_name: '', phone: '', email: '' });
+  const [editError, setEditError] = useState('');
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
   const [deleteModal, setDeleteModal] = useState(null);
   const [deleteContracts, setDeleteContracts] = useState([]);
   const [deleteModalLoading, setDeleteModalLoading] = useState(false);
@@ -51,7 +55,7 @@ export default function TenantManagePage() {
         throw new Error(data?.message || 'Không thể tải danh sách khách thuê');
       }
       setTenantsFromApi(data.tenants || []);
-    } catch (error) {
+    } catch {
       setTenantsFromApi([]);
     } finally {
       setIsLoadingTenants(false);
@@ -62,6 +66,64 @@ export default function TenantManagePage() {
     fetchTenants();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  const openEditModal = (tenant) => {
+    setEditForm({
+      full_name: tenant.name || '',
+      phone: tenant.phone || '',
+      email: tenant.email || '',
+    });
+    setEditError('');
+    setEditModal({
+      tenantId: tenant.tenantId,
+      name: tenant.name,
+    });
+  };
+
+  const closeEditModal = () => {
+    if (isEditSubmitting) return;
+    setEditModal(null);
+    setEditError('');
+  };
+
+  const handleUpdateTenant = async (event) => {
+    event.preventDefault();
+    if (!token || !editModal) return;
+
+    const trimmedName = editForm.full_name.trim();
+    const trimmedPhone = editForm.phone.trim();
+    const trimmedEmail = editForm.email.trim();
+
+    if (!trimmedName || !trimmedPhone || !trimmedEmail) {
+      setEditError('Vui lòng nhập đủ họ tên, số điện thoại và email.');
+      return;
+    }
+
+    setEditError('');
+    setIsEditSubmitting(true);
+    try {
+      await apiFetch(`/admin/tenants/${editModal.tenantId}`, {
+        token,
+        method: 'PUT',
+        body: {
+          full_name: trimmedName,
+          phone: trimmedPhone,
+          email: trimmedEmail,
+        },
+      });
+      setEditModal(null);
+      await fetchTenants();
+    } catch (error) {
+      const msg = error?.message || '';
+      if (msg.includes('email already exists')) {
+        setEditError('Email này đã được dùng bởi tài khoản khác.');
+      } else {
+        setEditError(msg || 'Không cập nhật được thông tin khách thuê.');
+      }
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
 
   const openDeleteModal = async (tenant) => {
     if (!token) return;
@@ -189,7 +251,16 @@ export default function TenantManagePage() {
                   <span className="truncate">{tenant.email}</span>
                   <span>{tenant.phone}</span>
                   <span>{tenant.room}</span>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(tenant)}
+                      className="p-2 rounded-xl text-nest-primary hover:bg-nest-primary/10 transition-colors"
+                      title="Chỉnh sửa khách thuê"
+                      aria-label={`Chỉnh sửa ${tenant.name}`}
+                    >
+                      <Pencil className="w-[18px] h-[18px]" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => openDeleteModal(tenant)}
@@ -206,6 +277,72 @@ export default function TenantManagePage() {
           </div>
         </div>
       </div>
+
+      {editModal && (
+        <div
+          className="fixed inset-0 z-[105] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={() => !isEditSubmitting && closeEditModal()}
+        >
+          <div
+            className="w-full max-w-lg bg-white rounded-3xl p-7 shadow-2xl border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-tenant-title"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 id="edit-tenant-title" className="text-2xl font-bold text-nest-text-primary">
+                Chỉnh sửa khách thuê
+              </h3>
+              <button
+                type="button"
+                onClick={closeEditModal}
+                disabled={isEditSubmitting}
+                className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-50"
+                aria-label="Đóng"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-[13px] font-medium text-nest-text-secondary mb-4">
+              Cập nhật thông tin cho <span className="font-bold text-nest-text-primary">{editModal.name}</span>
+            </p>
+            <form className="space-y-4" onSubmit={handleUpdateTenant}>
+              <input
+                type="text"
+                value={editForm.full_name}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary"
+                placeholder="Họ và tên"
+              />
+              <input
+                type="text"
+                value={editForm.phone}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary"
+                placeholder="Số điện thoại"
+              />
+              <input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary"
+                placeholder="Email đăng nhập"
+              />
+
+              {editError && <p className="text-sm font-medium text-red-500">{editError}</p>}
+
+              <button
+                type="submit"
+                disabled={isEditSubmitting}
+                className="w-full rounded-full bg-nest-primary py-3 font-bold text-white hover:bg-[#0da090] disabled:opacity-70"
+              >
+                {isEditSubmitting ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {deleteModal && (
         <div

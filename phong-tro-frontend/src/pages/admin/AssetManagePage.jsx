@@ -278,7 +278,7 @@ export default function AssetManagePage() {
         <div>
           <h1 className="text-[32px] font-bold text-[#0F3A40] leading-none mb-3">Quản lý Tài sản</h1>
           <p className="text-[#4A787C] font-medium text-[14px]">
-            Theo dõi và cập nhật danh mục thiết bị, nội thất trong hệ thống The Nest Living.
+            Theo dõi và cập nhật danh mục thiết bị, nội thất trong hệ thống The Sun.
           </p>
         </div>
         <button

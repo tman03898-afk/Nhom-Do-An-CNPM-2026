@@ -67,7 +67,7 @@ export default function ServiceManagePage() {
       }));
       setServices(mapped);
       setDirtyIds(new Set());
-    } catch (e) {
+    } catch {
       setServices([]);
     } finally {
       setIsLoading(false);
@@ -122,15 +122,6 @@ export default function ServiceManagePage() {
       addToast(e?.message || 'Không từ chối được.', 'error');
     } finally {
       setBusyFeeId(null);
-    }
-  };
-
-  const getMethodLabel = (method) => {
-    switch (method) {
-      case 'meter': return 'Theo chỉ số (m³/kWh)';
-      case 'person': return 'Theo đầu người';
-      case 'fixed': return 'Cố định/Phòng';
-      default: return 'Cố định';
     }
   };
 
@@ -432,7 +423,12 @@ export default function ServiceManagePage() {
 
         {/* Action Buttons */}
         <div className="flex justify-end gap-4 mt-auto pt-8 pb-12 items-center z-10">
-          <button className="text-[#4A787C] hover:text-[#0F3A40] font-bold px-6 py-3.5 transition-colors text-[14px]">
+          <button
+            type="button"
+            onClick={() => refresh()}
+            disabled={isLoading || dirtyIds.size === 0}
+            className="text-[#4A787C] hover:text-[#0F3A40] font-bold px-6 py-3.5 transition-colors text-[14px] disabled:opacity-40"
+          >
             Hủy mọi thay đổi
           </button>
           <button

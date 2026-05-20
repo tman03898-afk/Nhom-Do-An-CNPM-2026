@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { MapPin, CheckCircle2, UserCheck, BarChart3, Edit3, Trash2, ArrowUpRight, Plus } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
@@ -28,8 +29,15 @@ export default function RoomManagePage() {
     const total = rooms.length;
     const available = rooms.filter((r) => r.status === 'AVAILABLE').length;
     const rented = rooms.filter((r) => r.status === 'RENTED').length;
+    const maintenance = rooms.filter((r) => r.status === 'MAINTENANCE').length;
     const occupancy = total > 0 ? Math.round((rented / total) * 100) : 0;
-    return { total, available, rented, occupancy };
+    return { total, available, rented, maintenance, occupancy };
+  }, [rooms]);
+
+  const spotlightRoom = useMemo(() => {
+    if (!rooms.length) return null;
+    const sorted = [...rooms].sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+    return sorted.find((r) => r.status === 'AVAILABLE') || sorted[0];
   }, [rooms]);
 
   const filteredRooms = useMemo(() => {
@@ -54,7 +62,7 @@ export default function RoomManagePage() {
         const nextRooms = data.rooms || [];
         setRooms(nextRooms);
         setCurrentPage(1);
-      } catch (error) {
+      } catch {
         setRooms([]);
       } finally {
         setIsLoading(false);
@@ -317,47 +325,66 @@ export default function RoomManagePage() {
         </div>
       </div>
 
-      {/* Bottom Layout sections */}
+      {/* Tóm tắt vận hành — dữ liệu thật từ danh sách phòng */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Market Analysis Insight Card */}
         <div className="bg-white rounded-[32px] p-10 flex flex-col justify-between shadow-[0_8px_30px_rgba(15,58,64,0.04)] border border-slate-200/60 self-stretch relative overflow-hidden group">
-           <div className="absolute top-0 right-0 w-32 h-32 bg-nest-primary/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+           <div className="absolute top-0 right-0 w-32 h-32 bg-nest-primary/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
            <div className="relative z-10">
-              <p className="text-[11px] font-bold text-nest-primary uppercase tracking-widest mb-6">Phân tích thị trường</p>
+              <p className="text-[11px] font-bold text-nest-primary uppercase tracking-widest mb-6">Tổng quan vận hành</p>
               <h3 className="text-2xl font-bold text-nest-text-primary leading-snug mb-5">
-                 Xu hướng tăng trưởng mạnh
+                 Tỷ lệ lấp đầy {stats.occupancy}%
               </h3>
               <p className="text-[14px] text-nest-text-secondary font-medium leading-relaxed">
-                 Dựa trên dữ liệu 30 ngày qua, nhu cầu tìm kiếm phòng tại khu vực này đã tăng 15%. Xem xét điều chỉnh chiến lược giá cho các phòng trống.
+                 Hiện có {stats.rented} phòng đang cho thuê, {stats.available} phòng trống
+                 {stats.maintenance > 0 ? ` và ${stats.maintenance} phòng bảo trì` : ''}.
+                 {stats.available > 0
+                    ? ' Nên ưu tiên đẩy nhanh các phòng trống để tối ưu doanh thu.'
+                    : ' Toàn bộ phòng đã có khách hoặc đang bảo trì.'}
               </p>
            </div>
-           <button className="text-nest-primary hover:text-[#0da090] font-bold text-[14px] items-center gap-1.5 flex mt-10 w-fit transition-colors group relative z-10">
-              Xem báo cáo chi tiết <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-           </button>
+           <Link
+              to="/admin/analytics"
+              className="text-nest-primary hover:text-[#0da090] font-bold text-[14px] items-center gap-1.5 flex mt-10 w-fit transition-colors group relative z-10"
+           >
+              Xem phân tích chi tiết <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+           </Link>
         </div>
 
-        {/* Penthouse Spotlight */}
         <div className="bg-[#F2FCFD] rounded-[32px] shadow-sm overflow-hidden flex flex-col self-stretch border border-transparent">
-           <div className="h-[220px] relative w-full overflow-hidden relative">
-              <img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80" alt="Penthouse" className="w-full h-full object-cover" />
-              <div className="absolute top-4 left-4 bg-white/40 backdrop-blur-md px-3 py-1.5 rounded-lg text-[10px] font-bold text-white uppercase tracking-widest shadow-sm border border-white/20">
-                 Căn hộ cao cấp
+           <div className="h-[220px] relative w-full overflow-hidden bg-gradient-to-br from-[#0F3A40] to-[#14B8A6] flex items-center justify-center">
+              <div className="text-center text-white px-6">
+                 <p className="text-[11px] font-bold uppercase tracking-widest text-white/70 mb-2">Phòng nổi bật</p>
+                 <p className="text-3xl font-bold">{spotlightRoom ? `Phòng ${spotlightRoom.room_number}` : '—'}</p>
               </div>
+              {spotlightRoom ? (
+                 <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-lg text-[10px] font-bold text-[#0F3A40] uppercase tracking-widest shadow-sm">
+                    {statusView[spotlightRoom.status]?.label || spotlightRoom.status}
+                 </div>
+              ) : null}
            </div>
            <div className="p-8 flex-1 flex flex-col justify-between">
-              <div>
-                 <h4 className="text-[20px] font-bold text-[#0F3A40] mb-3">P.601 Penthouse Suite</h4>
-                 <p className="text-[13px] text-[#4A787C] font-medium leading-relaxed mb-6">
-                    Mẫu thiết kế mới cho phân khúc cao cấp đã hoàn thiện và sẵn sàng để giới thiệu.
-                 </p>
-              </div>
-              <div className="flex items-center gap-3">
-                 <div className="flex -space-x-3">
-                    <img className="w-8 h-8 rounded-full border-2 border-white object-cover" src="https://ui-avatars.com/api/?name=Jane&background=14B8A6&color=fff" />
-                    <img className="w-8 h-8 rounded-full border-2 border-white object-cover" src="https://ui-avatars.com/api/?name=Mark&background=0F3A40&color=fff" />
-                 </div>
-                 <span className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wider">+12 Đăng ký xem</span>
-              </div>
+              {spotlightRoom ? (
+                 <>
+                    <div>
+                       <h4 className="text-[20px] font-bold text-[#0F3A40] mb-3">
+                          {Number(spotlightRoom.area || 0).toLocaleString('vi-VN')} m² · Tầng {spotlightRoom.floor ?? '—'}
+                       </h4>
+                       <p className="text-[13px] text-[#4A787C] font-medium leading-relaxed mb-6 line-clamp-3">
+                          {spotlightRoom.description?.trim() || 'Chưa có mô tả phòng.'}
+                       </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                       <span className="text-[18px] font-bold text-[#14B8A6]">
+                          {Number(spotlightRoom.price || 0).toLocaleString('vi-VN')}đ/tháng
+                       </span>
+                       <span className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wider">
+                          Tối đa {spotlightRoom.max_tenants ?? 1} người
+                       </span>
+                    </div>
+                 </>
+              ) : (
+                 <p className="text-[14px] text-[#82ABB0]">Chưa có dữ liệu phòng.</p>
+              )}
            </div>
         </div>
       </div>

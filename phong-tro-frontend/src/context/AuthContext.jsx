@@ -1,4 +1,6 @@
+/* eslint-disable react-refresh/only-export-components -- context exports Provider + useAuth hook */
 import { createContext, useContext, useEffect, useState } from 'react';
+import { clearApiCache } from '../lib/apiCache';
 
 const AuthContext = createContext(null);
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -9,7 +11,7 @@ async function parseJsonSafe(response) {
   const text = await response.text();
   try {
     return text ? JSON.parse(text) : null;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -59,7 +61,7 @@ export const AuthProvider = ({ children }) => {
 
         localStorage.setItem('user', JSON.stringify(data.user));
         setUser(data.user);
-      } catch (error) {
+      } catch {
         localStorage.removeItem('access_token');
         localStorage.removeItem('user');
         setToken(null);
@@ -108,13 +110,14 @@ export const AuthProvider = ({ children }) => {
             Authorization: `Bearer ${currentToken}`,
           },
         });
-      } catch (error) {
+      } catch {
         // Keep client-side logout resilient even when API is down.
       }
     }
 
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
+    clearApiCache();
     setToken(null);
     setUser(null);
   };

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Info, Download, Eye, Bell, Plus, DollarSign, ClipboardList, TrendingUp, X } from 'lucide-react';
+import { Info, Download, Eye, Bell, Plus, DollarSign, ClipboardList, TrendingUp, X, Pencil, Ban, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
+import InvoiceUtilityDetails from '../../components/invoice/InvoiceUtilityDetails';
+import { parseInvoiceElectricityBreakdown } from '../../components/invoice/parseElectricityBreakdown';
 
 function normStatus(s) {
   return String(s ?? '').trim().toUpperCase();
@@ -19,6 +21,17 @@ function isCancelledStatus(s) {
 /** Chưa thu hoặc chưa đủ — loại trừ đã thanh toán và hủy */
 function isOutstandingStatus(s) {
   return !isPaidStatus(s) && !isCancelledStatus(s);
+}
+
+function canModifyInvoice(inv) {
+  return inv && isOutstandingStatus(inv.status);
+}
+
+function toIsoDateInput(value) {
+  if (value == null || value === '') return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toISOString().slice(0, 10);
 }
 
 /** Một tenant chỉ một hóa đơn / kỳ — sau khi chốt kỳ này, kỳ tạo tiếp theo là tháng sau hóa đơn mới nhất. */
@@ -76,6 +89,19 @@ export default function InvoiceManagePage() {
   const [overrideWaterPrevious, setOverrideWaterPrevious] = useState('');
   const [viewInvoice, setViewInvoice] = useState(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [editModalInvoice, setEditModalInvoice] = useState(null);
+  const [editForm, setEditForm] = useState({
+    rent_amount: '',
+    electricity_amount: '',
+    water_amount: '',
+    other_fees_amount: '',
+    due_date: '',
+  });
+  const [editError, setEditError] = useState('');
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+  const [cancelModalInvoice, setCancelModalInvoice] = useState(null);
+  const [cancelError, setCancelError] = useState('');
+  const [isCancelSubmitting, setIsCancelSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
     room_id: '',
@@ -272,6 +298,148 @@ export default function InvoiceManagePage() {
       await refresh();
     } catch (e) {
       addToast(e?.message || 'Không tạo được hóa đơn.', 'error');
+    }
+  };
+
+  const editPreviewTotal = useMemo(() => {
+    const sum =
+      Number(editForm.rent_amount || 0) +
+      Number(editForm.electricity_amount || 0) +
+      Number(editForm.water_amount || 0) +
+      Number(editForm.other_fees_amount || 0);
+    return Number.isFinite(sum) ? sum : 0;
+  }, [editForm]);
+
+  const invoiceViewUtility = useMemo(() => {
+    const vi = viewInvoice;
+    if (!vi) return { showMergedUtility: false, utilityEmptyHint: '' };
+    const hasTier = !!parseInvoiceElectricityBreakdown(vi.electricity_breakdown);
+    const hasSnap = vi.utility_meter_snapshot != null && typeof vi.utility_meter_snapshot === 'object';
+    const amtE = Number(vi.electricity_amount || 0);
+    const amtW = Number(vi.water_amount || 0);
+    const showMergedUtility = amtE > 0 || amtW > 0 || hasTier || hasSnap;
+    const utilityEmptyHint =
+      !hasTier && !hasSnap && (amtE > 0 || amtW > 0)
+        ? 'Chưa có chỉ số điện/nước (cũ → mới) và bảng bậc điện lưu trên hệ thống — hóa đơn này có thể nhập tay hoặc tạo trước khi lưu chỉ số. Dùng mục nhập & “Xác nhận chỉ số” đúng phòng/kỳ để lần sau hiện đầy đủ ngay dưới tổng tiền điện/nước.'
+        : '';
+    return { showMergedUtility, utilityEmptyHint };
+  }, [viewInvoice]);
+
+  const openEditModal = async (inv) => {
+    if (!canModifyInvoice(inv)) {
+      addToast('Không sửa được hóa đơn đã thanh toán hoặc đã hủy.', 'error');
+      return;
+    }
+    setEditError('');
+    setEditModalInvoice(inv);
+    setEditForm({
+      rent_amount: inv.rent_amount != null ? String(inv.rent_amount) : '0',
+      electricity_amount: inv.electricity_amount != null ? String(inv.electricity_amount) : '0',
+      water_amount: inv.water_amount != null ? String(inv.water_amount) : '0',
+      other_fees_amount: inv.other_fees_amount != null ? String(inv.other_fees_amount) : '0',
+      due_date: toIsoDateInput(inv.due_date),
+    });
+  };
+
+  const closeEditModal = () => {
+    if (isEditSubmitting) return;
+    setEditModalInvoice(null);
+    setEditError('');
+  };
+
+  const handleUpdateInvoice = async () => {
+    if (!token || !editModalInvoice) return;
+    const rent = Number(editForm.rent_amount);
+    const elec = Number(editForm.electricity_amount);
+    const water = Number(editForm.water_amount);
+    const other = Number(editForm.other_fees_amount);
+    if ([rent, elec, water, other].some((n) => !Number.isFinite(n) || n < 0)) {
+      setEditError('Các khoản thu phải là số không âm.');
+      return;
+    }
+    if (!editForm.due_date) {
+      setEditError('Vui lòng chọn hạn thanh toán.');
+      return;
+    }
+
+    setEditError('');
+    setIsEditSubmitting(true);
+    try {
+      await apiFetch(`/admin/invoices/${editModalInvoice.invoice_id}`, {
+        token,
+        method: 'PUT',
+        body: {
+          rent_amount: rent,
+          electricity_amount: elec,
+          water_amount: water,
+          other_fees_amount: other,
+          due_date: editForm.due_date,
+        },
+      });
+      addToast('Đã cập nhật hóa đơn. Khách thuê sẽ thấy số liệu mới trên cổng thanh toán.', 'success');
+      setEditModalInvoice(null);
+      if (isViewOpen && viewInvoice?.invoice_id === editModalInvoice.invoice_id) {
+        setIsViewOpen(false);
+        setViewInvoice(null);
+      }
+      await refresh();
+    } catch (e) {
+      const msg = e?.message || '';
+      if (msg.includes('paid invoice')) {
+        setEditError('Hóa đơn đã thanh toán, không thể sửa.');
+      } else if (msg.includes('cancelled')) {
+        setEditError('Hóa đơn đã bị hủy.');
+      } else {
+        setEditError(msg || 'Không cập nhật được hóa đơn.');
+      }
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
+
+  const openCancelModal = (inv) => {
+    if (!canModifyInvoice(inv)) {
+      addToast('Không hủy được hóa đơn đã thanh toán hoặc đã hủy.', 'error');
+      return;
+    }
+    setCancelError('');
+    setCancelModalInvoice(inv);
+  };
+
+  const closeCancelModal = () => {
+    if (isCancelSubmitting) return;
+    setCancelModalInvoice(null);
+    setCancelError('');
+  };
+
+  const handleCancelInvoice = async () => {
+    if (!token || !cancelModalInvoice) return;
+    setCancelError('');
+    setIsCancelSubmitting(true);
+    try {
+      await apiFetch(`/admin/invoices/${cancelModalInvoice.invoice_id}`, {
+        token,
+        method: 'PUT',
+        body: { status: 'CANCELLED' },
+      });
+      addToast('Đã hủy hóa đơn. Khách thuê sẽ không còn thấy khoản này trong danh sách cần thanh toán.', 'success');
+      setCancelModalInvoice(null);
+      if (isViewOpen && viewInvoice?.invoice_id === cancelModalInvoice.invoice_id) {
+        setIsViewOpen(false);
+        setViewInvoice(null);
+      }
+      await refresh();
+    } catch (e) {
+      const msg = e?.message || '';
+      if (msg.includes('paid invoice')) {
+        setCancelError('Hóa đơn đã thanh toán, không thể hủy.');
+      } else if (msg.includes('cancelled')) {
+        setCancelError('Hóa đơn đã bị hủy trước đó.');
+      } else {
+        setCancelError(msg || 'Không hủy được hóa đơn.');
+      }
+    } finally {
+      setIsCancelSubmitting(false);
     }
   };
 
@@ -643,27 +811,49 @@ export default function InvoiceManagePage() {
                         </span>
                       </td>
                       <td className="py-4 px-2 text-right">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              const data = await apiFetch(`/admin/invoices/${inv.invoice_id}`, { token });
-                              const invDetail = data?.invoice ?? null;
-                              if (!invDetail) {
-                                addToast('Không tìm thấy hóa đơn.', 'error');
-                                return;
+                        <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const data = await apiFetch(`/admin/invoices/${inv.invoice_id}`, { token });
+                                const invDetail = data?.invoice ?? null;
+                                if (!invDetail) {
+                                  addToast('Không tìm thấy hóa đơn.', 'error');
+                                  return;
+                                }
+                                setViewInvoice(invDetail);
+                                setIsViewOpen(true);
+                              } catch (e) {
+                                console.error('View invoice error:', e);
+                                addToast(e?.message || 'Không tải được chi tiết hóa đơn.', 'error');
                               }
-                              setViewInvoice(invDetail);
-                              setIsViewOpen(true);
-                            } catch (e) {
-                              console.error('View invoice error:', e);
-                              addToast(e?.message || 'Không tải được chi tiết hóa đơn.', 'error');
-                            }
-                          }}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-slate-200 text-[12px] font-bold text-nest-text-primary hover:bg-nest-bg transition-colors"
-                        >
-                          <Eye className="w-4 h-4" /> Xem
-                        </button>
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-white border border-slate-200 text-[11px] font-bold text-nest-text-primary hover:bg-nest-bg transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Xem
+                          </button>
+                          {canModifyInvoice(inv) ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(inv)}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-[#EBFDFB] border border-[#14B8A6]/30 text-[11px] font-bold text-[#14B8A6] hover:bg-[#14B8A6]/10 transition-colors"
+                                title="Sửa các khoản thu"
+                              >
+                                <Pencil className="w-3.5 h-3.5" /> Sửa
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openCancelModal(inv)}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-rose-50 border border-rose-100 text-[11px] font-bold text-rose-600 hover:bg-rose-100 transition-colors"
+                                title="Hủy hóa đơn"
+                              >
+                                <Ban className="w-3.5 h-3.5" /> Hủy
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -727,9 +917,186 @@ export default function InvoiceManagePage() {
       {/* Spacing to lift the table from the bottom */}
       <div className="h-10 w-full shrink-0"></div>
 
+      {editModalInvoice && (
+        <div
+          className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={() => !isEditSubmitting && closeEditModal()}
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-invoice-title"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 id="edit-invoice-title" className="text-2xl font-bold text-nest-text-primary">
+                Sửa hóa đơn #{editModalInvoice.invoice_id}
+              </h3>
+              <button
+                type="button"
+                onClick={closeEditModal}
+                disabled={isEditSubmitting}
+                className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-50"
+                aria-label="Đóng"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-[13px] font-medium text-nest-text-secondary mb-2">
+              Phòng <span className="font-bold text-nest-text-primary">{editModalInvoice.room_number || '—'}</span>
+              {' · '}
+              Kỳ {String(editModalInvoice.period_month).padStart(2, '0')}/{editModalInvoice.period_year}
+            </p>
+            <p className="text-[12px] text-nest-primary font-medium mb-6 bg-nest-primary/5 rounded-xl px-4 py-3 border border-nest-primary/15">
+              Thay đổi được lưu vào cùng bản ghi hóa đơn — khách thuê đã nhận hóa đơn sẽ thấy số tiền và hạn thanh toán mới ngay trên trang Thanh toán.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-1.5">Tiền phòng</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editForm.rent_amount}
+                  onChange={(e) => setEditForm((p) => ({ ...p, rent_amount: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-1.5">Tiền điện</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editForm.electricity_amount}
+                  onChange={(e) => setEditForm((p) => ({ ...p, electricity_amount: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-1.5">Tiền nước</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editForm.water_amount}
+                  onChange={(e) => setEditForm((p) => ({ ...p, water_amount: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-1.5">
+                  Phí khác / giảm trừ
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editForm.other_fees_amount}
+                  onChange={(e) => setEditForm((p) => ({ ...p, other_fees_amount: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary font-bold"
+                />
+                <p className="text-[11px] text-nest-text-secondary mt-1.5">Gồm dịch vụ đăng ký + phí nhập thêm. Giảm số này để áp giảm giá đột xuất.</p>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-nest-text-secondary uppercase tracking-widest mb-1.5">Hạn thanh toán</label>
+                <input
+                  type="date"
+                  value={editForm.due_date}
+                  onChange={(e) => setEditForm((p) => ({ ...p, due_date: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl bg-nest-bg border border-nest-primary/10 px-4 py-3 flex justify-between items-center">
+              <span className="text-[12px] font-bold text-nest-text-secondary uppercase tracking-wide">Tổng sau chỉnh</span>
+              <span className="text-lg font-bold text-nest-text-primary">{formatMoney(editPreviewTotal)}đ</span>
+            </div>
+
+            {editError ? <p className="mt-4 text-sm font-medium text-red-600">{editError}</p> : null}
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={closeEditModal}
+                disabled={isEditSubmitting}
+                className="px-6 py-3 rounded-full font-bold text-nest-text-secondary hover:text-nest-text-primary disabled:opacity-50"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateInvoice}
+                disabled={isEditSubmitting}
+                className="px-8 py-3 rounded-full bg-nest-primary hover:bg-[#0da090] text-white font-bold shadow-lg shadow-nest-primary/20 disabled:opacity-60"
+              >
+                {isEditSubmitting ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelModalInvoice && (
+        <div
+          className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
+          onClick={() => !isCancelSubmitting && closeCancelModal()}
+        >
+          <div
+            className="relative w-full max-w-lg bg-white rounded-[28px] shadow-2xl border border-slate-200 p-6 sm:p-8"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-invoice-title"
+          >
+            <h3 id="cancel-invoice-title" className="text-xl font-bold text-nest-text-primary pr-8">
+              Hủy hóa đơn #{cancelModalInvoice.invoice_id}
+            </h3>
+            <p className="mt-2 text-[13px] font-medium text-nest-text-secondary leading-relaxed">
+              Phòng {cancelModalInvoice.room_number || '—'} · kỳ{' '}
+              {String(cancelModalInvoice.period_month).padStart(2, '0')}/{cancelModalInvoice.period_year} · tổng{' '}
+              {formatMoney(cancelModalInvoice.total_amount)}đ
+            </p>
+            <div className="flex gap-3 rounded-2xl bg-amber-50 border border-amber-100/80 p-4 text-[13px] text-amber-900 mt-5">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+              <p className="font-medium leading-relaxed">
+                Hóa đơn sẽ chuyển sang <span className="font-bold">CANCELLED</span>. Khách thuê không còn phải thanh toán khoản này; thao tác không hoàn tác.
+              </p>
+            </div>
+            {cancelError ? <p className="mt-4 text-sm font-medium text-red-600">{cancelError}</p> : null}
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={closeCancelModal}
+                disabled={isCancelSubmitting}
+                className="w-full sm:w-auto px-6 py-3 rounded-full font-bold text-nest-text-secondary hover:bg-slate-100 disabled:opacity-50"
+              >
+                Không hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelInvoice}
+                disabled={isCancelSubmitting}
+                className="w-full sm:w-auto px-6 py-3 rounded-full font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60"
+              >
+                {isCancelSubmitting ? 'Đang hủy...' : 'Xác nhận hủy'}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={closeCancelModal}
+              disabled={isCancelSubmitting}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"
+              aria-label="Đóng"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {isViewOpen && viewInvoice && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-3xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200 my-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-nest-text-primary">Chi tiết hóa đơn</h3>
               <button
@@ -763,13 +1130,24 @@ export default function InvoiceManagePage() {
                 </p>
               </div>
 
-              <div className="bg-nest-bg rounded-2xl p-4 border border-nest-primary/10">
-                <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Điện/Nước</p>
-                <p className="text-[14px] font-bold text-nest-text-primary">
-                  {Number(viewInvoice.electricity_amount || 0).toLocaleString('vi-VN')}đ /{' '}
-                  {Number(viewInvoice.water_amount || 0).toLocaleString('vi-VN')}đ
-                </p>
-              </div>
+              {invoiceViewUtility.showMergedUtility ? (
+                <div className="bg-nest-bg rounded-2xl p-4 border border-nest-primary/10 sm:col-span-2">
+                  <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Điện — Nước</p>
+                  <p className="text-[15px] font-bold text-nest-text-primary mb-1">
+                    {Number(viewInvoice.electricity_amount || 0).toLocaleString('vi-VN')}đ{' '}
+                    <span className="text-nest-text-secondary font-bold">/</span>{' '}
+                    {Number(viewInvoice.water_amount || 0).toLocaleString('vi-VN')}đ
+                  </p>
+                  <p className="text-[11px] text-nest-text-secondary font-medium mb-4">
+                    Tổng tiền ghi trên hóa đơn (điện · nước). Chi tiết chỉ số &amp; bậc điện bên dưới — nếu có.
+                  </p>
+                  <InvoiceUtilityDetails
+                    electricity_breakdown={viewInvoice.electricity_breakdown}
+                    utility_meter_snapshot={viewInvoice.utility_meter_snapshot}
+                    emptyHint={invoiceViewUtility.utilityEmptyHint}
+                  />
+                </div>
+              ) : null}
 
               <div className="bg-nest-bg rounded-2xl p-4 border border-nest-primary/10">
                 <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Tiền phòng</p>

@@ -18,11 +18,10 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch, API_BASE_URL, resolveBackendAssetUrl } from '../../lib/api';
 import { canPrintTicketReceipt, printTicketReceipt } from '../../lib/ticketReceipt';
+import { SUPPORT_HOTLINE, contactHotline, contactZalo } from '../../lib/supportContact';
 
 const MAX_FILES = 5;
 const MAX_MB = 5;
-
-const HOTLINE = String(import.meta.env.VITE_SUPPORT_HOTLINE || '').trim();
 
 function parseAttachmentUrls(raw) {
   if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
@@ -434,13 +433,8 @@ export default function TenantTicketPage() {
     }
   };
 
-  const callHotline = () => {
-    if (!HOTLINE) {
-      addToast('Chưa cấu hình số hotline. Vui lòng liên hệ ban quản lý trực tiếp.', 'error');
-      return;
-    }
-    window.location.href = `tel:${HOTLINE.replace(/\s/g, '')}`;
-  };
+  const callHotline = () => contactHotline(addToast);
+  const openZalo = () => contactZalo(addToast);
 
   const isOpen = (t) => String(t?.status || '').toUpperCase() === 'OPEN';
 
@@ -710,34 +704,28 @@ export default function TenantTicketPage() {
             </div>
           </div>
 
-          <div className="bg-[#0F3A40] rounded-[40px] overflow-hidden shadow-xl group">
-            <div className="h-[220px] relative">
-              <img
-                src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=800"
-                alt="Technicians"
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000 opacity-60"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0F3A40] to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 p-8 flex flex-col gap-2">
-                <h3 className="text-[22px] font-bold text-white">Hỗ trợ gấp</h3>
-                <p className="text-white/70 text-[13px] leading-relaxed">
-                  {HOTLINE ? (
-                    <>
-                      Gọi trực tiếp: <span className="text-white font-bold">{HOTLINE}</span>
-                    </>
-                  ) : (
-                    'Cấu hình biến môi trường VITE_SUPPORT_HOTLINE để hiển thị số gọi nhanh.'
-                  )}
-                </p>
-              </div>
+          <div className="bg-[#0F3A40] rounded-[40px] overflow-hidden shadow-xl">
+            <div className="h-[220px] relative bg-gradient-to-br from-[#1F545B] to-[#14B8A6] flex flex-col justify-end p-8">
+              <h3 className="text-[22px] font-bold text-white mb-2">Hỗ trợ gấp</h3>
+              <p className="text-white/80 text-[13px] leading-relaxed">
+                Gọi trực tiếp: <span className="text-white font-bold">{SUPPORT_HOTLINE}</span>
+                {' '}hoặc nhắn Zalo ban quản lý.
+              </p>
             </div>
-            <div className="p-8 pt-0">
+            <div className="p-8 pt-0 flex flex-col gap-3">
               <button
                 type="button"
                 onClick={callHotline}
                 className="w-full py-4 rounded-3xl bg-[#14B8A6] hover:bg-[#109284] text-white font-bold text-[14px] shadow-lg shadow-[#14B8A6]/20 transition-all flex items-center justify-center gap-3"
               >
                 <PhoneCall size={18} className="fill-current" /> Gọi hỗ trợ gấp
+              </button>
+              <button
+                type="button"
+                onClick={openZalo}
+                className="w-full py-4 rounded-3xl bg-white/15 hover:bg-white/25 text-white font-bold text-[14px] border border-white/25 transition-all flex items-center justify-center gap-3"
+              >
+                Nhắn Zalo ban quản lý
               </button>
             </div>
           </div>

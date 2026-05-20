@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bird, Mail, ArrowLeft, Send, KeyRound, Lock, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Sun, Mail, ArrowLeft, Send, KeyRound, Lock, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
 
 const RESEND_COOLDOWN_SEC = 60;
@@ -182,7 +182,7 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-[460px] bg-white/80 backdrop-blur-xl rounded-[2.5rem] p-10 md:p-12 border border-white shadow-2xl shadow-nest-primary/5 relative z-10">
         <div className="flex flex-col items-center mb-8 text-center">
           <div className="w-16 h-16 rounded-2xl bg-nest-primary/10 flex items-center justify-center text-nest-primary mb-6 shadow-sm border border-nest-primary/5">
-            <Bird size={36} strokeWidth={2.5} />
+            <Sun size={36} strokeWidth={2.5} />
           </div>
           <h1 className="text-[24px] md:text-[28px] font-bold text-nest-text-primary tracking-tight">
             Quên mật khẩu

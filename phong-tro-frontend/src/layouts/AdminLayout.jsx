@@ -1,10 +1,12 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/api';
+import { cachedApiFetch, invalidateApiCache } from '../lib/apiCache';
 import {
   LayoutDashboard, Home, Users, Receipt,
-  Wallet, Zap, Hammer, Bell, Bird, ChevronLeft, ChevronRight, Package, ClipboardList, Menu, X, History
+  Wallet, Zap, Hammer, Bell, Sun, ChevronLeft, ChevronRight, Package, ClipboardList, Menu, X, History, UserCircle
 } from 'lucide-react';
+import { resolveBackendAssetUrl } from '../lib/api';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 /** Khóa badge khớp GET /admin/nav-badges → badges */
@@ -55,17 +57,18 @@ export default function AdminLayout() {
   const loadBadges = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await apiFetch('/admin/nav-badges', { token });
+      const data = await cachedApiFetch('/admin/nav-badges', { token }, 20_000);
       setBadges(data.badges || {});
     } catch {
       setBadges({});
     }
   }, [token]);
 
-  /** Mỗi lần đổi trang: cập nhật số badge ngay (kèm lần đầu vào layout). */
+  /** Lần đầu vào layout + polling — không refetch mỗi lần đổi route. */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch badges on mount (async setState inside loadBadges)
     loadBadges();
-  }, [loadBadges, location.pathname]);
+  }, [loadBadges]);
 
   /** Polling + tab hiện lại + sự kiện sau khi đánh dấu đã đọc thông báo… */
   useEffect(() => {
@@ -73,7 +76,10 @@ export default function AdminLayout() {
     const onVisible = () => {
       if (document.visibilityState === 'visible') loadBadges();
     };
-    const onRefresh = () => loadBadges();
+    const onRefresh = () => {
+      invalidateApiCache('/admin/nav-badges');
+      loadBadges();
+    };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('admin-nav-badges-refresh', onRefresh);
     return () => {
@@ -93,6 +99,7 @@ export default function AdminLayout() {
 
   /** Hàng đợi giảm (đã xử lý) → hạ mốc để không bị âm / kẹt số. */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync baseline when server counts drop
     setBaseline((prev) => {
       let changed = false;
       const next = { ...prev };
@@ -117,6 +124,7 @@ export default function AdminLayout() {
     if (lastSnappedPathRef.current !== location.pathname) {
       lastSnappedPathRef.current = location.pathname;
       const s = Number(badges[key]) || 0;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- snapshot viewed route badge
       setBaseline((prev) => ({ ...prev, [key]: s }));
     }
   }, [location.pathname, token, badges]);
@@ -135,6 +143,7 @@ export default function AdminLayout() {
     { name: 'Bảo trì', path: '/admin/tickets', icon: Hammer },
     { name: 'Thông báo', path: '/admin/notifications', icon: Bell },
     { name: 'Lịch sử xóa', path: '/admin/removal-log', icon: History },
+    { name: 'Hồ sơ', path: '/admin/profile', icon: UserCircle },
   ];
 
   return (
@@ -177,12 +186,12 @@ export default function AdminLayout() {
         <div className={`relative flex flex-col mb-12 ${isCollapsed ? 'lg:items-center lg:px-0' : 'px-2'}`}>
           <Link to="/" className="flex items-center gap-3 group overflow-hidden">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-nest-primary shadow-lg shadow-black/20 shrink-0 group-hover:scale-110 group-hover:rotate-6`}>
-              <Bird className="w-6 h-6 text-white" />
+              <Sun className="w-6 h-6 text-white" />
             </div>
             {(!isCollapsed || isMobileMenuOpen) && (
               <div className="flex flex-col -gap-1 transition-opacity duration-300">
-                <span className="text-[17px] font-black tracking-[-0.5px] text-white font-playfair leading-none uppercase">THE NEST</span>
-                <span className="text-[9px] font-bold tracking-[2px] uppercase text-white/70 mt-1">Living Space</span>
+                <span className="text-[17px] font-black tracking-[-0.5px] text-white font-playfair leading-none uppercase">THE SUN</span>
+                <span className="text-[9px] font-bold tracking-[2px] uppercase text-white/70 mt-1">Quản trị</span>
               </div>
             )}
           </Link>
@@ -277,20 +286,32 @@ export default function AdminLayout() {
             {/* Profile Section */}
             <div className="flex items-center gap-2 lg:gap-4 pl-3 lg:pl-6 border-l border-nest-text-primary/10">
               <div className="hidden sm:flex flex-col items-end justify-center">
-                <span className="font-bold text-nest-text-primary text-[13px] lg:text-[14px] leading-none tracking-tight">{user?.name || 'Administrator'}</span>
+                <Link
+                  to="/admin/profile"
+                  className="font-bold text-nest-text-primary text-[13px] lg:text-[14px] leading-none tracking-tight hover:text-nest-primary"
+                >
+                  {user?.full_name || user?.name || 'Administrator'}
+                </Link>
                 <button onClick={logout} className="text-nest-primary text-[10px] font-extrabold hover:text-red-500 uppercase tracking-[1px] transition-colors mt-1.5 opacity-70 hover:opacity-100">
                    Sign Out
                 </button>
               </div>
-              <div className="relative group cursor-pointer">
+              <Link to="/admin/profile" className="relative group cursor-pointer">
                 <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl p-[2px] lg:p-[3px] bg-gradient-to-tr from-nest-primary to-nest-bg shadow-md group-hover:shadow-nest-primary/30 transition-all group-hover:scale-105">
                   <div className="w-full h-full rounded-[9px] lg:rounded-[13px] overflow-hidden border-2 border-white">
-                    <img src="https://ui-avatars.com/api/?name=Admin&background=14B8A6&color=fff" alt="Admin" className="w-full h-full object-cover" />
+                    <img
+                      src={
+                        user?.avatar_url
+                          ? resolveBackendAssetUrl(user.avatar_url)
+                          : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || user?.email || 'Admin')}&background=14B8A6&color=fff`
+                      }
+                      alt="Admin"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 </div>
-                {/* Active Status Dot */}
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 lg:w-3.5 lg:h-3.5 bg-green-500 rounded-full border-[2.5px] lg:border-[3px] border-white shadow-sm ring-1 ring-black/5"></div>
-              </div>
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 lg:w-3.5 lg:h-3.5 bg-green-500 rounded-full border-[2.5px] lg:border-[3px] border-white shadow-sm ring-1 ring-black/5" />
+              </Link>
             </div>
           </div>
         </header>

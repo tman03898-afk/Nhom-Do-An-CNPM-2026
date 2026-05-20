@@ -22,7 +22,7 @@ export default function HomePage() {
       setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, []);
+  }, [heroSlides.length]);
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
   const [roomsFromApi, setRoomsFromApi] = useState([]);
@@ -36,7 +36,7 @@ export default function HomePage() {
         const data = await response.json();
         if (!response.ok || !data?.ok) throw new Error(data?.message || 'failed');
         setRoomsFromApi(data.rooms || []);
-      } catch (error) {
+      } catch {
         setRoomsFromApi([]);
       } finally {
         setRoomsLoading(false);
@@ -351,7 +351,7 @@ export default function HomePage() {
           <div className="text-center mb-16">
             <p className="text-[#006B5F] font-bold text-[11px] uppercase tracking-widest mb-2">ĐƠN GIẢN &amp; NHANH CHÓNG</p>
             <h2 className="text-3xl md:text-4xl font-sans font-bold text-nest-text-primary mb-4">Quy Trình Thuê Phòng</h2>
-            <p className="text-sm text-nest-text-secondary max-w-md mx-auto leading-relaxed">Chỉ 3 bước đơn giản để sở hữu không gian sống lý tưởng của riêng bạn tại The Nest.</p>
+            <p className="text-sm text-nest-text-secondary max-w-md mx-auto leading-relaxed">Chỉ 3 bước đơn giản để sở hữu không gian sống lý tưởng của riêng bạn tại The Sun.</p>
           </div>
 
           {/* Steps Cards */}
@@ -398,7 +398,7 @@ export default function HomePage() {
                 <p className="text-[#006B5F] font-bold text-[11px] uppercase tracking-widest mb-3">LIÊN HỆ NGAY</p>
                 <h2 className="text-3xl md:text-4xl font-sans font-bold text-nest-text-primary mb-4">Kết Nối Với Chúng Tôi</h2>
                 <p className="text-sm text-nest-text-secondary leading-relaxed max-w-sm">
-                  Đội ngũ quản lý The Nest luôn sẵn sàng hỗ trợ bạn tìm kiếm một không gian sống lý tưởng nhất.
+                  Đội ngũ quản lý The Sun luôn sẵn sàng hỗ trợ bạn tìm kiếm một không gian sống lý tưởng nhất.
                 </p>
               </div>
 

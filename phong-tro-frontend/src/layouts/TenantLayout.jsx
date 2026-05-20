@@ -2,10 +2,10 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Home, Receipt, ClipboardList, AlertTriangle, Bell, User,
-  Bird, ChevronLeft, ChevronRight, X, Menu, Sparkles
+  Sun, ChevronLeft, ChevronRight, X, Menu, Sparkles
 } from 'lucide-react';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { apiFetch } from '../lib/api';
+import { cachedApiFetch, invalidateApiCache } from '../lib/apiCache';
 
 export default function TenantLayout() {
   const { user, token, logout } = useAuth();
@@ -34,22 +34,19 @@ export default function TenantLayout() {
         return;
       }
       try {
-        const response = await fetch(`${API_BASE_URL}/tenant/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await response.json();
+        const data = await cachedApiFetch('/tenant/me', { token }, 120_000);
         const roomNumber = data?.tenant?.room_number;
-        if (response.ok && data?.ok && roomNumber) {
+        if (data?.ok && roomNumber) {
           setRoomLabel(`Phòng ${roomNumber}`);
         } else {
           setRoomLabel('—');
         }
-      } catch (error) {
+      } catch {
         setRoomLabel('—');
       }
     };
     run();
-  }, [API_BASE_URL, token]);
+  }, [token]);
 
   const loadUnread = useCallback(async () => {
     if (!token) {
@@ -57,24 +54,27 @@ export default function TenantLayout() {
       return;
     }
     try {
-      const data = await apiFetch('/tenant/notifications', { token });
-      const unread = (data.notifications || []).filter((n) => !n.is_read).length;
-      setUnreadCount(unread);
-    } catch (err) {
+      const data = await cachedApiFetch('/tenant/notifications/unread-count', { token }, 20_000);
+      setUnreadCount(Number(data.unread_count) || 0);
+    } catch {
       setUnreadCount(0);
     }
   }, [token]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- poll unread (async setState in loadUnread)
     loadUnread();
-  }, [loadUnread, location.pathname]);
+  }, [loadUnread]);
 
   useEffect(() => {
     const interval = setInterval(loadUnread, 45000);
     const onVisible = () => {
       if (document.visibilityState === 'visible') loadUnread();
     };
-    const onRefresh = () => loadUnread();
+    const onRefresh = () => {
+      invalidateApiCache('/tenant/notifications');
+      loadUnread();
+    };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('tenant-notifications-refresh', onRefresh);
     return () => {
@@ -131,11 +131,11 @@ export default function TenantLayout() {
         <div className={`relative flex flex-col mb-12 ${isCollapsed ? 'lg:items-center lg:px-0' : 'px-2'}`}>
           <Link to="/" className="flex items-center gap-3 group overflow-hidden">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-nest-primary shadow-lg shadow-black/20 shrink-0 group-hover:scale-110 group-hover:rotate-6`}>
-              <Bird className="w-6 h-6 text-white" />
+              <Sun className="w-6 h-6 text-white" />
             </div>
             {(!isCollapsed || isMobileMenuOpen) && (
               <div className="flex flex-col">
-                <span className="text-white whitespace-nowrap leading-none font-bold">The Nest Living</span>
+                <span className="text-white whitespace-nowrap leading-none font-bold">The Sun</span>
                 <span className="text-white/60 text-[10px] opacity-70 mt-1.5 font-bold tracking-[1px] uppercase whitespace-nowrap">TENANT DASHBOARD</span>
               </div>
             )}
