@@ -5,6 +5,7 @@ import { apiFetch } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import InvoiceUtilityDetails from '../../components/invoice/InvoiceUtilityDetails';
 import { parseInvoiceElectricityBreakdown } from '../../components/invoice/parseElectricityBreakdown';
+import { parseInvoiceWaterBreakdown } from '../../components/invoice/parseWaterBreakdown';
 
 function normStatus(s) {
   return String(s ?? '').trim().toUpperCase();
@@ -313,14 +314,15 @@ export default function InvoiceManagePage() {
   const invoiceViewUtility = useMemo(() => {
     const vi = viewInvoice;
     if (!vi) return { showMergedUtility: false, utilityEmptyHint: '' };
-    const hasTier = !!parseInvoiceElectricityBreakdown(vi.electricity_breakdown);
+    const hasTierE = !!parseInvoiceElectricityBreakdown(vi.electricity_breakdown);
+    const hasTierW = !!parseInvoiceWaterBreakdown(vi.water_breakdown);
     const hasSnap = vi.utility_meter_snapshot != null && typeof vi.utility_meter_snapshot === 'object';
     const amtE = Number(vi.electricity_amount || 0);
     const amtW = Number(vi.water_amount || 0);
-    const showMergedUtility = amtE > 0 || amtW > 0 || hasTier || hasSnap;
+    const showMergedUtility = amtE > 0 || amtW > 0 || hasTierE || hasTierW || hasSnap;
     const utilityEmptyHint =
-      !hasTier && !hasSnap && (amtE > 0 || amtW > 0)
-        ? 'Chưa có chỉ số điện/nước (cũ → mới) và bảng bậc điện lưu trên hệ thống — hóa đơn này có thể nhập tay hoặc tạo trước khi lưu chỉ số. Dùng mục nhập & “Xác nhận chỉ số” đúng phòng/kỳ để lần sau hiện đầy đủ ngay dưới tổng tiền điện/nước.'
+      !hasTierE && !hasTierW && !hasSnap && (amtE > 0 || amtW > 0)
+        ? 'Chưa có chỉ số điện/nước (cũ → mới) và bảng bậc lưu trên hệ thống — hóa đơn này có thể nhập tay hoặc tạo trước khi lưu chỉ số. Dùng mục nhập & “Xác nhận chỉ số” đúng phòng/kỳ để lần sau hiện đầy đủ ngay dưới tổng tiền điện/nước.'
         : '';
     return { showMergedUtility, utilityEmptyHint };
   }, [viewInvoice]);
@@ -1139,10 +1141,11 @@ export default function InvoiceManagePage() {
                     {Number(viewInvoice.water_amount || 0).toLocaleString('vi-VN')}đ
                   </p>
                   <p className="text-[11px] text-nest-text-secondary font-medium mb-4">
-                    Tổng tiền ghi trên hóa đơn (điện · nước). Chi tiết chỉ số &amp; bậc điện bên dưới — nếu có.
+                    Tổng tiền ghi trên hóa đơn (điện · nước). Chi tiết chỉ số &amp; bậc điện/nước bên dưới — nếu có.
                   </p>
                   <InvoiceUtilityDetails
                     electricity_breakdown={viewInvoice.electricity_breakdown}
+                    water_breakdown={viewInvoice.water_breakdown}
                     utility_meter_snapshot={viewInvoice.utility_meter_snapshot}
                     emptyHint={invoiceViewUtility.utilityEmptyHint}
                   />

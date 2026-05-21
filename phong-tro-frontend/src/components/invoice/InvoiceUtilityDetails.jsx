@@ -1,5 +1,7 @@
 import ElectricityTierDetail from './ElectricityTierDetail';
+import WaterTierDetail from './WaterTierDetail';
 import { parseInvoiceElectricityBreakdown } from './parseElectricityBreakdown';
+import { parseInvoiceWaterBreakdown } from './parseWaterBreakdown';
 
 function fmtNum(v) {
   if (v == null || v === '') return null;
@@ -9,17 +11,19 @@ function fmtNum(v) {
 }
 
 /**
- * Chỉ số điện/nước đã nhập trong kỳ + bậc tiền điện (electricity_breakdown tiered).
- * @param {{ electricity_breakdown?: unknown, utility_meter_snapshot?: unknown, className?: string }} props
+ * Chỉ số điện/nước đã nhập trong kỳ + bậc tiền điện/nước (breakdown tiered).
+ * @param {{ electricity_breakdown?: unknown, water_breakdown?: unknown, utility_meter_snapshot?: unknown, className?: string }} props
  */
 export default function InvoiceUtilityDetails({
   electricity_breakdown: breakdown,
+  water_breakdown: waterBreakdown,
   utility_meter_snapshot: snapshot,
   emptyHint = '',
   className = '',
 }) {
   const ms = snapshot && typeof snapshot === 'object' ? snapshot : null;
   const tierParsed = parseInvoiceElectricityBreakdown(breakdown);
+  const waterTierParsed = parseInvoiceWaterBreakdown(waterBreakdown);
 
   const hasMeters =
     ms &&
@@ -30,7 +34,7 @@ export default function InvoiceUtilityDetails({
       ms.water_current_m3,
     ].some((x) => x !== undefined && x !== null);
 
-  if (!hasMeters && !tierParsed) {
+  if (!hasMeters && !tierParsed && !waterTierParsed) {
     if (emptyHint) {
       return (
         <div className={className}>
@@ -41,7 +45,8 @@ export default function InvoiceUtilityDetails({
     return null;
   }
 
-  const mode = ms?.electricity_pricing_mode;
+  const elMode = ms?.electricity_pricing_mode;
+  const waMode = ms?.water_pricing_mode;
   const elDelta = ms?.electricity_delta_kwh;
   const waDelta = ms?.water_delta_m3;
 
@@ -78,15 +83,24 @@ export default function InvoiceUtilityDetails({
               </>
             ) : null}
           </p>
-          {mode === 'flat' && Number(ms?.electricity_delta_kwh) > 0 && !tierParsed ? (
+          {elMode === 'flat' && Number(ms?.electricity_delta_kwh) > 0 && !tierParsed ? (
             <p className="text-[12px] text-nest-text-secondary font-medium italic">
               Tiền điện kỳ này tính theo đơn giá không bậc thang (VNĐ/kWh theo dịch vụ / hợp đồng).
+            </p>
+          ) : null}
+          {waMode === 'flat' && Number(ms?.water_delta_m3) > 0 && !waterTierParsed ? (
+            <p className="text-[12px] text-nest-text-secondary font-medium italic">
+              Tiền nước kỳ này tính theo đơn giá không bậc thang (VNĐ/m³ theo dịch vụ / hợp đồng).
             </p>
           ) : null}
         </div>
       ) : null}
 
       <ElectricityTierDetail breakdown={breakdown} className={hasMeters ? 'mt-4' : ''} />
+      <WaterTierDetail
+        breakdown={waterBreakdown}
+        className={hasMeters || tierParsed ? 'mt-4' : ''}
+      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 import InvoiceUtilityDetails from '../../components/invoice/InvoiceUtilityDetails';
 import { parseInvoiceElectricityBreakdown } from '../../components/invoice/parseElectricityBreakdown';
+import { parseInvoiceWaterBreakdown } from '../../components/invoice/parseWaterBreakdown';
 
 export default function TenantInvoicePage() {
    const navigate = useNavigate();
@@ -163,14 +164,15 @@ export default function TenantInvoicePage() {
    const detailInvoiceUtility = useMemo(() => {
       const vi = detailInvoice;
       if (!vi) return { showMergedUtility: false, utilityEmptyHint: '' };
-      const hasTier = !!parseInvoiceElectricityBreakdown(vi.electricity_breakdown);
+      const hasTierE = !!parseInvoiceElectricityBreakdown(vi.electricity_breakdown);
+      const hasTierW = !!parseInvoiceWaterBreakdown(vi.water_breakdown);
       const hasSnap = vi.utility_meter_snapshot != null && typeof vi.utility_meter_snapshot === 'object';
       const amtE = Number(vi.electricity_amount || 0);
       const amtW = Number(vi.water_amount || 0);
-      const showMergedUtility = amtE > 0 || amtW > 0 || hasTier || hasSnap;
+      const showMergedUtility = amtE > 0 || amtW > 0 || hasTierE || hasTierW || hasSnap;
       const utilityEmptyHint =
-         !hasTier && !hasSnap && (amtE > 0 || amtW > 0)
-            ? 'Chưa có chỉ số công tơ (cũ → mới) và bảng bậc điện lưu trên hóa đơn — thường do kỳ này nhập tay hoặc tạo trước khi lưu chỉ số. Ban quản lý có thể xác nhận chỉ số đúng phòng/kỳ để các hóa đơn sau hiện đầy đủ tại đây.'
+         !hasTierE && !hasTierW && !hasSnap && (amtE > 0 || amtW > 0)
+            ? 'Chưa có chỉ số công tơ (cũ → mới) và bảng bậc lưu trên hóa đơn — thường do kỳ này nhập tay hoặc tạo trước khi lưu chỉ số. Ban quản lý có thể xác nhận chỉ số đúng phòng/kỳ để các hóa đơn sau hiện đầy đủ tại đây.'
             : '';
       return { showMergedUtility, utilityEmptyHint };
    }, [detailInvoice]);
@@ -474,10 +476,11 @@ export default function TenantInvoicePage() {
                                        {formatMoney(detailInvoice.water_amount)}₫
                                     </p>
                                     <p className="text-[11px] text-[#82ABB0] mb-3">
-                                       Tổng trên hóa đơn; chỉ số và bậc điện (nếu có) ngay dưới.
+                                       Tổng trên hóa đơn; chỉ số và bậc điện/nước (nếu có) ngay dưới.
                                     </p>
                                     <InvoiceUtilityDetails
                                        electricity_breakdown={detailInvoice.electricity_breakdown}
+                                       water_breakdown={detailInvoice.water_breakdown}
                                        utility_meter_snapshot={detailInvoice.utility_meter_snapshot}
                                        emptyHint={detailInvoiceUtility.utilityEmptyHint}
                                     />

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { MapPin, CheckCircle2, UserCheck, BarChart3, Edit3, Trash2, ArrowUpRight, Plus } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
+import RoomFormModal from '../../components/rooms/RoomFormModal';
+import RoomHoldManagePanel from '../../components/rooms/RoomHoldManagePanel';
 
 export default function RoomManagePage() {
   const { token } = useAuth();
@@ -14,11 +16,11 @@ export default function RoomManagePage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
-  const [form, setForm] = useState({ room_number: '', floor: '', area: '', max_tenants: 2, price: '', status: 'AVAILABLE', description: '' });
 
   const statusView = useMemo(
     () => ({
       AVAILABLE: { label: 'TRỐNG', pill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
+      HELD: { label: 'ĐANG GIỮ', pill: 'bg-amber-50 text-amber-800', dot: 'bg-amber-500' },
       RENTED: { label: 'ĐANG THUÊ', pill: 'bg-slate-100 text-slate-500', dot: 'bg-slate-400' },
       MAINTENANCE: { label: 'BẢO TRÌ', pill: 'bg-[#FFF3E0] text-[#E68A00]', dot: 'bg-[#E68A00]' },
     }),
@@ -28,10 +30,11 @@ export default function RoomManagePage() {
   const stats = useMemo(() => {
     const total = rooms.length;
     const available = rooms.filter((r) => r.status === 'AVAILABLE').length;
+    const held = rooms.filter((r) => r.status === 'HELD').length;
     const rented = rooms.filter((r) => r.status === 'RENTED').length;
     const maintenance = rooms.filter((r) => r.status === 'MAINTENANCE').length;
     const occupancy = total > 0 ? Math.round((rented / total) * 100) : 0;
-    return { total, available, rented, maintenance, occupancy };
+    return { total, available, held, rented, maintenance, occupancy };
   }, [rooms]);
 
   const spotlightRoom = useMemo(() => {
@@ -81,48 +84,20 @@ export default function RoomManagePage() {
     setCurrentPage(1);
   }, [statusFilter]);
 
+  const reloadRooms = async () => {
+    const data = await apiFetch('/rooms', { token });
+    setRooms(data.rooms || []);
+    setCurrentPage(1);
+  };
+
   const openCreate = () => {
     setEditingRoom(null);
-    setForm({ room_number: '', floor: '', area: '', max_tenants: 2, price: '', status: 'AVAILABLE', description: '' });
     setIsModalOpen(true);
   };
 
   const openEdit = (room) => {
     setEditingRoom(room);
-    setForm({
-      room_number: room.room_number || '',
-      floor: room.floor ?? '',
-      area: room.area ?? '',
-      max_tenants: room.max_tenants ?? 2,
-      price: room.price ?? '',
-      status: room.status || 'AVAILABLE',
-      description: room.description || '',
-    });
     setIsModalOpen(true);
-  };
-
-  const saveRoom = async () => {
-    if (!token) return;
-    const payload = {
-      room_number: String(form.room_number || '').trim(),
-      floor: form.floor === '' ? null : Number(form.floor),
-      area: Number(form.area),
-      max_tenants: Number(form.max_tenants || 1),
-      price: Number(form.price),
-      status: form.status,
-      description: form.description ? String(form.description) : null,
-    };
-
-    if (editingRoom?.room_id) {
-      await apiFetch(`/rooms/${editingRoom.room_id}`, { token, method: 'PUT', body: payload });
-    } else {
-      await apiFetch('/rooms', { token, method: 'POST', body: payload });
-    }
-    setIsModalOpen(false);
-    // reload
-    const data = await apiFetch('/rooms', { token });
-    setRooms(data.rooms || []);
-    setCurrentPage(1);
   };
 
   const deleteRoom = async (room) => {
@@ -148,6 +123,7 @@ export default function RoomManagePage() {
             {[
               { key: 'ALL', label: 'Tất cả' },
               { key: 'AVAILABLE', label: 'Phòng trống' },
+              { key: 'HELD', label: 'Đang giữ' },
               { key: 'RENTED', label: 'Đang thuê' },
             ].map(({ key, label }) => {
               const active = statusFilter === key;
@@ -203,6 +179,8 @@ export default function RoomManagePage() {
            </div>
         </div>
       </div>
+
+      <RoomHoldManagePanel token={token} onRoomsChanged={reloadRooms} />
 
       {/* Main Table */}
       <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm mb-8">
@@ -389,36 +367,13 @@ export default function RoomManagePage() {
         </div>
       </div>
 
-      {/* Create/Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-bold text-nest-text-primary">{editingRoom ? 'Sửa phòng' : 'Thêm phòng'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500">
-                ✕
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input value={form.room_number} onChange={(e) => setForm((p) => ({ ...p, room_number: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Số phòng (VD: A101)" />
-              <input value={form.floor} onChange={(e) => setForm((p) => ({ ...p, floor: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Tầng" />
-              <input value={form.area} onChange={(e) => setForm((p) => ({ ...p, area: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Diện tích (m²)" />
-              <input value={form.price} onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Giá thuê (VNĐ)" />
-              <input value={form.max_tenants} onChange={(e) => setForm((p) => ({ ...p, max_tenants: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Số người tối đa" />
-              <select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary">
-                <option value="AVAILABLE">AVAILABLE</option>
-                <option value="RENTED">RENTED</option>
-                <option value="MAINTENANCE">MAINTENANCE</option>
-              </select>
-              <textarea value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} className="md:col-span-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Mô tả" rows={3} />
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setIsModalOpen(false)} className="px-6 py-3 rounded-full font-bold text-nest-text-secondary hover:text-nest-text-primary">Hủy</button>
-              <button onClick={saveRoom} className="px-8 py-3 rounded-full bg-nest-primary hover:bg-[#0da090] text-white font-bold shadow-lg shadow-nest-primary/20">Lưu</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RoomFormModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        room={editingRoom}
+        token={token}
+        onSaved={reloadRooms}
+      />
     </div>
   );
 }

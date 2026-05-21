@@ -33,6 +33,7 @@ export default function Header() {
 
   const textColor = isTransparent ? "text-white" : "text-nest-text-primary";
   const navItems = [
+    { id: 'loai-phong', label: 'Loại phòng' },
     { id: 'phong-trong', label: 'Phòng nổi bật' },
     { id: 'tien-ich',   label: 'Tiện ích' },
     { id: 'quy-trinh', label: 'Quy trình' },
