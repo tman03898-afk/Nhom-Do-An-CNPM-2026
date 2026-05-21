@@ -11,6 +11,12 @@ const {
   computeElectricityCostTiered,
   tiersAreValid,
 } = require('../utils/electricityTierPricing');
+const {
+  getWaterTiers,
+  useWaterTieredFromEnv,
+  computeWaterCostTiered,
+  tiersAreValid: waterTiersAreValid,
+} = require('../utils/waterTierPricing');
 
 const router = express.Router();
 
@@ -374,6 +380,8 @@ async function upsertInvoiceFromUtility({
   created_by,
   /** { mode: 'tiered', delta_kwh, tiers: [...] } hoặc null */
   electricity_breakdown = null,
+  /** { mode: 'tiered', delta_m3, tiers: [...] } hoặc null */
+  water_breakdown = null,
   /** { electricity_previous_kwh, electricity_current_kwh, ... } */
   utility_meter_snapshot = null,
   /** Dùng cùng client trong transaction (INSERT chỉ số + cập nhật hóa đơn). */
@@ -408,6 +416,14 @@ async function upsertInvoiceFromUtility({
       ? electricity_breakdown
       : null;
 
+  const wbJson =
+    water_breakdown &&
+    typeof water_breakdown === 'object' &&
+    water_breakdown.mode === 'tiered' &&
+    Array.isArray(water_breakdown.tiers)
+      ? water_breakdown
+      : null;
+
   const snapJson =
     utility_meter_snapshot && typeof utility_meter_snapshot === 'object'
       ? JSON.stringify(utility_meter_snapshot)
@@ -426,12 +442,13 @@ async function upsertInvoiceFromUtility({
            electricity_breakdown = $4::jsonb,
            utility_meter_snapshot = $5::jsonb,
            water_amount = $6,
-           other_fees_amount = $7,
-           total_amount = $8,
-           due_date = $9,
-           status = $10,
+           water_breakdown = $7::jsonb,
+           other_fees_amount = $8,
+           total_amount = $9,
+           due_date = $10,
+           status = $11,
            updated_at = NOW()
-       WHERE invoice_id = $11`,
+       WHERE invoice_id = $12`,
       [
         contract_id,
         rent,
@@ -439,6 +456,7 @@ async function upsertInvoiceFromUtility({
         ebJson ? JSON.stringify(ebJson) : null,
         snapJson,
         water,
+        wbJson ? JSON.stringify(wbJson) : null,
         otherFees,
         total,
         due_date,
@@ -449,9 +467,9 @@ async function upsertInvoiceFromUtility({
   } else {
     await run(
       `INSERT INTO invoices
-        (contract_id, tenant_id, billing_month, due_date, rent_amount, electricity_amount, electricity_breakdown, utility_meter_snapshot, water_amount, other_fees_amount, total_amount, status, created_by)
+        (contract_id, tenant_id, billing_month, due_date, rent_amount, electricity_amount, electricity_breakdown, utility_meter_snapshot, water_amount, water_breakdown, other_fees_amount, total_amount, status, created_by)
        VALUES
-        ($1, $2, $3::date, $4::date, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, 'UNPAID', $12)`,
+        ($1, $2, $3::date, $4::date, $5, $6, $7::jsonb, $8::jsonb, $9, $10::jsonb, $11, $12, 'UNPAID', $13)`,
       [
         contract_id,
         tenant_id,
@@ -462,6 +480,7 @@ async function upsertInvoiceFromUtility({
         ebJson ? JSON.stringify(ebJson) : null,
         snapJson,
         water,
+        wbJson ? JSON.stringify(wbJson) : null,
         otherFees,
         total,
         created_by,
@@ -753,11 +772,14 @@ router.post('/admin/utilities/readings/confirm', requireAuth, requireAdmin, asyn
           'Chưa có đơn giá điện (VNĐ/kWh). Thêm trong Quản lý Dịch vụ (đơn vị kWh) hoặc cấu hình phí Điện trong hợp đồng / service_fees — hoặc bật tính theo bậc (ELECTRICITY_USE_TIERED=1, mặc định).',
       });
     }
-    if (watDelta > 0 && waterRate <= 0) {
+    const watTiers = getWaterTiers();
+    const useTieredWater = useWaterTieredFromEnv() && waterTiersAreValid(watTiers);
+
+    if (watDelta > 0 && !useTieredWater && waterRate <= 0) {
       return res.status(400).json({
         ok: false,
         message:
-          'Chưa có đơn giá nước (VNĐ/m³). Thêm trong Quản lý Dịch vụ (đơn vị m3 hoặc m³) hoặc cấu hình phí Nước trong hợp đồng / service_fees.',
+          'Chưa có đơn giá nước (VNĐ/m³). Thêm trong Quản lý Dịch vụ (đơn vị m3 hoặc m³) hoặc cấu hình phí Nước trong hợp đồng / service_fees — hoặc bật tính theo bậc (WATER_USE_TIERED=1, mặc định).',
       });
     }
 
@@ -783,7 +805,29 @@ router.post('/admin/utilities/readings/confirm', requireAuth, requireAdmin, asyn
     } else {
       eleCost = eleDelta * eleRate;
     }
-    const watCost = watDelta * waterRate;
+
+    let watCost = 0;
+    let water_tier_breakdown = null;
+    let water_invoice_breakdown = null;
+    if (useTieredWater && watDelta > 0) {
+      const tiered = computeWaterCostTiered(watDelta, watTiers);
+      watCost = tiered.total;
+      water_tier_breakdown = tiered.breakdown;
+      water_invoice_breakdown = {
+        mode: 'tiered',
+        delta_m3: watDelta,
+        tiers: tiered.breakdown.map((row, idx) => ({
+          bac: idx + 1,
+          band_from_m3: row.bandFrom,
+          band_to_m3: row.bandTo,
+          m3: row.kwh,
+          price_per_m3: row.pricePerKwh,
+          amount: row.amount,
+        })),
+      };
+    } else {
+      watCost = watDelta * waterRate;
+    }
 
     const client = await pool.connect();
     try {
@@ -812,8 +856,10 @@ router.post('/admin/utilities/readings/confirm', requireAuth, requireAdmin, asyn
           water_current_m3: watCur,
           water_delta_m3: watDelta,
           electricity_pricing_mode: useTieredElectric ? 'tiered' : 'flat',
+          water_pricing_mode: useTieredWater ? 'tiered' : 'flat',
         },
         water_amount: watCost,
+        water_breakdown: water_invoice_breakdown,
         other_fees_amount: 0,
         billing_month: billingMonthDate,
         due_date: dueDate,
@@ -843,6 +889,8 @@ router.post('/admin/utilities/readings/confirm', requireAuth, requireAdmin, asyn
         amount_water: watCost,
         electricity_pricing_mode: useTieredElectric ? 'tiered' : 'flat',
         electricity_tier_breakdown,
+        water_pricing_mode: useTieredWater ? 'tiered' : 'flat',
+        water_tier_breakdown,
       },
     });
   } catch (err) {

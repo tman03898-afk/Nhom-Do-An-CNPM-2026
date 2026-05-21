@@ -594,3 +594,6 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
 router.ensureContractsTable = ensureContractsTable;
 router.purgeContractDependencies = purgeContractDependencies;
 module.exports = router;
+module.exports.ensureContractsTable = ensureContractsTable;
+module.exports.ensureNotificationsTable = ensureNotificationsTable;
+module.exports.normalizeDate = normalizeDate;

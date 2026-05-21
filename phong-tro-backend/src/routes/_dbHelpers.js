@@ -64,7 +64,7 @@ async function ensureEnumType(typeName, values) {
 
 async function ensureRoomsTable() {
   return once('schema:rooms', async () => {
-    await ensureEnumType('room_status', ['AVAILABLE', 'RENTED', 'MAINTENANCE']);
+    await ensureEnumType('room_status', ['AVAILABLE', 'HELD', 'RENTED', 'MAINTENANCE']);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS rooms (
         room_id SERIAL PRIMARY KEY,
@@ -75,10 +75,16 @@ async function ensureRoomsTable() {
         price NUMERIC,
         status room_status NOT NULL DEFAULT 'AVAILABLE',
         description TEXT,
+        room_type VARCHAR(50),
+        images JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS room_type VARCHAR(50)`);
+    await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb`);
+    await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS hold_until TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS active_hold_request_id INTEGER`);
   });
 }
 
@@ -123,6 +129,16 @@ async function ensureUsersTable() {
       SET username = COALESCE(NULLIF(TRIM(username), ''), SPLIT_PART(email, '@', 1))
       WHERE username IS NULL OR TRIM(username) = ''
     `);
+
+    // Cho phép email domain hợp lệ (không chỉ @gmail.com)
+    await once('schema:users_email_chk_v2', async () => {
+      await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_users_email`);
+      await pool.query(`
+        ALTER TABLE users
+        ADD CONSTRAINT chk_users_email
+        CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
+      `);
+    });
   });
 }
 

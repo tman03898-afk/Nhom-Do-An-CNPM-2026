@@ -174,11 +174,59 @@ async function sendTenantPasswordRecoveryEmail(toEmail, code, displayName) {
   return sendPasswordResetOtpEmail(toEmail, code, displayName);
 }
 
+/** Gửi thông tin đăng nhập tenant sau khi admin tạo hợp đồng */
+async function sendTenantAccountCredentialsEmail(toEmail, { fullName, email, password, roomNumber, contractId }) {
+  const subject = 'Tài khoản cổng khách thuê — The Sun';
+  const text = `Xin chào${fullName ? ` ${fullName}` : ''},
+
+Hợp đồng #${contractId || '—'} — phòng ${roomNumber || '—'} đã được tạo.
+
+Đăng nhập cổng khách thuê The Sun:
+- Email: ${email}
+- Mật khẩu: ${password}
+
+Vui lòng đổi mật khẩu sau lần đăng nhập đầu.`;
+
+  const html = `
+  <p>Xin chào${fullName ? ` <strong>${escapeHtml(fullName)}</strong>` : ''},</p>
+  <p>Hợp đồng <strong>#${escapeHtml(String(contractId || '—'))}</strong> — phòng <strong>${escapeHtml(roomNumber || '—')}</strong> đã được tạo.</p>
+  <p><strong>Đăng nhập cổng khách thuê The Sun:</strong></p>
+  <ul>
+    <li>Email: <code>${escapeHtml(email)}</code></li>
+    <li>Mật khẩu: <code>${escapeHtml(password)}</code></li>
+  </ul>
+  <p>Vui lòng đổi mật khẩu sau lần đăng nhập đầu.</p>
+  `;
+
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER;
+  const transport = getTransport();
+  if (transport) {
+    await transport.sendMail({
+      from: `"The Sun" <${from}>`,
+      to: toEmail,
+      subject,
+      text,
+      html,
+    });
+    return { ok: true, provider: 'smtp', to: maskEmail(toEmail) };
+  }
+
+  if (allowMailFallbackLog()) {
+    console.warn(`[MAIL — tài khoản tenant] tới ${toEmail}:\n${text}`);
+    return { ok: true, provider: 'log', to: maskEmail(toEmail) };
+  }
+
+  throw new Error(
+    'MAIL_NOT_CONFIGURED — Thiết lập SMTP_HOST, SMTP_USER, SMTP_PASS (và MAIL_FROM) trong .env'
+  );
+}
+
 module.exports = {
   sendTenantEmailVerificationCode,
   sendTenantPasswordRecoveryEmail,
   sendPasswordResetOtpEmail,
   sendPasswordResetEmail,
+  sendTenantAccountCredentialsEmail,
   smtpConfigured,
   maskEmail,
 };

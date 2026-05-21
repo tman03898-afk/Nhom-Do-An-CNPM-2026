@@ -55,7 +55,8 @@ async function ensureInvoicesTable() {
     `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS electricity_breakdown JSONB`
   );
   await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS utility_meter_snapshot JSONB`);
-  });
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS water_breakdown JSONB`);
+});
 }
 
 function normalizeDate(value) {
@@ -147,6 +148,7 @@ router.get('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
          i.rent_amount,
          i.electricity_amount,
          i.electricity_breakdown,
+         i.water_breakdown,
          i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,
@@ -412,6 +414,7 @@ router.get('/tenant/invoices/:id', requireAuth, requireTenant, async (req, res) 
          i.rent_amount,
          i.electricity_amount,
          i.electricity_breakdown,
+         i.water_breakdown,
          i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,
@@ -492,6 +495,7 @@ router.get('/tenant/invoices', requireAuth, requireTenant, async (req, res) => {
          EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
          i.electricity_amount,
          i.electricity_breakdown,
+         i.water_breakdown,
          i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,

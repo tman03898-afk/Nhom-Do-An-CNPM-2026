@@ -1,9 +1,55 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
 
 const pool = require('../config/db');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { ensureRoomsTable } = require('./_dbHelpers');
 
 const router = express.Router();
-const ROOM_STATUSES = ['AVAILABLE', 'RENTED', 'MAINTENANCE'];
+const ROOM_STATUSES = ['AVAILABLE', 'HELD', 'RENTED', 'MAINTENANCE'];
+const { expireStaleRoomHolds } = require('./roomHolds');
+const ROOM_TYPES = ['Phòng thường', 'Phòng gác lửng', 'Phòng ban công'];
+const ROOM_SELECT =
+  'room_id, room_number, floor, area, max_tenants, price, status, description, room_type, images, hold_until, active_hold_request_id, created_at, updated_at';
+
+const roomUploadDir = path.join(__dirname, '../../uploads/room-images');
+if (!fs.existsSync(roomUploadDir)) {
+  fs.mkdirSync(roomUploadDir, { recursive: true });
+}
+
+const roomImageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, roomUploadDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      const safe = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}${ext}`;
+      cb(null, safe);
+    },
+  }),
+  limits: { fileSize: 8 * 1024 * 1024, files: 8 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype && file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('only image files allowed'));
+  },
+});
+
+function parseImagesField(raw) {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) {
+    return raw.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 12);
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parseImagesField(parsed);
+    } catch {
+      return raw.trim() ? [raw.trim()] : [];
+    }
+  }
+  return [];
+}
 
 function formatRoom(row) {
   if (!row) return null;
@@ -15,8 +61,12 @@ function formatRoom(row) {
     area: row.area !== null ? Number(row.area) : null,
     max_tenants: row.max_tenants,
     price: row.price !== null ? Number(row.price) : null,
-    status: row.status,
+    status: String(row.status || '').trim().toUpperCase(),
     description: row.description,
+    room_type: row.room_type || null,
+    images: parseImagesField(row.images),
+    hold_until: row.hold_until || null,
+    active_hold_request_id: row.active_hold_request_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -82,10 +132,11 @@ function validateRoomInput(payload, { partial = false } = {}) {
   }
 
   if (payload.status !== undefined) {
-    if (!ROOM_STATUSES.includes(payload.status)) {
+    const st = String(payload.status).trim().toUpperCase();
+    if (!ROOM_STATUSES.includes(st)) {
       errors.push(`status must be one of: ${ROOM_STATUSES.join(', ')}`);
     } else {
-      data.status = payload.status;
+      data.status = st;
     }
   }
 
@@ -97,6 +148,20 @@ function validateRoomInput(payload, { partial = false } = {}) {
     } else {
       data.description = payload.description.trim() || null;
     }
+  }
+
+  if (payload.room_type !== undefined) {
+    if (payload.room_type === null || payload.room_type === '') {
+      data.room_type = null;
+    } else if (!ROOM_TYPES.includes(String(payload.room_type))) {
+      errors.push(`room_type must be one of: ${ROOM_TYPES.join(', ')}`);
+    } else {
+      data.room_type = payload.room_type;
+    }
+  }
+
+  if (payload.images !== undefined) {
+    data.images = JSON.stringify(parseImagesField(payload.images));
   }
 
   return { errors, data };
@@ -117,11 +182,33 @@ function handleDatabaseError(err, res) {
 
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT room_id, room_number, floor, area, max_tenants, price, status, description, created_at, updated_at
-       FROM rooms
-       ORDER BY room_id ASC`
-    );
+    await ensureRoomsTable();
+    await expireStaleRoomHolds();
+
+    const forGuest = String(req.query.for_guest || '').trim() === '1';
+    const statusFilter = req.query.status
+      ? String(req.query.status).trim().toUpperCase()
+      : null;
+
+    const params = [];
+    let sql = `SELECT ${ROOM_SELECT} FROM rooms`;
+
+    if (forGuest) {
+      sql += ` WHERE status IN ('AVAILABLE'::room_status, 'HELD'::room_status)`;
+    } else if (statusFilter) {
+      if (!ROOM_STATUSES.includes(statusFilter)) {
+        return res.status(400).json({
+          ok: false,
+          message: `status must be one of: ${ROOM_STATUSES.join(', ')}`,
+        });
+      }
+      params.push(statusFilter);
+      sql += ` WHERE status = $1::room_status`;
+    }
+
+    sql += ` ORDER BY room_number ASC, room_id ASC`;
+
+    const result = await pool.query(sql, params);
 
     return res.json({ ok: true, rooms: result.rows.map(formatRoom) });
   } catch (err) {
@@ -129,19 +216,44 @@ router.get('/', async (req, res) => {
   }
 });
 
+/** Admin: upload ảnh phòng (trả về URL tương đối /uploads/room-images/...) */
+router.post(
+  '/admin/upload-images',
+  requireAuth,
+  requireAdmin,
+  (req, res, next) => {
+    roomImageUpload.array('images', 8)(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ ok: false, message: err.message || 'upload failed' });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const files = req.files || [];
+      if (!files.length) {
+        return res.status(400).json({ ok: false, message: 'no images uploaded' });
+      }
+      const urls = files.map((f) => `/uploads/room-images/${f.filename}`);
+      return res.json({ ok: true, urls });
+    } catch (err) {
+      console.error('Room image upload error:', err);
+      return res.status(500).json({ ok: false, message: 'upload failed' });
+    }
+  }
+);
+
 router.get('/:id', async (req, res) => {
   try {
+    await ensureRoomsTable();
+    await expireStaleRoomHolds();
     const roomId = Number(req.params.id);
     if (!Number.isInteger(roomId) || roomId <= 0) {
       return res.status(400).json({ ok: false, message: 'invalid room id' });
     }
 
-    const result = await pool.query(
-      `SELECT room_id, room_number, floor, area, max_tenants, price, status, description, created_at, updated_at
-       FROM rooms
-       WHERE room_id = $1`,
-      [roomId]
-    );
+    const result = await pool.query(`SELECT ${ROOM_SELECT} FROM rooms WHERE room_id = $1`, [roomId]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ ok: false, message: 'room not found' });
@@ -153,17 +265,18 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
+    await ensureRoomsTable();
     const { errors, data } = validateRoomInput(req.body || {});
     if (errors.length > 0) {
       return res.status(400).json({ ok: false, message: 'validation error', errors });
     }
 
     const result = await pool.query(
-      `INSERT INTO rooms (room_number, floor, area, max_tenants, price, status, description)
-       VALUES ($1, $2, $3, $4, $5, $6::room_status, $7)
-       RETURNING room_id, room_number, floor, area, max_tenants, price, status, description, created_at, updated_at`,
+      `INSERT INTO rooms (room_number, floor, area, max_tenants, price, status, description, room_type, images)
+       VALUES ($1, $2, $3, $4, $5, $6::room_status, $7, $8, $9::jsonb)
+       RETURNING ${ROOM_SELECT}`,
       [
         data.room_number,
         data.floor ?? null,
@@ -172,6 +285,8 @@ router.post('/', async (req, res) => {
         data.price,
         data.status ?? 'AVAILABLE',
         data.description ?? null,
+        data.room_type ?? null,
+        data.images ?? '[]',
       ]
     );
 
@@ -181,8 +296,9 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
+    await ensureRoomsTable();
     const roomId = Number(req.params.id);
     if (!Number.isInteger(roomId) || roomId <= 0) {
       return res.status(400).json({ ok: false, message: 'invalid room id' });
@@ -204,6 +320,9 @@ router.put('/:id', async (req, res) => {
       if (key === 'status') {
         return `${key} = $${index + 1}::room_status`;
       }
+      if (key === 'images') {
+        return `${key} = $${index + 1}::jsonb`;
+      }
       return `${key} = $${index + 1}`;
     });
 
@@ -213,7 +332,7 @@ router.put('/:id', async (req, res) => {
       `UPDATE rooms
        SET ${setClauses.join(', ')}, updated_at = NOW()
        WHERE room_id = $${values.length}
-       RETURNING room_id, room_number, floor, area, max_tenants, price, status, description, created_at, updated_at`,
+       RETURNING ${ROOM_SELECT}`,
       values
     );
 
@@ -227,8 +346,9 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
+    await ensureRoomsTable();
     const roomId = Number(req.params.id);
     if (!Number.isInteger(roomId) || roomId <= 0) {
       return res.status(400).json({ ok: false, message: 'invalid room id' });
