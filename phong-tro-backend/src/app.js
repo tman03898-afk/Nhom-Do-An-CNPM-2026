@@ -77,6 +77,7 @@ app.use('/api', analyticsRoutes);
 app.use('/api', adminRemovalLogRouter);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/room-holds', require('./routes/roomHolds'));
+app.use('/api', require('./routes/adminProfile'));
 app.use('/api', debugRoutes);
 
 app.use((err, req, res, next) => {
