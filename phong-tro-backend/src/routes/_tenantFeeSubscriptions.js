@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { formatCalendarDateString } = require('./_dbHelpers');
+const { once } = require('./_schemaCache');
 
 async function hasPublicTable(tableName) {
   const r = await pool.query(
@@ -25,6 +26,7 @@ function isFeeSubscribableRow(row) {
 }
 
 async function ensureTenantFeeSubscriptionsTable() {
+  return once('schema:tenant_fee_subscriptions', async () => {
   if (!(await hasPublicTable('service_fees'))) return;
 
   await pool.query(`
@@ -61,6 +63,7 @@ async function ensureTenantFeeSubscriptionsTable() {
     `UPDATE service_fees SET is_active = false
      WHERE TRIM(fee_name) IN ('Bảo vệ', 'Thang máy')`
   );
+  });
 }
 
 function firstDayOfNextMonthYmd() {

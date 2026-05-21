@@ -61,7 +61,7 @@ async function sendProfileOtpSms(phone, code) {
     throw new Error('INVALID_PHONE');
   }
 
-  const text = `[The Nest Living] Ma xac thuc ho so: ${code}. Hieu luc 10 phut. Khong chia se ma nay.`;
+  const text = `[The Sun] Ma xac thuc ho so: ${code}. Hieu luc 10 phut. Khong chia se ma nay.`;
 
   if (twilioConfigured()) {
     await sendViaTwilio(to, text);
@@ -95,7 +95,7 @@ async function sendPasswordRecoverySms(phone, code) {
     throw new Error('INVALID_PHONE');
   }
 
-  const text = `[The Nest Living] Ma doi mat khau tai khoan: ${code}. Hieu luc 10 phut. Khong chia se ma nay.`;
+  const text = `[The Sun] Ma doi mat khau tai khoan: ${code}. Hieu luc 10 phut. Khong chia se ma nay.`;
 
   if (twilioConfigured()) {
     await sendViaTwilio(to, text);
@@ -114,9 +114,36 @@ async function sendPasswordRecoverySms(phone, code) {
   return { ok: true, provider: 'log', to: maskPhoneLog(to) };
 }
 
+/**
+ * Gửi thông tin đăng nhập tenant qua SMS (khi guest chỉ để SĐT).
+ */
+async function sendTenantAccountCredentialsSms(phone, { fullName, email, password, roomNumber, contractId }) {
+  const to = toE164Vietnam(phone);
+  if (!to || digitsOnly(phone).length < 8) {
+    throw new Error('INVALID_PHONE');
+  }
+
+  const text = `[The Sun] HD #${contractId || ''} phong ${roomNumber || ''}. Dang nhap: ${email} / MK: ${password}. Doi MK sau lan dau.`;
+
+  if (twilioConfigured()) {
+    await sendViaTwilio(to, text);
+    return { ok: true, provider: 'twilio', to: maskPhoneLog(to) };
+  }
+
+  if (process.env.SMS_REQUIRE_REAL === '1') {
+    throw new Error(
+      'SMS_NOT_CONFIGURED — Thiết lập TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN và TWILIO_PHONE_NUMBER hoặc TWILIO_MESSAGING_SERVICE_SID trong .env'
+    );
+  }
+
+  console.warn(`[SMS — tài khoản tenant] → ${maskPhoneLog(to)}: ${text}`);
+  return { ok: true, provider: 'log', to: maskPhoneLog(to) };
+}
+
 module.exports = {
   sendProfileOtpSms,
   sendPasswordRecoverySms,
+  sendTenantAccountCredentialsSms,
   twilioConfigured,
   toE164Vietnam,
 };

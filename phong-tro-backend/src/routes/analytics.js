@@ -2,23 +2,12 @@ const express = require('express');
 
 const pool = require('../config/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { ensureRoomsTable, ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
+const { ensureRoomsTable, ensureUsersTable, ensureTenantsTable, formatCalendarDateString } = require('./_dbHelpers');
 const { ensureInvoicesTable } = require('./invoices');
-const { ensurePaymentsTable } = require('./payments');
 
 const router = express.Router();
 
-function currentYearMonth() {
-  const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
-}
-
-function pctChange(current, previous) {
-  const c = Number(current) || 0;
-  const p = Number(previous) || 0;
-  if (p <= 0) return c > 0 ? 100 : 0;
-  return Math.round(((c - p) / p) * 1000) / 10;
-}
+const INVOICE_PAID_SQL = `UPPER(TRIM(COALESCE(i.status::text, ''))) = 'PAID'`;
 
 async function safeCount(sql, params = []) {
   try {
@@ -37,28 +26,26 @@ router.get('/admin/nav-badges', requireAuth, requireAdmin, async (req, res) => {
   try {
     const adminId = req.auth.sub;
 
-    const tickets = await safeCount(`SELECT COUNT(*)::int AS count FROM incidents WHERE status::text = 'OPEN'`);
-
-    const payments = await safeCount(
-      `SELECT COUNT(*)::int AS count FROM payments WHERE COALESCE(status::text, '') = 'PENDING'`
-    );
-
-    const invoices = await safeCount(`
+    const [tickets, payments, invoices, notifications, contracts] = await Promise.all([
+      safeCount(`SELECT COUNT(*)::int AS count FROM incidents WHERE status::text = 'OPEN'`),
+      safeCount(
+        `SELECT COUNT(*)::int AS count FROM payments WHERE COALESCE(status::text, '') = 'PENDING'`
+      ),
+      safeCount(`
       SELECT COUNT(*)::int AS count FROM invoices
       WHERE COALESCE(status::text, '') NOT IN ('PAID', 'CANCELLED')
-    `);
-
-    const notifications = await safeCount(
-      `SELECT COUNT(*)::int AS count FROM notifications WHERE user_id = $1 AND is_read = FALSE`,
-      [adminId]
-    );
-
-    const contracts = await safeCount(`
+    `),
+      safeCount(
+        `SELECT COUNT(*)::int AS count FROM notifications WHERE user_id = $1 AND is_read = FALSE`,
+        [adminId]
+      ),
+      safeCount(`
       SELECT COUNT(*)::int AS count FROM contracts
       WHERE COALESCE(status::text, '') = 'ACTIVE'
         AND end_date IS NOT NULL
         AND end_date <= CURRENT_DATE + INTERVAL '30 days'
-    `);
+    `),
+    ]);
 
     return res.json({
       ok: true,
@@ -72,197 +59,6 @@ router.get('/admin/nav-badges', requireAuth, requireAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('Nav badges error:', err);
-    return res.status(500).json({ ok: false, message: 'internal error' });
-  }
-});
-
-/** Doanh thu & chi phí tiện ích theo tháng (hóa đơn PAID). */
-router.get('/admin/analytics/monthly-series', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    await ensureInvoicesTable();
-    const year = Number(req.query.year) || new Date().getFullYear();
-
-    const rows = await pool.query(
-      `SELECT
-         EXTRACT(MONTH FROM billing_month)::int AS month,
-         COALESCE(SUM(total_amount), 0)::float AS revenue,
-         COALESCE(SUM(COALESCE(electricity_amount, 0) + COALESCE(water_amount, 0) + COALESCE(other_fees_amount, 0)), 0)::float AS cost
-       FROM invoices
-       WHERE status::text = 'PAID'
-         AND EXTRACT(YEAR FROM billing_month) = $1
-       GROUP BY 1
-       ORDER BY 1`,
-      [year]
-    );
-
-    const byMonth = new Map(rows.rows.map((r) => [Number(r.month), r]));
-    const months = Array.from({ length: 12 }, (_, i) => {
-      const m = i + 1;
-      const row = byMonth.get(m);
-      return {
-        month: m,
-        label: `T${m}`,
-        revenue: Number(row?.revenue || 0),
-        cost: Number(row?.cost || 0),
-      };
-    });
-
-    return res.json({ ok: true, year, months });
-  } catch (err) {
-    console.error('Monthly series error:', err);
-    return res.status(500).json({ ok: false, message: 'internal error' });
-  }
-});
-
-/** Tỷ lệ thu hộ kỳ hiện tại (theo billing_month tháng/năm hiện tại). */
-router.get('/admin/analytics/collection-summary', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    await ensureInvoicesTable();
-    const { year, month } = currentYearMonth();
-
-    const r = await pool.query(
-      `SELECT
-         COALESCE(SUM(rent_amount) FILTER (WHERE status::text = 'PAID'), 0)::float AS rent_collected,
-         COALESCE(SUM(rent_amount) FILTER (WHERE status::text <> 'CANCELLED'), 0)::float AS rent_billed,
-         COALESCE(SUM(COALESCE(electricity_amount, 0) + COALESCE(water_amount, 0) + COALESCE(other_fees_amount, 0))
-           FILTER (WHERE status::text = 'PAID'), 0)::float AS utilities_collected,
-         COALESCE(SUM(COALESCE(electricity_amount, 0) + COALESCE(water_amount, 0) + COALESCE(other_fees_amount, 0))
-           FILTER (WHERE status::text <> 'CANCELLED'), 0)::float AS utilities_billed,
-         COALESCE(SUM(total_amount) FILTER (WHERE status::text = 'PAID'), 0)::float AS total_collected,
-         COALESCE(SUM(total_amount) FILTER (WHERE status::text <> 'CANCELLED'), 0)::float AS total_billed
-       FROM invoices
-       WHERE EXTRACT(YEAR FROM billing_month) = $1
-         AND EXTRACT(MONTH FROM billing_month) = $2`,
-      [year, month]
-    );
-
-    const row = r.rows[0] || {};
-    const rentBilled = Number(row.rent_billed || 0);
-    const rentCollected = Number(row.rent_collected || 0);
-    const utilBilled = Number(row.utilities_billed || 0);
-    const utilCollected = Number(row.utilities_collected || 0);
-
-    const prevMonth = month === 1 ? 12 : month - 1;
-    const prevYear = month === 1 ? year - 1 : year;
-    const prev = await pool.query(
-      `SELECT COALESCE(SUM(total_amount) FILTER (WHERE status::text = 'PAID'), 0)::float AS revenue
-       FROM invoices
-       WHERE EXTRACT(YEAR FROM billing_month) = $1 AND EXTRACT(MONTH FROM billing_month) = $2`,
-      [prevYear, prevMonth]
-    );
-    const currentRevenue = Number(row.total_collected || 0);
-    const prevRevenue = Number(prev.rows[0]?.revenue || 0);
-
-    return res.json({
-      ok: true,
-      period: { year, month },
-      revenue: {
-        current: currentRevenue,
-        previous: prevRevenue,
-        change_pct: pctChange(currentRevenue, prevRevenue),
-      },
-      rent: {
-        collected: rentCollected,
-        billed: rentBilled,
-        pct: rentBilled > 0 ? Math.round((rentCollected / rentBilled) * 100) : 0,
-      },
-      utilities: {
-        collected: utilCollected,
-        billed: utilBilled,
-        pct: utilBilled > 0 ? Math.round((utilCollected / utilBilled) * 100) : 0,
-      },
-    });
-  } catch (err) {
-    console.error('Collection summary error:', err);
-    return res.status(500).json({ ok: false, message: 'internal error' });
-  }
-});
-
-/** Hoạt động gần đây (thanh toán, phiếu bảo trì, hợp đồng). */
-router.get('/admin/analytics/recent-activity', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    await ensureInvoicesTable();
-    await ensurePaymentsTable();
-    await ensureUsersTable();
-    await ensureRoomsTable();
-    await ensureTenantsTable();
-
-    const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 8));
-
-    const [payments, tickets, contracts] = await Promise.all([
-      pool.query(
-        `SELECT p.payment_id, p.amount_paid, p.paid_at, p.updated_at, p.status,
-                u.full_name AS tenant_name, r.room_number
-         FROM payments p
-         LEFT JOIN invoices i ON i.invoice_id = p.invoice_id
-         LEFT JOIN tenants t ON t.tenant_id = i.tenant_id
-         LEFT JOIN users u ON u.user_id = t.user_id
-         LEFT JOIN rooms r ON r.room_id = i.room_id OR r.room_id = t.room_id
-         WHERE COALESCE(p.status::text, '') IN ('APPROVED', 'COMPLETED', 'PAID')
-         ORDER BY COALESCE(p.paid_at, p.updated_at, p.created_at) DESC NULLS LAST
-         LIMIT 6`
-      ).catch(() => ({ rows: [] })),
-      pool.query(
-        `SELECT i.incident_id, i.title, i.status, i.created_at, r.room_number
-         FROM incidents i
-         LEFT JOIN rooms r ON r.room_id = i.room_id
-         ORDER BY i.created_at DESC
-         LIMIT 6`
-      ).catch(() => ({ rows: [] })),
-      pool.query(
-        `SELECT c.contract_id, c.status, c.created_at, r.room_number, u.full_name AS tenant_name
-         FROM contracts c
-         LEFT JOIN rooms r ON r.room_id = c.room_id
-         LEFT JOIN tenants t ON t.tenant_id = c.tenant_id
-         LEFT JOIN users u ON u.user_id = t.user_id
-         ORDER BY c.created_at DESC
-         LIMIT 6`
-      ).catch(() => ({ rows: [] })),
-    ]);
-
-    const items = [];
-
-    for (const p of payments.rows) {
-      const at = p.paid_at || p.updated_at;
-      items.push({
-        type: 'payment',
-        title: `Thanh toán ${Number(p.amount_paid || 0).toLocaleString('vi-VN')}đ`,
-        detail: [p.tenant_name, p.room_number ? `Phòng ${p.room_number}` : null].filter(Boolean).join(' · ') || 'Khách thuê',
-        at,
-      });
-    }
-
-    for (const t of tickets.rows) {
-      const st = String(t.status || '').toUpperCase();
-      let statusLabel = 'Phiếu bảo trì';
-      if (st === 'OPEN' || st === 'PENDING') statusLabel = 'Phiếu chờ xử lý';
-      else if (st === 'RESOLVED' || st === 'DONE' || st === 'CLOSED') statusLabel = 'Phiếu đã xử lý';
-      items.push({
-        type: 'ticket',
-        title: t.title || statusLabel,
-        detail: t.room_number ? `Phòng ${t.room_number}` : statusLabel,
-        at: t.created_at,
-      });
-    }
-
-    for (const c of contracts.rows) {
-      items.push({
-        type: 'contract',
-        title: `Hợp đồng #${c.contract_id}`,
-        detail: [c.tenant_name, c.room_number ? `Phòng ${c.room_number}` : null, c.status].filter(Boolean).join(' · '),
-        at: c.created_at,
-      });
-    }
-
-    items.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
-    const sliced = items.slice(0, limit).map((x) => ({
-      ...x,
-      at: x.at ? new Date(x.at).toISOString() : null,
-    }));
-
-    return res.json({ ok: true, activities: sliced });
-  } catch (err) {
-    console.error('Recent activity error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
 });
@@ -285,6 +81,113 @@ router.get('/admin/analytics/overview', requireAuth, requireAdmin, async (req, r
     return res.json({ ok: true, overview: result.rows[0] });
   } catch (err) {
     console.error('Analytics overview error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
+/** Doanh thu tháng hiện tại (hóa đơn PAID) + tỷ trọng tiền phòng / dịch vụ · điện nước — FE PaymentManage & Dashboard. */
+router.get('/admin/analytics/collection-summary', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await ensureUsersTable();
+    await ensureRoomsTable();
+    await ensureTenantsTable();
+    await ensureInvoicesTable();
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    const currentStart = formatCalendarDateString(year, month, 1);
+    const prev = month === 1 ? { y: year - 1, m: 12 } : { y: year, m: month - 1 };
+    const prevStart = formatCalendarDateString(prev.y, prev.m, 1);
+    if (!currentStart || !prevStart) {
+      return res.status(500).json({ ok: false, message: 'internal error' });
+    }
+
+    const cur = await pool.query(
+      `SELECT
+         COALESCE(SUM(i.total_amount), 0)::numeric AS total_sum,
+         COALESCE(SUM(i.rent_amount), 0)::numeric AS rent_sum,
+         COALESCE(SUM(COALESCE(i.electricity_amount, 0) + COALESCE(i.water_amount, 0) + COALESCE(i.other_fees_amount, 0)), 0)::numeric AS util_sum
+       FROM invoices i
+       WHERE (${INVOICE_PAID_SQL})
+         AND date_trunc('month', i.billing_month) = date_trunc('month', $1::date)`,
+      [currentStart]
+    );
+
+    const pv = await pool.query(
+      `SELECT COALESCE(SUM(i.total_amount), 0)::numeric AS total_sum
+       FROM invoices i
+       WHERE (${INVOICE_PAID_SQL})
+         AND date_trunc('month', i.billing_month) = date_trunc('month', $1::date)`,
+      [prevStart]
+    );
+
+    const total = Number(cur.rows[0]?.total_sum || 0);
+    const rent = Number(cur.rows[0]?.rent_sum || 0);
+    const util = Number(cur.rows[0]?.util_sum || 0);
+    const prevTotal = Number(pv.rows[0]?.total_sum || 0);
+
+    const changePct = prevTotal > 0 ? Math.round(((total - prevTotal) / prevTotal) * 100) : null;
+
+    const rentPct = total > 0 ? Math.min(100, Math.round((rent / total) * 100)) : 0;
+    const utilPct = total > 0 ? Math.min(100, Math.round((util / total) * 100)) : 0;
+
+    return res.json({
+      ok: true,
+      period: { month, year },
+      revenue: {
+        current: total,
+        change_pct: changePct,
+      },
+      rent: { pct: rentPct },
+      utilities: { pct: utilPct },
+    });
+  } catch (err) {
+    console.error('collection-summary error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
+/** 12 tháng trong năm query: doanh từ hóa đơn PAID. */
+router.get('/admin/analytics/monthly-series', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await ensureUsersTable();
+    await ensureRoomsTable();
+    await ensureTenantsTable();
+    await ensureInvoicesTable();
+
+    let yr = Number(req.query.year);
+    if (!Number.isFinite(yr) || yr < 2000 || yr > 2100) {
+      yr = new Date().getFullYear();
+    }
+
+    const agg = await pool.query(
+      `SELECT
+         EXTRACT(MONTH FROM i.billing_month)::int AS period_month,
+         COALESCE(SUM(i.total_amount), 0)::numeric AS revenue
+       FROM invoices i
+       WHERE (${INVOICE_PAID_SQL})
+         AND EXTRACT(YEAR FROM i.billing_month) = $1
+       GROUP BY EXTRACT(MONTH FROM i.billing_month)
+       ORDER BY 1`,
+      [yr]
+    );
+
+    const byMonth = new Map(agg.rows.map((r) => [Number(r.period_month), Number(r.revenue || 0)]));
+    const months = [];
+    for (let m = 1; m <= 12; m++) {
+      months.push({
+        month: m,
+        label: `T${m}`,
+        revenue: byMonth.get(m) || 0,
+        cost: 0,
+      });
+    }
+
+    return res.json({ ok: true, year: yr, months });
+  } catch (err) {
+    console.error('monthly-series error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
 });

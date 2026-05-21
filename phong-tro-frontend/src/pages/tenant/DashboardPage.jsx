@@ -177,7 +177,7 @@ export default function TenantDashboard() {
                         {greeting}, {view.displayName}!
                     </h1>
                     <p className="text-[#4A787C] font-medium text-[15px] leading-relaxed max-w-[500px]">
-                        Chúc bạn một ngày làm việc và học tập tràn đầy năng lượng tại The Nest Living.
+                        Chúc bạn một ngày làm việc và học tập tràn đầy năng lượng tại The Sun.
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-4 shrink-0">

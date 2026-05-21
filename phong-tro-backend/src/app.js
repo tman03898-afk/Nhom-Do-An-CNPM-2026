@@ -59,7 +59,6 @@ const assetRoutes = require('./routes/assets');
 const analyticsRoutes = require('./routes/analytics');
 const debugRoutes = require('./routes/debug');
 const { router: adminRemovalLogRouter } = require('./routes/adminRemovalLog');
-const adminProfileRoutes = require('./routes/adminProfile');
 
 app.use('/api', zaloRoutes);
 app.use('/api', authRoutes);
@@ -76,8 +75,8 @@ app.use('/api', require('./routes/tenantFeeSubscriptions'));
 app.use('/api', assetRoutes);
 app.use('/api', analyticsRoutes);
 app.use('/api', adminRemovalLogRouter);
-app.use('/api', adminProfileRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/room-holds', require('./routes/roomHolds'));
 app.use('/api', debugRoutes);
 
 app.use((err, req, res, next) => {

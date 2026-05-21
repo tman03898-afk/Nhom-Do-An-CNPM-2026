@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
-  Bird, Mail, Lock, LogIn, 
+  Sun, Mail, Lock, LogIn, 
   ShieldCheck, HelpCircle, Eye, EyeOff
 } from 'lucide-react';
 import { callSupportHotline, openSupportZalo, SUPPORT_HOTLINE } from '../../lib/supportContact';
@@ -51,10 +51,10 @@ export default function LoginPage() {
         {/* Logo Section */}
         <div className="flex flex-col items-center mb-10 text-center">
           <div className="w-16 h-16 rounded-2xl bg-nest-primary/10 flex items-center justify-center text-nest-primary mb-6 shadow-sm border border-nest-primary/5">
-            <Bird size={36} strokeWidth={2.5}/>
+            <Sun size={36} strokeWidth={2.5}/>
           </div>
           <h1 className="text-[28px] md:text-32px font-sans font-bold text-nest-text-primary tracking-tight leading-tight">
-            The Nest <span className="text-nest-primary">Living</span>
+            The <span className="text-nest-primary">Sun</span>
           </h1>
           <p className="text-nest-text-secondary font-medium text-sm mt-2">Nơi khởi đầu của những trải nghiệm sống chất</p>
         </div>

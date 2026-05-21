@@ -70,7 +70,7 @@ export function exportContractPdf({ contract, room, assets = [], tenant, rules =
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
-  doc.text('THE NEST', margin, 14);
+  doc.text('THE SUN', margin, 14);
   doc.setFontSize(17);
   doc.text(pdfSafeText('HOP DONG THUE PHONG'), margin, 26);
   doc.setFontSize(10);
@@ -237,7 +237,7 @@ export function exportContractPdf({ contract, room, assets = [], tenant, rules =
   doc.setFontSize(8);
   doc.setTextColor(130, 171, 176);
   doc.text(
-    pdfSafeText('Tai lieu duoc xuat tu he thong quan ly phong tro The Nest. Vui long lien he ban quan ly neu can chinh sua.'),
+    pdfSafeText('Tai lieu duoc xuat tu he thong quan ly phong tro The Sun. Vui long lien he ban quan ly neu can chinh sua.'),
     margin,
     footerY
   );

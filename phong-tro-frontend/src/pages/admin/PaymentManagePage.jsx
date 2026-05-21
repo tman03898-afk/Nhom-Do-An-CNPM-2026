@@ -26,7 +26,7 @@ export default function PaymentManagePage() {
       try {
          const data = await apiFetch('/admin/payments', { token });
          setPayments(data.payments || []);
-      } catch (e) {
+      } catch {
          setPayments([]);
       } finally {
          setIsLoading(false);

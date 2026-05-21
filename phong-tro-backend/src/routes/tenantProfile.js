@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 const { requireAuth, requireTenant } = require('../middleware/auth');
 const { ensureTenantsTable, ensureUsersTable } = require('./_dbHelpers');
+const { once } = require('./_schemaCache');
 const { sendProfileOtpSms, sendPasswordRecoverySms } = require('../services/sms');
 const { sendTenantEmailVerificationCode, sendTenantPasswordRecoveryEmail } = require('../services/mail');
 const {
@@ -28,43 +29,45 @@ function normalizeEmail(email) {
 }
 
 async function ensureTenantProfileSchema() {
-  await ensureUsersTable();
-  await ensureTenantsTable();
+  return once('schema:tenant_profile', async () => {
+    await ensureUsersTable();
+    await ensureTenantsTable();
 
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cccd VARCHAR(30)`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cccd VARCHAR(30)`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS tenant_profile_otps (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-      code_hash TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_profile_otps_user_id ON tenant_profile_otps(user_id)`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_profile_otps (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_profile_otps_user_id ON tenant_profile_otps(user_id)`);
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS tenant_email_verifications (
-      user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
-      new_email VARCHAR(255) NOT NULL,
-      code_hash TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_email_verifications (
+        user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        new_email VARCHAR(255) NOT NULL,
+        code_hash TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS tenant_password_recovery_otps (
-      user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
-      channel VARCHAR(10) NOT NULL CHECK (channel IN ('SMS', 'EMAIL')),
-      code_hash TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_password_recovery_otps (
+        user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        channel VARCHAR(10) NOT NULL CHECK (channel IN ('SMS', 'EMAIL')),
+        code_hash TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+  });
 }
 
 const avatarUploadDir = path.join(__dirname, '../../uploads/tenant-avatars');

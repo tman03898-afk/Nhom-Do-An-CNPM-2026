@@ -9,7 +9,8 @@
     "bootstrap-admin": "node scripts/bootstrap-admin.js",
     "reset-admin-password": "node scripts/reset-admin-password.js",
     "seed-demo-data": "node scripts/seed-rooms-tenants.js",
-    "add-available-rooms": "node scripts/add-available-rooms.js"
+    "add-available-rooms": "node scripts/add-available-rooms.js",
+    "seed-guest-rooms": "node scripts/seed-guest-showcase-rooms.js"
   },
   "keywords": [],
   "author": "",

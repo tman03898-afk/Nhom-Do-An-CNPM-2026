@@ -104,7 +104,9 @@ export default function NotificationManagePage() {
     if (!token) return;
     try {
       await apiFetch('/admin/notifications/mark-all-read', { token, method: 'POST' });
-    } catch {}
+    } catch {
+      void 0;
+    }
     window.dispatchEvent(new Event('admin-nav-badges-refresh'));
     await refresh();
   };

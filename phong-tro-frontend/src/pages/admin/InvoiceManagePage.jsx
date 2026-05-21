@@ -3,6 +3,9 @@ import { Info, Download, Eye, Bell, Plus, DollarSign, ClipboardList, TrendingUp,
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
+import InvoiceUtilityDetails from '../../components/invoice/InvoiceUtilityDetails';
+import { parseInvoiceElectricityBreakdown } from '../../components/invoice/parseElectricityBreakdown';
+import { parseInvoiceWaterBreakdown } from '../../components/invoice/parseWaterBreakdown';
 
 function normStatus(s) {
   return String(s ?? '').trim().toUpperCase();
@@ -307,6 +310,22 @@ export default function InvoiceManagePage() {
       Number(editForm.other_fees_amount || 0);
     return Number.isFinite(sum) ? sum : 0;
   }, [editForm]);
+
+  const invoiceViewUtility = useMemo(() => {
+    const vi = viewInvoice;
+    if (!vi) return { showMergedUtility: false, utilityEmptyHint: '' };
+    const hasTierE = !!parseInvoiceElectricityBreakdown(vi.electricity_breakdown);
+    const hasTierW = !!parseInvoiceWaterBreakdown(vi.water_breakdown);
+    const hasSnap = vi.utility_meter_snapshot != null && typeof vi.utility_meter_snapshot === 'object';
+    const amtE = Number(vi.electricity_amount || 0);
+    const amtW = Number(vi.water_amount || 0);
+    const showMergedUtility = amtE > 0 || amtW > 0 || hasTierE || hasTierW || hasSnap;
+    const utilityEmptyHint =
+      !hasTierE && !hasTierW && !hasSnap && (amtE > 0 || amtW > 0)
+        ? 'Chưa có chỉ số điện/nước (cũ → mới) và bảng bậc lưu trên hệ thống — hóa đơn này có thể nhập tay hoặc tạo trước khi lưu chỉ số. Dùng mục nhập & “Xác nhận chỉ số” đúng phòng/kỳ để lần sau hiện đầy đủ ngay dưới tổng tiền điện/nước.'
+        : '';
+    return { showMergedUtility, utilityEmptyHint };
+  }, [viewInvoice]);
 
   const openEditModal = async (inv) => {
     if (!canModifyInvoice(inv)) {
@@ -1078,8 +1097,8 @@ export default function InvoiceManagePage() {
       )}
 
       {isViewOpen && viewInvoice && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-3xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200 my-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-nest-text-primary">Chi tiết hóa đơn</h3>
               <button
@@ -1113,13 +1132,25 @@ export default function InvoiceManagePage() {
                 </p>
               </div>
 
-              <div className="bg-nest-bg rounded-2xl p-4 border border-nest-primary/10">
-                <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Điện/Nước</p>
-                <p className="text-[14px] font-bold text-nest-text-primary">
-                  {Number(viewInvoice.electricity_amount || 0).toLocaleString('vi-VN')}đ /{' '}
-                  {Number(viewInvoice.water_amount || 0).toLocaleString('vi-VN')}đ
-                </p>
-              </div>
+              {invoiceViewUtility.showMergedUtility ? (
+                <div className="bg-nest-bg rounded-2xl p-4 border border-nest-primary/10 sm:col-span-2">
+                  <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Điện — Nước</p>
+                  <p className="text-[15px] font-bold text-nest-text-primary mb-1">
+                    {Number(viewInvoice.electricity_amount || 0).toLocaleString('vi-VN')}đ{' '}
+                    <span className="text-nest-text-secondary font-bold">/</span>{' '}
+                    {Number(viewInvoice.water_amount || 0).toLocaleString('vi-VN')}đ
+                  </p>
+                  <p className="text-[11px] text-nest-text-secondary font-medium mb-4">
+                    Tổng tiền ghi trên hóa đơn (điện · nước). Chi tiết chỉ số &amp; bậc điện/nước bên dưới — nếu có.
+                  </p>
+                  <InvoiceUtilityDetails
+                    electricity_breakdown={viewInvoice.electricity_breakdown}
+                    water_breakdown={viewInvoice.water_breakdown}
+                    utility_meter_snapshot={viewInvoice.utility_meter_snapshot}
+                    emptyHint={invoiceViewUtility.utilityEmptyHint}
+                  />
+                </div>
+              ) : null}
 
               <div className="bg-nest-bg rounded-2xl p-4 border border-nest-primary/10">
                 <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Tiền phòng</p>

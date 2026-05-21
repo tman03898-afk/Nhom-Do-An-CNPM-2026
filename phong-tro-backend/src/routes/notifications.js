@@ -4,10 +4,12 @@ const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
 const { ensureUsersTable } = require('./_dbHelpers');
 const { ensureInvoicesTable } = require('./invoices');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
 async function ensureNotificationsTable() {
+  return once('schema:notifications', async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       notification_id SERIAL PRIMARY KEY,
@@ -47,35 +49,39 @@ async function ensureNotificationsTable() {
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
+  });
 }
 
-/** Cùng người nhận + tiêu đề + nội dung trong khoảng thời gian → coi là trùng. */
-async function hasRecentDuplicateNotification(client, userId, title, body, hours = 24) {
-  const r = await client.query(
-    `SELECT 1
-     FROM notifications
-     WHERE user_id = $1
-       AND title = $2
-       AND COALESCE(body, '') = COALESCE($3, '')
-       AND created_at > NOW() - ($4::int * INTERVAL '1 hour')
-     LIMIT 1`,
-    [userId, String(title).trim(), body ? String(body) : '', Number(hours) || 24]
-  );
-  return r.rowCount > 0;
-}
+router.get('/tenant/notifications/unread-count', requireAuth, async (req, res) => {
+  try {
+    await ensureUsersTable();
+    await ensureNotificationsTable();
+
+    const userId = req.auth.sub;
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM notifications
+       WHERE user_id = $1 AND is_read = FALSE`,
+      [userId]
+    );
+
+    return res.json({ ok: true, unread_count: result.rows[0]?.count ?? 0 });
+  } catch (err) {
+    console.error('Tenant unread count error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
 
 router.get('/tenant/notifications', requireAuth, async (req, res) => {
   try {
     await ensureUsersTable();
     await ensureNotificationsTable();
 
-    // Cùng tiêu đề + nội dung → chỉ hiển thị bản mới nhất (không trùng dòng trên UI)
     const result = await pool.query(
-      `SELECT DISTINCT ON (title, COALESCE(body, ''))
-         notification_id, title, body, is_read, created_at, updated_at
+      `SELECT notification_id, title, body, is_read, created_at, updated_at
        FROM notifications
        WHERE user_id = $1
-       ORDER BY title, COALESCE(body, ''), notification_id DESC`,
+       ORDER BY notification_id DESC`,
       [req.auth.sub]
     );
 
@@ -162,104 +168,25 @@ router.get('/admin/notifications', requireAuth, requireAdmin, async (req, res) =
     await ensureUsersTable();
     await ensureNotificationsTable();
 
-    const mode = String(req.query.mode || 'all').trim().toLowerCase();
-    const adminId = req.auth.sub;
-
-    if (mode === 'inbox') {
-      const inbox = await pool.query(
-        `SELECT DISTINCT ON (title, COALESCE(body, ''))
-           n.notification_id,
-           n.user_id,
-           u.full_name,
-           u.email,
-           n.title,
-           n.body,
-           n.is_read,
-           n.created_at,
-           n.updated_at,
-           n.created_by,
-           1 AS recipient_count
-         FROM notifications n
-         LEFT JOIN users u ON u.user_id = n.user_id
-         WHERE n.user_id = $1
-         ORDER BY title, COALESCE(body, ''), n.notification_id DESC`,
-        [adminId]
-      );
-      return res.json({ ok: true, notifications: inbox.rows });
-    }
-
-    // Gom theo người gửi + nội dung — mỗi cặp (created_by, title, body) chỉ 1 dòng trên UI
     const result = await pool.query(
       `SELECT
-         MAX(n.notification_id) AS notification_id,
-         n.created_by,
-         MAX(sender.full_name) AS sender_name,
-         MAX(sender.email) AS sender_email,
-         MAX(n.user_id) AS user_id,
-         MAX(u.full_name) AS full_name,
-         MAX(u.email) AS email,
+         n.notification_id,
+         n.user_id,
+         u.full_name,
+         u.email,
          n.title,
-         MAX(n.body) AS body,
-         BOOL_OR(NOT n.is_read) AS is_read,
-         MAX(n.created_at) AS created_at,
-         MAX(n.updated_at) AS updated_at,
-         COUNT(*)::int AS recipient_count,
-         STRING_AGG(
-           COALESCE(NULLIF(TRIM(u.full_name), ''), u.email, 'User #' || u.user_id::text),
-           ', '
-         ) AS recipients_label
+         n.body,
+         n.is_read,
+         n.created_at,
+         n.updated_at
        FROM notifications n
        LEFT JOIN users u ON u.user_id = n.user_id
-       LEFT JOIN users sender ON sender.user_id = n.created_by
-       GROUP BY n.created_by, n.title, COALESCE(n.body, '')
-       ORDER BY MAX(n.created_at) DESC`
+       ORDER BY n.notification_id DESC`
     );
 
     return res.json({ ok: true, notifications: result.rows });
   } catch (err) {
     console.error('List admin notifications error:', err);
-    return res.status(500).json({ ok: false, message: 'internal error' });
-  }
-});
-
-/** Admin xóa một thông báo (gỡ khỏi hộp thư người nhận tương ứng). */
-router.delete('/admin/notifications/:id', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    await ensureUsersTable();
-    await ensureNotificationsTable();
-
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ ok: false, message: 'invalid notification id' });
-    }
-
-    const snap = await pool.query(
-      `SELECT title, body, created_by FROM notifications WHERE notification_id = $1`,
-      [id]
-    );
-    if (snap.rowCount === 0) {
-      return res.status(404).json({ ok: false, message: 'notification not found' });
-    }
-    const row = snap.rows[0];
-
-    const result = await pool.query(
-      `DELETE FROM notifications n
-       WHERE n.title = $1
-         AND COALESCE(n.body, '') = COALESCE($2, '')
-         AND (
-           (n.created_by IS NOT DISTINCT FROM $3)
-         )
-       RETURNING notification_id`,
-      [row.title, row.body, row.created_by]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ ok: false, message: 'notification not found' });
-    }
-
-    return res.json({ ok: true, message: 'notification deleted', deleted: result.rowCount });
-  } catch (err) {
-    console.error('Delete notification error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
 });
@@ -277,52 +204,29 @@ router.post('/admin/notifications', requireAuth, requireAdmin, async (req, res) 
 
     await client.query('BEGIN');
 
-    const trimmedTitle = String(title).trim();
-    const trimmedBody = body ? String(body) : null;
-
     if (user_id) {
-      const uid = Number(user_id);
-      if (await hasRecentDuplicateNotification(client, uid, trimmedTitle, trimmedBody)) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({
-          ok: false,
-          message: 'duplicate notification for this user within 24 hours',
-        });
-      }
       const result = await client.query(
         `INSERT INTO notifications (user_id, title, body, created_by)
          VALUES ($1, $2, $3, $4)
          RETURNING notification_id, user_id, title, body, is_read, created_at, updated_at`,
-        [uid, trimmedTitle, trimmedBody, req.auth.sub]
+        [Number(user_id), String(title).trim(), body ? String(body) : null, req.auth.sub]
       );
       await client.query('COMMIT');
       return res.status(201).json({ ok: true, notification: result.rows[0] });
     }
 
-    // broadcast: insert a notification per active user (bỏ qua người đã có cùng nội dung 24h)
+    // broadcast: insert a notification per active user
     const users = await client.query(`SELECT user_id FROM users WHERE is_active = TRUE`);
-    let sent = 0;
-    let skipped = 0;
     for (const u of users.rows) {
-      if (await hasRecentDuplicateNotification(client, u.user_id, trimmedTitle, trimmedBody)) {
-        skipped += 1;
-        continue;
-      }
       await client.query(
         `INSERT INTO notifications (user_id, title, body, created_by)
          VALUES ($1, $2, $3, $4)`,
-        [u.user_id, trimmedTitle, trimmedBody, req.auth.sub]
+        [u.user_id, String(title).trim(), body ? String(body) : null, req.auth.sub]
       );
-      sent += 1;
     }
 
     await client.query('COMMIT');
-    return res.status(201).json({
-      ok: true,
-      message: 'broadcast sent',
-      recipients: sent,
-      skipped_duplicates: skipped,
-    });
+    return res.status(201).json({ ok: true, message: 'broadcast sent', recipients: users.rowCount });
   } catch (err) {
     try {
       await client.query('ROLLBACK');

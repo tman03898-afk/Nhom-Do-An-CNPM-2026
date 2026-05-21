@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- context exports Provider + useToast hook */
 import { createContext, useContext, useState, useCallback } from 'react';
 import { CheckCircle2, AlertCircle, X, Info } from 'lucide-react';
 
@@ -33,11 +34,17 @@ export const ToastProvider = ({ children }) => {
               pointer-events-auto
               flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-md
               animate-in slide-in-from-right-full duration-300
-              ${toast.type === 'success' ? 'bg-[#F2FCFD]/90 border-[#14B8A6]/30 text-[#0F3A40]' : 'bg-red-50/90 border-red-200 text-red-900'}
+              ${toast.type === 'success'
+                ? 'bg-[#F2FCFD]/90 border-[#14B8A6]/30 text-[#0F3A40]'
+                : toast.type === 'info'
+                  ? 'bg-sky-50/95 border-sky-200 text-sky-950'
+                  : 'bg-red-50/90 border-red-200 text-red-900'}
             `}
           >
             {toast.type === 'success' ? (
               <CheckCircle2 className="w-5 h-5 text-[#14B8A6]" />
+            ) : toast.type === 'info' ? (
+              <Info className="w-5 h-5 text-sky-600" />
             ) : (
               <AlertCircle className="w-5 h-5 text-red-500" />
             )}

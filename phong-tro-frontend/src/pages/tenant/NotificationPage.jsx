@@ -67,7 +67,9 @@ export default function TenantNotificationPage() {
     if (!token) return;
     try {
       await apiFetch(`/tenant/notifications/${id}/read`, { token, method: 'POST' });
-    } catch {}
+    } catch {
+      void 0;
+    }
     await fetchNotifications();
     window.dispatchEvent(new Event('tenant-notifications-refresh'));
   };
@@ -76,7 +78,9 @@ export default function TenantNotificationPage() {
     if (!token || unreadCount === 0) return;
     try {
       await apiFetch('/tenant/notifications/mark-all-read', { token, method: 'POST' });
-    } catch {}
+    } catch {
+      void 0;
+    }
     await fetchNotifications();
     window.dispatchEvent(new Event('tenant-notifications-refresh'));
   };

@@ -4,14 +4,14 @@ export function parseContractNotesToRules(notes) {
   if (!raw) return [];
 
   const parts = raw.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean);
-  if (parts.length === 1 && !/^\d+[\.\)]\s/.test(parts[0])) {
+  if (parts.length === 1 && !/^\d+[.)]\s/.test(parts[0])) {
     return [{ id: 1, title: 'Ghi chú hợp đồng', desc: parts[0] }];
   }
 
   return parts.map((block, i) => {
     const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
     const first = lines[0] || '';
-    const numbered = first.match(/^(\d+)[\.\)]\s*(.+)$/);
+    const numbered = first.match(/^(\d+)[.)]\s*(.+)$/);
     if (numbered) {
       const rest = lines.slice(1).join(' ').trim();
       return {

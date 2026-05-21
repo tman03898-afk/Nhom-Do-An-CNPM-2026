@@ -59,7 +59,6 @@ export default function DashboardPage() {
    const chartYear = new Date().getFullYear();
    const { token } = useAuth();
    const [rooms, setRooms] = useState([]);
-   const [overview, setOverview] = useState(null);
    const [invoices, setInvoices] = useState([]);
    const [tickets, setTickets] = useState([]);
    const [contracts, setContracts] = useState([]);
@@ -67,13 +66,19 @@ export default function DashboardPage() {
    const [monthlySeries, setMonthlySeries] = useState([]);
    const [activities, setActivities] = useState([]);
    const [collectionSummary, setCollectionSummary] = useState(null);
+   /** Mốc thời gian cho thống kê quá hạn (tránh Date.now trong render). */
+   const [invoiceAsOf, setInvoiceAsOf] = useState(null);
+
+   useEffect(() => {
+      queueMicrotask(() => setInvoiceAsOf(Date.now()));
+   }, [invoices]);
 
    useEffect(() => {
       const fetchRooms = async () => {
          try {
             const data = await apiFetch('/rooms', { token });
             setRooms(data.rooms || []);
-         } catch (error) {
+         } catch {
             setRooms([]);
          }
       };
@@ -84,20 +89,18 @@ export default function DashboardPage() {
       const run = async () => {
          if (!token) return;
          try {
-            const [ov, inv, tk, con, tn] = await Promise.all([
+            const [, inv, tk, con, tn] = await Promise.all([
                apiFetch('/admin/analytics/overview', { token }),
                apiFetch('/admin/invoices', { token }),
                apiFetch('/admin/tickets', { token }),
                apiFetch('/admin/contracts', { token }),
                apiFetch('/admin/tenants', { token }),
             ]);
-            setOverview(ov.overview || null);
             setInvoices(inv.invoices || []);
             setTickets(tk.tickets || []);
             setContracts(con.contracts || []);
             setTenants(tn.tenants || []);
-         } catch (e) {
-            setOverview(null);
+         } catch {
             setInvoices([]);
             setTickets([]);
             setContracts([]);
@@ -206,11 +209,14 @@ export default function DashboardPage() {
    }, [rooms]);
 
    const invoiceStats = useMemo(() => {
-      const now = Date.now();
+      const unpaid = invoices.filter((i) => i.status !== 'PAID' && i.status !== 'CANCELLED').length;
+      if (invoiceAsOf == null) {
+         return { unpaid, overdueCount: 0, avgOverdueDays: null };
+      }
+      const now = invoiceAsOf;
       const overdue = invoices.filter(
          (i) => i.status !== 'PAID' && i.status !== 'CANCELLED' && i.due_date && new Date(i.due_date).getTime() < now
       );
-      const unpaid = invoices.filter((i) => i.status !== 'PAID' && i.status !== 'CANCELLED').length;
       const avgOverdueDays =
          overdue.length > 0
             ? Math.round(
@@ -218,7 +224,7 @@ export default function DashboardPage() {
               )
             : null;
       return { unpaid, overdueCount: overdue.length, avgOverdueDays };
-   }, [invoices]);
+   }, [invoices, invoiceAsOf]);
 
    const ticketStats = useMemo(() => {
       const open = tickets.filter((t) => t.status === 'OPEN').length;

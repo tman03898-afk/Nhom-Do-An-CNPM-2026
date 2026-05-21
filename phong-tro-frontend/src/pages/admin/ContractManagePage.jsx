@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ClipboardList, Search,
   Download, Plus, Pencil,
@@ -8,6 +9,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 import { downloadCsv } from '../../utils/exportCsv';
+import ContractFromHoldModal from '../../components/rooms/ContractFromHoldModal';
 
 function toIsoDateInput(value) {
   if (value == null || value === '') return '';
@@ -18,6 +20,9 @@ function toIsoDateInput(value) {
 
 export default function ContractManagePage() {
   const { token } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const holdRequestIdFromUrl = searchParams.get('hold_request_id');
+  const [contractHoldId, setContractHoldId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [contracts, setContracts] = useState([]);
@@ -56,7 +61,7 @@ export default function ContractManagePage() {
     try {
       const data = await apiFetch('/admin/contracts', { token });
       setContracts(data.contracts || []);
-    } catch (e) {
+    } catch {
       setContracts([]);
     } finally {
       setIsLoading(false);
@@ -67,6 +72,14 @@ export default function ContractManagePage() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    const id = Number(holdRequestIdFromUrl);
+    if (Number.isInteger(id) && id > 0) {
+      setContractHoldId(id);
+      setSearchParams({}, { replace: true });
+    }
+  }, [holdRequestIdFromUrl, setSearchParams]);
 
   const stats = useMemo(() => {
     const total = contracts.length;
@@ -852,13 +865,31 @@ export default function ContractManagePage() {
               <button onClick={() => setIsCreateOpen(false)} className="px-6 py-3 rounded-full font-bold text-[#4A787C] hover:text-[#0F3A40]">
                 Hủy
               </button>
-              <button onClick={handleCreate} className="px-8 py-3 rounded-full bg-[#14B8A6] hover:bg-[#0da090] text-white font-bold shadow-lg shadow-[#14B8A6]/20">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleCreate}
+                className="px-8 py-3 rounded-full bg-[#14B8A6] hover:bg-[#0da090] text-white font-bold shadow-lg shadow-[#14B8A6]/20 disabled:opacity-60 disabled:pointer-events-none"
+              >
                 Tạo hợp đồng
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {contractHoldId ? (
+        <ContractFromHoldModal
+          holdRequestId={contractHoldId}
+          token={token}
+          onClose={() => setContractHoldId(null)}
+          onSuccess={async () => {
+            setContractHoldId(null);
+            await refresh();
+            window.dispatchEvent(new Event('admin-nav-badges-refresh'));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

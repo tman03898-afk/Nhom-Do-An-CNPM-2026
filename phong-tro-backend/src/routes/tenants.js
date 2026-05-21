@@ -2,38 +2,12 @@ const express = require('express');
 
 const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
-const { ensureRoomsTable, ensureUsersTable } = require('./_dbHelpers');
+const { ensureRoomsTable, ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
 const { ensureTenantProfileSchema } = require('./tenantProfile');
 const contractRouter = require('./contracts');
 const { insertRemovalLog } = require('./adminRemovalLog');
 
 const router = express.Router();
-
-function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
-}
-
-function usernameFromEmail(email) {
-  return String(email).split('@')[0];
-}
-
-async function ensureTenantsTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS tenants (
-      tenant_id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
-      phone VARCHAR(30),
-      room_id INTEGER REFERENCES rooms(room_id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS phone VARCHAR(30)`);
-  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS room_id INTEGER`);
-  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
-  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
-}
 
 router.get('/admin/tenants', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -99,108 +73,6 @@ router.get('/tenant/me', requireAuth, requireTenant, async (req, res) => {
   } catch (err) {
     console.error('Tenant me error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
-  }
-});
-
-/** Admin cập nhật họ tên, email, số điện thoại khách thuê. */
-router.put('/admin/tenants/:tenantId', requireAuth, requireAdmin, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const tenantId = Number(req.params.tenantId);
-    if (!Number.isInteger(tenantId) || tenantId <= 0) {
-      return res.status(400).json({ ok: false, message: 'invalid tenant id' });
-    }
-
-    const { full_name, email, phone } = req.body || {};
-    const trimmedName = String(full_name || '').trim();
-    const trimmedPhone = String(phone || '').trim();
-    const normalizedEmail = normalizeEmail(email);
-
-    if (!trimmedName || !normalizedEmail || !trimmedPhone) {
-      return res.status(400).json({
-        ok: false,
-        message: 'full_name, email and phone are required',
-      });
-    }
-
-    await ensureTenantsTable();
-    await ensureUsersTable();
-
-    const snap = await client.query(
-      `SELECT t.tenant_id, t.user_id, u.email AS current_email, u.role
-       FROM tenants t
-       JOIN users u ON u.user_id = t.user_id
-       WHERE t.tenant_id = $1`,
-      [tenantId]
-    );
-    if (snap.rowCount === 0) {
-      return res.status(404).json({ ok: false, message: 'tenant not found' });
-    }
-    const trow = snap.rows[0];
-    if (String(trow.role || '').toUpperCase() !== 'TENANT') {
-      return res.status(400).json({ ok: false, message: 'not a tenant account' });
-    }
-
-    if (normalizedEmail !== normalizeEmail(trow.current_email)) {
-      const dup = await client.query(
-        `SELECT user_id FROM users WHERE LOWER(email) = $1 AND user_id <> $2 LIMIT 1`,
-        [normalizedEmail, trow.user_id]
-      );
-      if (dup.rowCount > 0) {
-        return res.status(409).json({ ok: false, message: 'email already exists' });
-      }
-    }
-
-    await client.query('BEGIN');
-
-    await client.query(
-      `UPDATE users
-       SET full_name = $1,
-           email = $2,
-           username = $3,
-           updated_at = NOW()
-       WHERE user_id = $4`,
-      [trimmedName, normalizedEmail, usernameFromEmail(normalizedEmail), trow.user_id]
-    );
-
-    await client.query(
-      `UPDATE tenants SET phone = $1, updated_at = NOW() WHERE tenant_id = $2`,
-      [trimmedPhone, tenantId]
-    );
-
-    await client.query('COMMIT');
-
-    const updated = await pool.query(
-      `SELECT
-         u.user_id,
-         u.full_name,
-         u.email,
-         u.role,
-         u.is_active,
-         t.tenant_id,
-         t.phone,
-         r.room_id,
-         r.room_number,
-         r.status AS room_status
-       FROM users u
-       JOIN tenants t ON t.user_id = u.user_id
-       LEFT JOIN rooms r ON r.room_id = t.room_id
-       WHERE t.tenant_id = $1`,
-      [tenantId]
-    );
-
-    return res.json({ ok: true, tenant: updated.rows[0] });
-  } catch (err) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (e) {}
-    if (err.code === '23505') {
-      return res.status(409).json({ ok: false, message: 'email already exists' });
-    }
-    console.error('Update tenant error:', err);
-    return res.status(500).json({ ok: false, message: 'internal error' });
-  } finally {
-    client.release();
   }
 });
 

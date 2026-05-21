@@ -67,7 +67,7 @@ export default function ServiceManagePage() {
       }));
       setServices(mapped);
       setDirtyIds(new Set());
-    } catch (e) {
+    } catch {
       setServices([]);
     } finally {
       setIsLoading(false);
@@ -122,15 +122,6 @@ export default function ServiceManagePage() {
       addToast(e?.message || 'Không từ chối được.', 'error');
     } finally {
       setBusyFeeId(null);
-    }
-  };
-
-  const getMethodLabel = (method) => {
-    switch (method) {
-      case 'meter': return 'Theo chỉ số (m³/kWh)';
-      case 'person': return 'Theo đầu người';
-      case 'fixed': return 'Cố định/Phòng';
-      default: return 'Cố định';
     }
   };
 

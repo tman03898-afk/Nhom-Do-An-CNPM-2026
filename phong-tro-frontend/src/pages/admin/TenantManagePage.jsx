@@ -55,7 +55,7 @@ export default function TenantManagePage() {
         throw new Error(data?.message || 'Không thể tải danh sách khách thuê');
       }
       setTenantsFromApi(data.tenants || []);
-    } catch (error) {
+    } catch {
       setTenantsFromApi([]);
     } finally {
       setIsLoadingTenants(false);

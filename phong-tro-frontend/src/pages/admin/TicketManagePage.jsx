@@ -490,7 +490,7 @@ export default function TicketManagePage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, i) => (
+        {stats.map((stat) => (
           <div key={stat.label} className={`rounded-[24px] p-6 shadow-sm border-2 ${stat.border} ${stat.bg} flex justify-between items-end min-h-[120px]`}>
             <div className="flex flex-col justify-between h-full w-full">
               <span className="text-[12px] font-bold text-[#4A787C] mb-2">{stat.label}</span>

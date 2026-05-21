@@ -4,6 +4,7 @@ const pool = require('../config/db');
 const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
 const { insertRemovalLog } = require('./adminRemovalLog');
 const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
@@ -47,6 +48,7 @@ async function purgeContractDependencies(client, contractId) {
 }
 
 async function ensureNotificationsTable() {
+  return once('schema:notifications', async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       notification_id SERIAL PRIMARY KEY,
@@ -86,9 +88,11 @@ async function ensureNotificationsTable() {
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
+  });
 }
 
 async function ensureContractsTable() {
+  return once('schema:contracts', async () => {
   await ensureEnumType('contract_status', ['ACTIVE', 'EXPIRED', 'TERMINATED']);
 
   await pool.query(`
@@ -191,6 +195,7 @@ async function ensureContractsTable() {
          WHERE i.contract_id = contracts.contract_id
        )
   `);
+  });
 }
 
 function normalizeDate(value) {
@@ -551,8 +556,6 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
     await ensureTenantsTable();
     await ensureContractsTable();
 
-    const { resolveTenantRoomId } = require('./assets');
-
     const result = await pool.query(
       `SELECT
          c.contract_id,
@@ -577,21 +580,11 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
       [req.auth.sub]
     );
 
-    const contract =
-      result.rowCount > 0 && result.rows[0].contract_id ? result.rows[0] : null;
-
-    const roomId = await resolveTenantRoomId(req.auth.sub);
-    let room = null;
-    if (roomId) {
-      const roomRes = await pool.query(
-        `SELECT room_id, room_number, floor, area, max_tenants, price, status, description, created_at, updated_at
-         FROM rooms WHERE room_id = $1 LIMIT 1`,
-        [roomId]
-      );
-      room = roomRes.rows[0] || null;
+    if (result.rowCount === 0 || !result.rows[0].contract_id) {
+      return res.json({ ok: true, contract: null });
     }
 
-    return res.json({ ok: true, contract, room });
+    return res.json({ ok: true, contract: result.rows[0] });
   } catch (err) {
     console.error('Tenant contract error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
@@ -601,3 +594,6 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
 router.ensureContractsTable = ensureContractsTable;
 router.purgeContractDependencies = purgeContractDependencies;
 module.exports = router;
+module.exports.ensureContractsTable = ensureContractsTable;
+module.exports.ensureNotificationsTable = ensureNotificationsTable;
+module.exports.normalizeDate = normalizeDate;

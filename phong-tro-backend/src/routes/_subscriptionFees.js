@@ -1,7 +1,9 @@
 const pool = require('../config/db');
 const tenantFee = require('./_tenantFeeSubscriptions');
+const { once } = require('./_schemaCache');
 
 async function ensureTenantServiceSubscriptionsTable() {
+  return once('schema:tenant_service_subscriptions', async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tenant_service_subscriptions (
       subscription_id SERIAL PRIMARY KEY,
@@ -22,6 +24,7 @@ async function ensureTenantServiceSubscriptionsTable() {
     WHERE status = 'ACTIVE'
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tss_tenant ON tenant_service_subscriptions(tenant_id)`);
+  });
 }
 
 /**

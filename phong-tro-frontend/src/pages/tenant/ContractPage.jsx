@@ -186,7 +186,7 @@ export default function ContractPage() {
             });
             const data = await response.json();
             if (response.ok && data?.ok) setTenantProfile(data.tenant);
-         } catch (error) {
+         } catch {
             setTenantProfile(null);
          }
       };
@@ -354,7 +354,7 @@ export default function ContractPage() {
                         <Home size={32} />
                      </div>
                      <div>
-                        <h2 className="text-[24px] font-bold text-[#0F3A40]">Khu trọ The Nest</h2>
+                        <h2 className="text-[24px] font-bold text-[#0F3A40]">Khu trọ The Sun</h2>
                         <p className="text-[#82ABB0] font-medium text-[15px]">{roomNumber !== '—' ? `${roomNumber}` : '—'}</p>
                      </div>
                   </div>

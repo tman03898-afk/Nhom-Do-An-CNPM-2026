@@ -9,11 +9,22 @@ const {
   ensureTenantServiceSubscriptionsTable,
   listAllSubscriptionLinesForTenant,
 } = require('./_subscriptionFees');
+const { once } = require('./_schemaCache');
 
 const router = express.Router();
 
 async function ensureInvoicesTable() {
-  await ensureEnumType('invoice_status', ['UNPAID', 'PARTIAL', 'PAID']);
+  return once('schema:invoices', async () => {
+  // Hợp nhất mọi nhãn đã dùng (invoices + payments) để ALTER TYPE bổ sung khi DB cũ thiếu (vd. CANCELLED).
+  await ensureEnumType('invoice_status', [
+    'UNPAID',
+    'PARTIAL',
+    'PAID',
+    'DRAFT',
+    'ISSUED',
+    'OVERDUE',
+    'CANCELLED',
+  ]);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS invoices (
@@ -40,6 +51,12 @@ async function ensureInvoicesTable() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_invoices_tenant_id ON invoices(tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date)`);
+  await pool.query(
+    `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS electricity_breakdown JSONB`
+  );
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS utility_meter_snapshot JSONB`);
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS water_breakdown JSONB`);
+});
 }
 
 function normalizeDate(value) {
@@ -51,28 +68,15 @@ function normalizeDate(value) {
   return formatCalendarDateString(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
-function normInvoiceStatus(s) {
-  return String(s ?? '').trim().toUpperCase();
-}
-
-/** Đảm bảo nhãn enum tồn tại (DB cũ có thể chỉ có UNPAID/PARTIAL/PAID). */
-async function ensureInvoiceStatusLabel(label) {
-  const lab = String(label || '').trim().toUpperCase();
-  if (!lab) return;
-  try {
-    await pool.query(`ALTER TYPE invoice_status ADD VALUE IF NOT EXISTS '${lab.replace(/'/g, "''")}'`);
-  } catch (e) {
-    /* ignore — giá trị có thể đã tồn tại hoặc PG cũ không hỗ trợ IF NOT EXISTS */
-  }
-}
-
 router.get('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
   try {
-    await ensureUsersTable();
-    await ensureRoomsTable();
-    await ensureTenantsTable();
-    await ensureInvoicesTable();
-    await paymentsRoute.ensurePaymentsTable();
+    await Promise.all([
+      ensureUsersTable(),
+      ensureRoomsTable(),
+      ensureTenantsTable(),
+      ensureInvoicesTable(),
+      paymentsRoute.ensurePaymentsTable(),
+    ]);
 
     const result = await pool.query(
       `SELECT
@@ -143,6 +147,9 @@ router.get('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
          EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
          i.rent_amount,
          i.electricity_amount,
+         i.electricity_breakdown,
+         i.water_breakdown,
+         i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,
          i.total_amount,
@@ -327,27 +334,10 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
     await ensureRoomsTable();
     await ensureTenantsTable();
     await ensureInvoicesTable();
-    await paymentsRoute.ensurePaymentsTable();
 
     const invoiceId = Number(req.params.id);
     if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
       return res.status(400).json({ ok: false, message: 'invalid invoice id' });
-    }
-
-    const existing = await pool.query(
-      `SELECT invoice_id, status FROM invoices WHERE invoice_id = $1`,
-      [invoiceId]
-    );
-    if (existing.rowCount === 0) {
-      return res.status(404).json({ ok: false, message: 'invoice not found' });
-    }
-
-    const curStatus = normInvoiceStatus(existing.rows[0].status);
-    if (curStatus === 'PAID') {
-      return res.status(400).json({ ok: false, message: 'cannot modify paid invoice' });
-    }
-    if (curStatus === 'CANCELLED') {
-      return res.status(400).json({ ok: false, message: 'invoice already cancelled' });
     }
 
     const allowed = [
@@ -363,17 +353,6 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
       return res.status(400).json({ ok: false, message: 'no valid fields provided for update' });
     }
 
-    const nextStatusEntry = entries.find(([k]) => k === 'status');
-    if (nextStatusEntry) {
-      const nextStatus = normInvoiceStatus(nextStatusEntry[1]);
-      if (nextStatus === 'CANCELLED') {
-        await ensureInvoiceStatusLabel('CANCELLED');
-      }
-      if (nextStatus && !['CANCELLED', 'ISSUED', 'DRAFT', 'OVERDUE', 'UNPAID', 'PARTIAL'].includes(nextStatus)) {
-        return res.status(400).json({ ok: false, message: 'invalid invoice status' });
-      }
-    }
-
     const values = [];
     const setClauses = entries.map(([key, value], idx) => {
       if (key === 'due_date') {
@@ -382,14 +361,10 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
         return `${key} = $${idx + 1}::date`;
       }
       if (key === 'status') {
-        values.push(String(value).trim().toUpperCase());
+        values.push(String(value));
         return `${key} = $${idx + 1}::invoice_status`;
       }
-      const num = Number(value);
-      if (!Number.isFinite(num) || num < 0) {
-        throw Object.assign(new Error('amounts must be non-negative numbers'), { code: 'INVALID_AMOUNT' });
-      }
-      values.push(num);
+      values.push(value);
       return `${key} = $${idx + 1}`;
     });
 
@@ -401,9 +376,9 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
 
     const result = await pool.query(
       `UPDATE invoices
-       SET ${setClauses.join(', ')}${totalClause}, updated_at = NOW()
+       SET ${setClauses.join(', ')}${totalClause}
        WHERE invoice_id = $${values.length}
-       RETURNING invoice_id, tenant_id, contract_id, billing_month, rent_amount, electricity_amount, water_amount, other_fees_amount, total_amount, due_date, status, created_at, updated_at`,
+       RETURNING invoice_id, tenant_id, contract_id, billing_month, rent_amount, electricity_amount, water_amount, other_fees_amount, total_amount, due_date, status, created_at`,
       values
     );
 
@@ -413,9 +388,6 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
 
     return res.json({ ok: true, invoice: result.rows[0] });
   } catch (err) {
-    if (err.code === 'INVALID_AMOUNT') {
-      return res.status(400).json({ ok: false, message: 'amounts must be non-negative numbers' });
-    }
     console.error('Update invoice error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
@@ -441,6 +413,9 @@ router.get('/tenant/invoices/:id', requireAuth, requireTenant, async (req, res) 
          EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
          i.rent_amount,
          i.electricity_amount,
+         i.electricity_breakdown,
+         i.water_breakdown,
+         i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,
          i.total_amount,
@@ -519,6 +494,9 @@ router.get('/tenant/invoices', requireAuth, requireTenant, async (req, res) => {
          EXTRACT(MONTH FROM i.billing_month)::int AS period_month,
          EXTRACT(YEAR FROM i.billing_month)::int AS period_year,
          i.electricity_amount,
+         i.electricity_breakdown,
+         i.water_breakdown,
+         i.utility_meter_snapshot,
          i.water_amount,
          i.other_fees_amount,
          i.total_amount,
