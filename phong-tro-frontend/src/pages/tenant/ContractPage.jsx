@@ -197,13 +197,23 @@ export default function ContractPage() {
       const fetchContractContext = async () => {
          if (!token) return;
          try {
-            const [contractData, assetsData] = await Promise.all([
+            const [contractResult, assetsResult] = await Promise.allSettled([
                apiFetch('/tenant/contract', { token }),
                apiFetch('/tenant/assets', { token }),
             ]);
-            setContract(contractData?.contract || null);
-            setRoom(contractData?.room || null);
-            setAssets(assetsData?.assets || []);
+            if (contractResult.status === 'fulfilled') {
+               const contractData = contractResult.value;
+               setContract(contractData?.contract || null);
+               setRoom(contractData?.room || null);
+            } else {
+               setContract(null);
+               setRoom(null);
+            }
+            if (assetsResult.status === 'fulfilled') {
+               setAssets(assetsResult.value?.assets || []);
+            } else {
+               setAssets([]);
+            }
          } catch {
             setContract(null);
             setRoom(null);

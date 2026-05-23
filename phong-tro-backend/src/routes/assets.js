@@ -1,7 +1,8 @@
 const express = require('express');
 
 const pool = require('../config/db');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin, requireTenant } = require('../middleware/auth');
+const { ensureTenantsTable } = require('./_dbHelpers');
 const { ensureEnumType, ensureRoomsTable } = require('./_dbHelpers');
 const { once } = require('./_schemaCache');
 
@@ -27,6 +28,39 @@ async function ensureAssetsTable() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_assets_room_id ON assets(room_id)`);
   });
 }
+
+/** Tài sản phòng của tenant đang đăng nhập (theo phòng trong HĐ ACTIVE hoặc tenants.room_id). */
+router.get('/tenant/assets', requireAuth, requireTenant, async (req, res) => {
+  try {
+    await ensureAssetsTable();
+    await ensureTenantsTable();
+    const roomResult = await pool.query(
+      `SELECT COALESCE(c.room_id, t.room_id) AS room_id
+       FROM users u
+       JOIN tenants t ON t.user_id = u.user_id
+       LEFT JOIN contracts c ON c.tenant_id = t.tenant_id AND c.status = 'ACTIVE'
+       WHERE u.user_id = $1
+       ORDER BY c.contract_id DESC NULLS LAST
+       LIMIT 1`,
+      [req.auth.sub]
+    );
+    const roomId = roomResult.rows[0]?.room_id;
+    if (!roomId) {
+      return res.json({ ok: true, assets: [] });
+    }
+    const result = await pool.query(
+      `SELECT asset_id, room_id, name, quantity, status, note, created_at, updated_at
+       FROM assets
+       WHERE room_id = $1
+       ORDER BY asset_id ASC`,
+      [roomId]
+    );
+    return res.json({ ok: true, assets: result.rows });
+  } catch (err) {
+    console.error('Tenant assets error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
 
 router.get('/admin/assets', requireAuth, requireAdmin, async (req, res) => {
   try {

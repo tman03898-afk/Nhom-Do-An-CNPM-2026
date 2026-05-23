@@ -1,0 +1,41 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e8f4fc', 'primaryBorderColor': '#2e79b5', 'primaryTextColor': '#141414', 'lineColor': '#3685bf', 'secondaryColor': '#f0f7ee', 'tertiaryColor': '#faf8f0'}}}%%
+flowchart TB
+  REQ["HTTP Request"]
+  FE["Frontend\nReact SPA · Vite\nGuest · Admin · Tenant"]
+
+  subgraph CLUSTER["Backend Services Cluster"]
+    direction TB
+    GW["API Gateway\nExpress · app.js\nPort 5000 · /api · JWT · CORS"]
+
+    subgraph SVC["Business Services"]
+      direction LR
+      US["User Service\nauth · tenants"]
+      RS["Room Service\nrooms · assets"]
+      BS["Booking Service\nroom-holds"]
+      PS["Payment Service\ninvoices · payments"]
+    end
+
+    GW --> US
+    GW --> RS
+    GW --> BS
+    GW --> PS
+  end
+
+  subgraph INTERNAL["Internal Service Architecture"]
+    direction TB
+    R["Routes Layer\nroutes/*.js"]
+    C["Controller Layer\nhandlers · validation"]
+    S["Service Layer\nservices/ · utils/"]
+    Q["Database Layer\nconfig/db.js · SQL"]
+    R --> C --> S --> Q
+  end
+
+  DB[("PostgreSQL\nShared Database")]
+
+  REQ --> FE
+  FE -->|"HTTP/JSON + JWT"| GW
+  US --> INTERNAL
+  RS --> INTERNAL
+  BS --> INTERNAL
+  PS --> INTERNAL
+  Q --> DB
