@@ -6,13 +6,19 @@ import {
   ShieldCheck, HelpCircle, Eye, EyeOff
 } from 'lucide-react';
 import { callSupportHotline, openSupportZalo, SUPPORT_HOTLINE } from '../../lib/supportContact';
+import {
+  clearRememberedCredentials,
+  isRememberLoginEnabled,
+  readRememberedCredentials,
+} from '../../lib/authStorage';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(() => readRememberedCredentials().email);
+  const [password, setPassword] = useState(() => readRememberedCredentials().password);
+  const [rememberMe, setRememberMe] = useState(() => isRememberLoginEnabled());
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -21,6 +27,8 @@ export default function LoginPage() {
   useEffect(() => {
     if (location.state?.resetOk) {
       setResetNotice(true);
+      clearRememberedCredentials();
+      setPassword('');
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.pathname, location.state, navigate]);
@@ -31,7 +39,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const user = await login({ email, password });
+      const user = await login({ email, password, remember: rememberMe });
       if (user.role === 'ADMIN') navigate('/admin');
       else navigate('/tenant');
     } catch (error) {
@@ -114,8 +122,22 @@ export default function LoginPage() {
 
           {/* Remember Me */}
           <div className="flex items-center gap-3 px-1">
-            <input type="checkbox" id="remember" className="w-5 h-5 rounded-md border-gray-200 text-nest-primary focus:ring-nest-primary cursor-pointer" />
-            <label htmlFor="remember" className="text-[13px] font-semibold text-nest-text-secondary cursor-pointer">Ghi nhớ đăng nhập</label>
+            <input
+              type="checkbox"
+              id="remember"
+              checked={rememberMe}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setRememberMe(checked);
+                if (!checked) {
+                  clearRememberedCredentials();
+                }
+              }}
+              className="w-5 h-5 rounded-md border-gray-200 text-nest-primary focus:ring-nest-primary cursor-pointer"
+            />
+            <label htmlFor="remember" className="text-[13px] font-semibold text-nest-text-secondary cursor-pointer">
+              Ghi nhớ đăng nhập
+            </label>
           </div>
 
           {/* Login Button */}
