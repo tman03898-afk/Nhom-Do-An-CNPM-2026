@@ -3,7 +3,11 @@ const express = require('express');
 const pool = require('../config/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable, formatCalendarDateString } = require('./_dbHelpers');
-const { sumAllRecurringExtrasForTenant, ensureTenantServiceSubscriptionsTable } = require('./_subscriptionFees');
+const {
+  sumAllRecurringExtrasForTenant,
+  ensureTenantServiceSubscriptionsTable,
+  isMeterUnit,
+} = require('./_subscriptionFees');
 const { ensureInvoicesTable } = require('./invoices');
 const {
   getElectricityTiers,
@@ -512,9 +516,14 @@ router.post('/admin/services', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, message: 'name is required' });
     }
     const unitStr = unit ? String(unit).trim() : '';
-    const meterLike = ['kWh', 'm3', 'm³'].includes(unitStr);
+    if (isMeterUnit(unitStr)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Điện/nước không cấu hình ở Dịch vụ. Dùng nhập chỉ số trên trang Hóa đơn.',
+      });
+    }
     const allowSub =
-      allow_tenant_subscription !== undefined ? Boolean(allow_tenant_subscription) : !meterLike;
+      allow_tenant_subscription !== undefined ? Boolean(allow_tenant_subscription) : true;
     const result = await pool.query(
       `INSERT INTO services (name, unit, price, is_active, allow_tenant_subscription)
        VALUES ($1, $2, $3, $4, $5)
@@ -543,6 +552,14 @@ router.put('/admin/services/:id', requireAuth, requireAdmin, async (req, res) =>
     const entries = Object.entries(req.body || {}).filter(([k]) => allowed.includes(k));
     if (entries.length === 0) {
       return res.status(400).json({ ok: false, message: 'no valid fields provided for update' });
+    }
+
+    const unitEntry = entries.find(([k]) => k === 'unit');
+    if (unitEntry && isMeterUnit(unitEntry[1])) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Điện/nước không cấu hình ở Dịch vụ. Dùng nhập chỉ số trên trang Hóa đơn.',
+      });
     }
 
     const values = [];

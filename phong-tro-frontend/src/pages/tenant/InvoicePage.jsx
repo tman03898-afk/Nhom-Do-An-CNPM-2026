@@ -495,7 +495,12 @@ export default function TenantInvoicePage() {
                                     <ul className="mt-3 space-y-2 pl-3 border-l-2 border-[#14B8A6]/25">
                                        {detailInvoice.subscription_services.map((line, idx) => (
                                           <li key={`${line.source}-${line.service_id ?? line.fee_id}-${idx}`} className="flex justify-between text-[13px]">
-                                             <span className="text-[#4A787C]">{line.service_name}</span>
+                                             <span className="text-[#4A787C]">
+                                                {line.service_name}
+                                                {line.head_count && String(line.service_unit || '').toLowerCase() === 'person'
+                                                  ? ` (${line.head_count} người)`
+                                                  : ''}
+                                             </span>
                                              <span className="font-bold text-[#0F3A40]">{formatMoney(line.monthly_price)}₫</span>
                                           </li>
                                        ))}
