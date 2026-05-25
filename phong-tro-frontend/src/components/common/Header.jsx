@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { User, LogOut, Sun, Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import LoginModal from './LoginModal';
 
 export default function Header() {
   const { user, logout } = useAuth();
@@ -10,6 +11,7 @@ export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeNav, setActiveNav] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -21,7 +23,10 @@ export default function Header() {
 
   // Close menu when location changes (defer to satisfy react-hooks/set-state-in-effect).
   useEffect(() => {
-    queueMicrotask(() => setIsMenuOpen(false));
+    queueMicrotask(() => {
+      setIsMenuOpen(false);
+      setIsLoginOpen(false);
+    });
   }, [location.pathname]);
 
   const isHome = location.pathname === '/';
@@ -48,6 +53,20 @@ export default function Header() {
     } else {
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
     }
+  };
+
+  const openLoginModal = () => {
+    setIsMenuOpen(false);
+    setIsLoginOpen(true);
+  };
+
+  const closeLoginModal = () => {
+    setIsLoginOpen(false);
+  };
+
+  const handleLoginSuccess = (signedInUser) => {
+    setIsLoginOpen(false);
+    navigate(signedInUser.role === 'ADMIN' ? '/admin' : '/tenant');
   };
 
   const getNavClass = (id) => {
@@ -108,9 +127,13 @@ export default function Header() {
                 </button>
               </>
             ) : (
-              <Link to="/login" className={`px-7 py-3 rounded-full text-sm font-bold transition-all flex items-center gap-2 shadow-lg ${isTransparent ? 'bg-white text-nest-text-primary hover:bg-white/90' : 'bg-nest-primary text-white hover:bg-[#0fa696] shadow-nest-primary/20'}`}>
+              <button
+                type="button"
+                onClick={openLoginModal}
+                className={`px-7 py-3 rounded-full text-sm font-bold transition-all flex items-center gap-2 shadow-lg ${isTransparent ? 'bg-white text-nest-text-primary hover:bg-white/90' : 'bg-nest-primary text-white hover:bg-[#0fa696] shadow-nest-primary/20'}`}
+              >
                 <User className="w-4 h-4" /> Đăng nhập
-              </Link>
+              </button>
             )}
           </div>
 
@@ -159,15 +182,20 @@ export default function Header() {
                     </button>
                    </>
                 ) : (
-                  <Link to="/login" className="w-full bg-nest-primary text-white px-6 py-4 rounded-2xl font-bold text-center shadow-lg shadow-nest-primary/20 flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openLoginModal}
+                    className="w-full bg-nest-primary text-white px-6 py-4 rounded-2xl font-bold text-center shadow-lg shadow-nest-primary/20 flex items-center justify-center gap-2"
+                  >
                     <User className="w-5 h-5" /> Đăng nhập
-                  </Link>
+                  </button>
                 )}
               </div>
             </nav>
           </div>
         </div>
       )}
+      <LoginModal open={isLoginOpen && !user} onClose={closeLoginModal} onSuccess={handleLoginSuccess} />
     </>
   );
 }
