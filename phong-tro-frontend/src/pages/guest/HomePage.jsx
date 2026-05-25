@@ -22,6 +22,8 @@ import {
 import CustomSelect from '../../components/common/CustomSelect';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
+import AppDialog from '../../components/common/AppDialog';
+import { useToast } from '../../context/ToastContext';
 import RoomFormModal from '../../components/rooms/RoomFormModal';
 import {
   HERO_SLIDES,
@@ -35,9 +37,12 @@ import {
 
 export default function HomePage() {
   const { user, token } = useAuth();
+  const { addToast } = useToast();
   const isAdmin = user?.role === 'ADMIN';
   const [roomModalOpen, setRoomModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [roomType, setRoomType] = useState('Tất cả');
   const [priceRange, setPriceRange] = useState('Tất cả');
   const [area, setArea] = useState('Tất cả');
@@ -85,14 +90,23 @@ export default function HomePage() {
     setRoomModalOpen(true);
   };
 
-  const deleteRoom = async (card) => {
-    if (!token || !card?.id) return;
-    if (!window.confirm(`Xóa ${card.name}? Hành động này xóa luôn trong Quản lý phòng.`)) return;
+  const openDeleteConfirm = (card) => {
+    if (!card?.id) return;
+    setDeleteTarget({ id: card.id, name: card.name || `Phòng #${card.id}` });
+  };
+
+  const confirmDeleteRoom = async () => {
+    if (!token || !deleteTarget) return;
+    setDeleteBusy(true);
     try {
-      await apiFetch(`/rooms/${card.id}`, { token, method: 'DELETE' });
+      await apiFetch(`/rooms/${deleteTarget.id}`, { token, method: 'DELETE' });
+      addToast(`Đã xóa ${deleteTarget.name}.`, 'success');
+      setDeleteTarget(null);
       await loadAvailableRooms();
     } catch (err) {
-      window.alert(err?.message || 'Không xóa được phòng');
+      addToast(err?.message || 'Không xóa được phòng.', 'error');
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -408,7 +422,7 @@ export default function HomePage() {
                           type="button"
                           onClick={(e) => {
                             e.preventDefault();
-                            deleteRoom(room);
+                            openDeleteConfirm(room);
                           }}
                           className="w-9 h-9 rounded-full bg-white/95 text-red-500 flex items-center justify-center shadow-md hover:scale-105"
                           title="Xóa phòng"
@@ -665,6 +679,22 @@ export default function HomePage() {
         room={editingRoom}
         token={token}
         onSaved={loadAvailableRooms}
+      />
+
+      <AppDialog
+        open={!!deleteTarget}
+        onClose={() => !deleteBusy && setDeleteTarget(null)}
+        title="Xóa phòng?"
+        description={
+          deleteTarget
+            ? `Bạn có chắc muốn xóa ${deleteTarget.name}? Phòng sẽ bị gỡ khỏi trang chủ và Quản lý phòng.`
+            : ''
+        }
+        confirmText="Xóa phòng"
+        cancelText="Giữ lại"
+        variant="danger"
+        busy={deleteBusy}
+        onConfirm={confirmDeleteRoom}
       />
     </div>
   );

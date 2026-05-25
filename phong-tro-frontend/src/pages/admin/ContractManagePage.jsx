@@ -7,6 +7,7 @@ import {
   Info, Trash2, AlertTriangle, X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { apiFetch } from '../../lib/api';
 import { downloadCsv } from '../../utils/exportCsv';
 import ContractFromHoldModal from '../../components/rooms/ContractFromHoldModal';
@@ -20,6 +21,7 @@ function toIsoDateInput(value) {
 
 export default function ContractManagePage() {
   const { token } = useAuth();
+  const { addToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const holdRequestIdFromUrl = searchParams.get('hold_request_id');
   const [contractHoldId, setContractHoldId] = useState(null);
@@ -136,7 +138,7 @@ export default function ContractManagePage() {
     if (!token) return;
     // basic validation
     if (!createForm.tenant_id || !createForm.room_number || !createForm.start_date || !createForm.end_date) {
-      alert('Vui lòng điền đầy đủ tenant_id, số phòng, start_date và end_date');
+      addToast('Vui lòng điền đầy đủ tenant_id, số phòng, ngày bắt đầu và ngày kết thúc.', 'error');
       return;
     }
 
@@ -155,11 +157,12 @@ export default function ContractManagePage() {
       await apiFetch('/admin/contracts', { token, method: 'POST', body: payload });
       setIsCreateOpen(false);
       setCreateForm({ tenant_id: '', room_number: '', start_date: '', end_date: '', rent_price: '', deposit: '', notes: '' });
+      addToast('Đã tạo hợp đồng mới.', 'success');
       await refresh();
     } catch (err) {
       console.error('Create contract error', err);
       // show user-friendly message
-      alert(err?.data?.message || err.message || 'Lỗi khi tạo hợp đồng');
+      addToast(err?.data?.message || err.message || 'Lỗi khi tạo hợp đồng', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -257,7 +260,7 @@ export default function ContractManagePage() {
 
   const handleExportCsv = () => {
     if (filtered.length === 0) {
-      window.alert('Không có hợp đồng để xuất (kiểm tra bộ lọc hoặc từ khóa tìm kiếm).');
+      addToast('Không có hợp đồng để xuất. Kiểm tra bộ lọc hoặc từ khóa tìm kiếm.', 'error');
       return;
     }
     const fmtDate = (d) => {
@@ -291,6 +294,7 @@ export default function ContractManagePage() {
     ]);
     const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
     downloadCsv(`danh-sach-hop-dong-${stamp}.csv`, headers, rows);
+    addToast('Đã tải file CSV hợp đồng.', 'success');
   };
 
   return (

@@ -6,6 +6,7 @@ const { ensureEnumType, ensureRoomsTable, ensureUsersTable, ensureTenantsTable, 
 const {
   sumAllRecurringExtrasForTenant,
   ensureTenantServiceSubscriptionsTable,
+  syncUnpaidInvoicesOtherFeesForTenant,
   isMeterUnit,
 } = require('./_subscriptionFees');
 const { ensureInvoicesTable } = require('./invoices');
@@ -499,6 +500,7 @@ router.get('/admin/services', requireAuth, requireAdmin, async (req, res) => {
     const result = await pool.query(
       `SELECT service_id, name, unit, price, is_active, allow_tenant_subscription, created_at, updated_at
        FROM services
+       WHERE COALESCE(is_active, true) = true
        ORDER BY service_id DESC`
     );
     return res.json({ ok: true, services: result.rows });
@@ -582,6 +584,94 @@ router.put('/admin/services/:id', requireAuth, requireAdmin, async (req, res) =>
     return res.json({ ok: true, service: result.rows[0] });
   } catch (err) {
     console.error('Update service error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
+router.delete('/admin/services/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await ensureServicesTable();
+    await ensureTenantServiceSubscriptionsTable();
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'invalid service id' });
+    }
+
+    const svc = await pool.query(
+      `SELECT service_id, name, unit, price, is_active, allow_tenant_subscription, created_at, updated_at
+       FROM services
+       WHERE service_id = $1
+       LIMIT 1`,
+      [id]
+    );
+    if (svc.rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'service not found' });
+    }
+    if (isMeterUnit(svc.rows[0].unit)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Điện/nước không xóa ở Dịch vụ. Dùng trang Hóa đơn để quản lý chỉ số.',
+      });
+    }
+
+    const refs = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM tenant_service_subscriptions
+       WHERE service_id = $1`,
+      [id]
+    );
+    const refCount = Number(refs.rows[0]?.count || 0);
+
+    if (refCount > 0) {
+      const affectedTenants = await pool.query(
+        `SELECT DISTINCT tenant_id
+         FROM tenant_service_subscriptions
+         WHERE service_id = $1
+           AND status IN ('PENDING', 'ACTIVE', 'PENDING_CANCEL')`,
+        [id]
+      );
+      const cancelled = await pool.query(
+        `UPDATE tenant_service_subscriptions
+         SET status = 'CANCELLED',
+             cancelled_at = COALESCE(cancelled_at, NOW()),
+             updated_at = NOW()
+         WHERE service_id = $1
+           AND status IN ('PENDING', 'ACTIVE', 'PENDING_CANCEL')
+         RETURNING subscription_id`,
+        [id]
+      );
+      const result = await pool.query(
+        `UPDATE services
+         SET is_active = false,
+             allow_tenant_subscription = false,
+             updated_at = NOW()
+         WHERE service_id = $1
+         RETURNING service_id, name, unit, price, is_active, allow_tenant_subscription, created_at, updated_at`,
+        [id]
+      );
+      for (const row of affectedTenants.rows) {
+        await syncUnpaidInvoicesOtherFeesForTenant(Number(row.tenant_id));
+      }
+      return res.json({
+        ok: true,
+        deleted: false,
+        deactivated: true,
+        cancelled_subscriptions: cancelled.rowCount,
+        service: result.rows[0],
+        message: 'service deactivated because it has subscription history',
+      });
+    }
+
+    const result = await pool.query(
+      `DELETE FROM services
+       WHERE service_id = $1
+       RETURNING service_id, name, unit, price, is_active, allow_tenant_subscription, created_at, updated_at`,
+      [id]
+    );
+    return res.json({ ok: true, deleted: true, deactivated: false, service: result.rows[0] });
+  } catch (err) {
+    console.error('Delete service error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
 });

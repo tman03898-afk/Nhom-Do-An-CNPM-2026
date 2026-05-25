@@ -24,6 +24,7 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch, API_BASE_URL, resolveBackendAssetUrl } from '../../lib/api';
 import { canPrintTicketReceipt, printTicketReceipt } from '../../lib/ticketReceipt';
+import AppDialog from '../../components/common/AppDialog';
 
 const PAGE_SIZE = 10;
 const HOTLINE = String(import.meta.env.VITE_SUPPORT_HOTLINE || '').trim();
@@ -110,6 +111,8 @@ export default function TicketManagePage() {
   const [repairCostDraft, setRepairCostDraft] = useState('0');
   const [staff, setStaff] = useState([]);
 
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [tenants, setTenants] = useState([]);
   const [createForm, setCreateForm] = useState({
@@ -312,20 +315,30 @@ export default function TicketManagePage() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!token) return;
-    if (!window.confirm('Xóa vĩnh viễn phiếu này? Hành động không hoàn tác.')) {
-      setActiveMenuId(null);
-      return;
-    }
+  const openDeleteConfirm = (id, label) => {
+    setActiveMenuId(null);
+    const t = rawTickets.find((x) => Number(x.incident_id) === Number(id));
+    const shortLabel =
+      label ||
+      (t?.title ? String(t.title).slice(0, 80) : null) ||
+      (t?.ticket_code ? String(t.ticket_code) : null) ||
+      `#${id}`;
+    setDeleteTarget({ id: Number(id), label: shortLabel });
+  };
+
+  const confirmDeleteTicket = async () => {
+    if (!token || !deleteTarget) return;
+    setDeleteBusy(true);
     try {
-      await apiFetch(`/admin/tickets/${id}`, { token, method: 'DELETE' });
-      addToast('Đã xóa phiếu.');
-      if (detailId === id) closeDetail();
-      setActiveMenuId(null);
+      await apiFetch(`/admin/tickets/${deleteTarget.id}`, { token, method: 'DELETE' });
+      addToast('Đã xóa phiếu bảo trì.');
+      if (detailId === deleteTarget.id) closeDetail();
+      setDeleteTarget(null);
       await refresh();
     } catch (e) {
       addToast(e?.message || 'Xóa thất bại.', 'error');
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -716,7 +729,7 @@ export default function TicketManagePage() {
                             <div className="h-px bg-[#BCE1E5]/20 my-1" />
                             <button
                               type="button"
-                              onClick={() => handleDelete(t.incident_id)}
+                              onClick={() => openDeleteConfirm(t.incident_id, t.title)}
                               className="w-full flex items-center gap-3 px-3 py-2.5 text-[13px] font-bold text-[#D14D4D] hover:bg-red-50 rounded-xl transition-colors"
                             >
                               <Trash2 size={16} /> Xóa phiếu
@@ -1160,7 +1173,7 @@ export default function TicketManagePage() {
                     <button
                       type="button"
                       disabled={detailSaving}
-                      onClick={() => handleDelete(detailTicket.incident_id)}
+                      onClick={() => openDeleteConfirm(detailTicket.incident_id, detailTicket.title)}
                       className="flex-1 min-w-[100px] py-3 rounded-2xl border border-rose-200 text-rose-600 text-[13px] font-bold hover:bg-rose-50 disabled:opacity-50"
                     >
                       Xóa
@@ -1172,6 +1185,22 @@ export default function TicketManagePage() {
           </div>
         </div>
       )}
+
+      <AppDialog
+        open={!!deleteTarget}
+        onClose={() => !deleteBusy && setDeleteTarget(null)}
+        title="Xóa phiếu bảo trì?"
+        description={
+          deleteTarget
+            ? `Xóa vĩnh viễn phiếu «${deleteTarget.label}»? Hành động không thể hoàn tác.`
+            : ''
+        }
+        confirmText="Xóa phiếu"
+        cancelText="Giữ lại"
+        variant="danger"
+        busy={deleteBusy}
+        onConfirm={confirmDeleteTicket}
+      />
     </div>
   );
 }

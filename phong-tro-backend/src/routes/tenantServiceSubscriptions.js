@@ -2,7 +2,7 @@ const express = require('express');
 
 const pool = require('../config/db');
 const { requireAuth, requireTenant, requireAdmin } = require('../middleware/auth');
-const { firstDayOfCurrentMonthYmd } = require('./_tenantFeeSubscriptions');
+const { EXCLUDED_FEE_NAMES_EXACT, firstDayOfCurrentMonthYmd } = require('./_tenantFeeSubscriptions');
 const { ensureTenantsTable } = require('./_dbHelpers');
 const { ensureServicesTable } = require('./services');
 const {
@@ -11,6 +11,8 @@ const {
   isMeterUnit,
   isPersonUnit,
 } = require('./_subscriptionFees');
+const { getElectricityTiers, useTieredFromEnv } = require('../utils/electricityTierPricing');
+const { getWaterTiers, useWaterTieredFromEnv } = require('../utils/waterTierPricing');
 
 const router = express.Router();
 
@@ -46,6 +48,45 @@ async function getRoomCapacityForTenant(tenantId) {
     return Number(fromTenant.rows[0].max_tenants) || 1;
   }
   return 1;
+}
+
+function formatTierRows(tiers) {
+  let prev = 0;
+  return tiers.map((tier) => {
+    const from = prev + 1;
+    const to = tier.upTo == null ? null : Number(tier.upTo);
+    prev = to ?? prev;
+    return {
+      from,
+      to,
+      price: Number(tier.price || 0),
+    };
+  });
+}
+
+function decorateFeeReference(row) {
+  const name = String(row.fee_name || '').trim().toLowerCase();
+  const unit = String(row.unit || '').trim().toLowerCase().replace(/³/g, '3');
+  const isElectric = name.includes('điện') || unit === 'kwh';
+  const isWater = name.includes('nước') || unit === 'm3';
+
+  if (isElectric && useTieredFromEnv()) {
+    return {
+      ...row,
+      billing_mode: 'TIERED',
+      tier_unit: 'kWh',
+      tiers: formatTierRows(getElectricityTiers()),
+    };
+  }
+  if (isWater && useWaterTieredFromEnv()) {
+    return {
+      ...row,
+      billing_mode: 'TIERED',
+      tier_unit: 'm³',
+      tiers: formatTierRows(getWaterTiers()),
+    };
+  }
+  return { ...row, billing_mode: 'FLAT', tiers: [] };
 }
 
 /** Dịch vụ tenant được đăng ký (không gồm điện/nước công tơ). */
@@ -96,14 +137,17 @@ router.get('/tenant/service-fees-reference', requireAuth, requireTenant, async (
          fee_type::text AS fee_type
        FROM service_fees
        WHERE COALESCE(is_active, true) = true
+         AND TRIM(fee_name) <> ALL($1::text[])
        ORDER BY
          CASE COALESCE(fee_type::text, '')
            WHEN 'UTILITY' THEN 0
            ELSE 1
          END,
          fee_name ASC`
+      ,
+      [EXCLUDED_FEE_NAMES_EXACT]
     );
-    return res.json({ ok: true, fees: result.rows });
+    return res.json({ ok: true, fees: result.rows.map(decorateFeeReference) });
   } catch (err) {
     console.error('Tenant service_fees reference error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });

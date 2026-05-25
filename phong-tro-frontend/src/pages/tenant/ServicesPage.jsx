@@ -16,6 +16,17 @@ function feeTypeLabel(t) {
   return t ? String(t) : '—';
 }
 
+function feeBillingLabel(row) {
+  if (String(row?.billing_mode || '').toUpperCase() === 'TIERED') return 'Bậc thang theo chỉ số';
+  return feeTypeLabel(row?.fee_type);
+}
+
+function tierLabel(row, tier) {
+  const unit = row?.tier_unit || row?.unit || '';
+  const range = tier.to == null ? `Trên ${Math.max(0, Number(tier.from || 1) - 1)}` : `${tier.from}-${tier.to}`;
+  return `${range} ${unit}: ${money(tier.price)}đ`;
+}
+
 function statusLabel(st) {
   const u = String(st || '').toUpperCase();
   if (u === 'PENDING') return 'Chờ duyệt đăng ký';
@@ -287,8 +298,8 @@ export default function TenantServicesPage() {
             <p className="text-xs text-[#0F3A40]/65 mt-1 flex items-start gap-1.5">
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#14B8A6]" />
               <span>
-                Danh mục phí tham khảo để đối chiếu. Số tiền trên hóa đơn có thể theo giá hợp đồng hoặc mức đã duyệt khi
-                bạn đăng ký tiện ích.
+                Điện/nước được tính theo bậc thang khi admin xác nhận chỉ số công tơ. Các phí khác dùng để đối chiếu theo
+                giá hợp đồng hoặc mức đã duyệt khi bạn đăng ký tiện ích.
               </span>
             </p>
           </div>
@@ -312,19 +323,37 @@ export default function TenantServicesPage() {
                 </tr>
               </thead>
               <tbody>
-                {feeRef.map((row) => (
-                  <tr key={row.fee_id} className="border-t border-[#0F3A40]/8 hover:bg-[#DDF5F7]/25">
-                    <td className="px-3 py-2.5 font-bold text-[#0F3A40]">{row.fee_name}</td>
-                    <td className="px-3 py-2.5 text-[#0F3A40]/70 text-xs hidden sm:table-cell max-w-[220px]">
-                      {row.description || '—'}
-                    </td>
-                    <td className="px-3 py-2.5 font-semibold text-[#0F3A40] whitespace-nowrap">{money(row.unit_price)}đ</td>
-                    <td className="px-3 py-2.5 text-[#0F3A40]/75">{row.unit || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs text-[#0F3A40]/65 hidden md:table-cell">
-                      {feeTypeLabel(row.fee_type)}
-                    </td>
-                  </tr>
-                ))}
+                {feeRef.map((row) => {
+                  const isTiered = String(row.billing_mode || '').toUpperCase() === 'TIERED' && Array.isArray(row.tiers);
+                  return (
+                    <tr key={row.fee_id} className="border-t border-[#0F3A40]/8 hover:bg-[#DDF5F7]/25">
+                      <td className="px-3 py-2.5 font-bold text-[#0F3A40]">{row.fee_name}</td>
+                      <td className="px-3 py-2.5 text-[#0F3A40]/70 text-xs hidden sm:table-cell max-w-[220px]">
+                        {row.description || '—'}
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold text-[#0F3A40]">
+                        {isTiered ? (
+                          <div className="space-y-1">
+                            <div className="whitespace-nowrap">Theo bậc thang</div>
+                            <div className="flex flex-wrap gap-x-2 gap-y-1 text-[11px] font-medium text-[#0F3A40]/65 max-w-[360px]">
+                              {row.tiers.map((tier, idx) => (
+                                <span key={`${tier.from}-${tier.to ?? 'up'}-${idx}`} className="whitespace-nowrap">
+                                  {tierLabel(row, tier)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="whitespace-nowrap">{money(row.unit_price)}đ</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-[#0F3A40]/75">{row.unit || row.tier_unit || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs text-[#0F3A40]/65 hidden md:table-cell">
+                        {feeBillingLabel(row)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

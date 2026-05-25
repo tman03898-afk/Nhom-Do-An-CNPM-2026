@@ -19,6 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import { apiFetch, API_BASE_URL, resolveBackendAssetUrl } from '../../lib/api';
 import { canPrintTicketReceipt, printTicketReceipt } from '../../lib/ticketReceipt';
 import { SUPPORT_HOTLINE, contactHotline, contactZalo } from '../../lib/supportContact';
+import AppDialog from '../../components/common/AppDialog';
 
 const MAX_FILES = 5;
 const MAX_MB = 5;
@@ -96,6 +97,8 @@ export default function TenantTicketPage() {
   const [modalId, setModalId] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalTicket, setModalTicket] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [modalEdit, setModalEdit] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
@@ -184,6 +187,7 @@ export default function TenantTicketPage() {
   const closeModal = () => {
     setModalId(null);
     setModalTicket(null);
+    setDeleteOpen(false);
     setModalEdit(false);
     editNewFiles.forEach((a) => {
       if (a.preview?.startsWith('blob:')) URL.revokeObjectURL(a.preview);
@@ -406,14 +410,17 @@ export default function TenantTicketPage() {
 
   const handleDeleteTicket = async () => {
     if (!token || !modalTicket?.incident_id) return;
-    if (!window.confirm('Hủy yêu cầu này? Ban quản lý sẽ không nhận được phiếu nữa.')) return;
+    setDeleteBusy(true);
     try {
       await apiFetch(`/tenant/tickets/${modalTicket.incident_id}`, { token, method: 'DELETE' });
       addToast('Đã hủy yêu cầu.');
+      setDeleteOpen(false);
       closeModal();
       await refreshHistory();
     } catch (err) {
       addToast(err?.message || 'Không thể hủy phiếu (chỉ phiếu đang chờ xử lý mới hủy được).', 'error');
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -919,7 +926,7 @@ export default function TenantTicketPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={handleDeleteTicket}
+                          onClick={() => setDeleteOpen(true)}
                           className="flex-1 min-w-[100px] flex items-center justify-center gap-2 py-3 rounded-2xl border border-rose-200 text-rose-600 font-bold hover:bg-rose-50"
                         >
                           <Trash2 size={16} /> Hủy phiếu
@@ -949,6 +956,21 @@ export default function TenantTicketPage() {
           </div>
         </div>
       )}
+      <AppDialog
+        open={deleteOpen}
+        onClose={() => !deleteBusy && setDeleteOpen(false)}
+        title="Hủy phiếu sửa chữa?"
+        description={
+          modalTicket?.title
+            ? `Hủy yêu cầu «${modalTicket.title}»? Ban quản lý sẽ không nhận phiếu này nữa.`
+            : 'Hủy yêu cầu này? Ban quản lý sẽ không nhận phiếu này nữa.'
+        }
+        confirmText="Hủy phiếu"
+        cancelText="Giữ lại"
+        variant="danger"
+        busy={deleteBusy}
+        onConfirm={handleDeleteTicket}
+      />
     </div>
   );
 }

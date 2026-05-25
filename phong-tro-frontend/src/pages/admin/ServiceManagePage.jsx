@@ -23,6 +23,7 @@ export default function ServiceManagePage() {
   /** @type {null | { kind: string, id: number, reason: string }} */
   const [rejectModal, setRejectModal] = useState(null);
   const [deleteSvcId, setDeleteSvcId] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const [isAdding, setIsAdding] = useState(false);
   const [newSvc, setNewSvc] = useState({ title: '', desc: '', value: '', method: 'fixed' });
@@ -230,11 +231,33 @@ export default function ServiceManagePage() {
     setDeleteSvcId(id);
   };
 
-  const confirmDeleteSvc = () => {
-    if (!deleteSvcId) return;
-    setServices(services.filter((s) => s.id !== deleteSvcId));
-    setDeleteSvcId(null);
-    addToast('Đã xóa dịch vụ khỏi danh sách (lưu hệ thống để áp dụng thật).');
+  const confirmDeleteSvc = async () => {
+    if (!token || !deleteSvcId) return;
+    const svc = services.find((s) => s.id === deleteSvcId);
+    const serviceId = Number(svc?.service_id || deleteSvcId);
+    if (!Number.isInteger(serviceId) || serviceId <= 0) return;
+
+    setDeleteBusy(true);
+    try {
+      const data = await apiFetch(`/admin/services/${serviceId}`, { token, method: 'DELETE' });
+      setDeleteSvcId(null);
+      setDirtyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(String(serviceId));
+        return next;
+      });
+      addToast(
+        data?.deactivated
+          ? `Dịch vụ đã được ngưng, ẩn khỏi danh sách và hủy ${Number(data.cancelled_subscriptions || 0)} đăng ký đang mở.`
+          : 'Đã xóa dịch vụ khỏi hệ thống.',
+        'success'
+      );
+      await refresh();
+    } catch (e) {
+      addToast(e?.message || 'Không thể xóa dịch vụ.', 'error');
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const handleAdd = () => {
@@ -680,7 +703,8 @@ export default function ServiceManagePage() {
           </button>
           <button
             onClick={handleSaveAll}
-            className="bg-[#14B8A6] hover:bg-[#0da090] text-white px-10 py-4 rounded-full text-[15px] font-bold transition-all shadow-xl shadow-[#14B8A6]/20 flex items-center gap-3 animate-pulse-slow"
+            disabled={isLoading || dirtyIds.size === 0}
+            className="bg-[#14B8A6] hover:bg-[#0da090] text-white px-10 py-4 rounded-full text-[15px] font-bold transition-all shadow-xl shadow-[#14B8A6]/20 flex items-center gap-3 animate-pulse-slow disabled:opacity-45 disabled:cursor-not-allowed disabled:animate-none"
           >
             <Save className="w-5 h-5" /> ÁP DỤNG HỆ THỐNG
           </button>
@@ -719,12 +743,13 @@ export default function ServiceManagePage() {
       {deleteSvcId ? (
         <AppDialog
           open
-          onClose={() => setDeleteSvcId(null)}
+          onClose={() => !deleteBusy && setDeleteSvcId(null)}
           title="Xóa dịch vụ?"
-          description="Dịch vụ sẽ bị gỡ khỏi danh sách hiển thị. Bấm «Áp dụng hệ thống» để lưu thay đổi lên server."
+          description="Dịch vụ sẽ bị gỡ khỏi danh sách và tenant không thể đăng ký mới. Nếu đã có lịch sử đăng ký, hệ thống sẽ ngưng dịch vụ thay vì xóa dữ liệu cũ."
           confirmText="Xóa"
           cancelText="Giữ lại"
           variant="danger"
+          busy={deleteBusy}
           onConfirm={confirmDeleteSvc}
         />
       ) : null}

@@ -2,17 +2,21 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../../lib/api';
 import { HOLD_REQUEST_STATUSES, formatHoldUntil } from '../../lib/roomHolds';
+import { useToast } from '../../context/ToastContext';
+import AppDialog from '../common/AppDialog';
 import ContractFromHoldModal from './ContractFromHoldModal';
 
 /**
  * Bảng quản lý yêu cầu giữ chỗ — nhúng trong Quản lý phòng.
  */
 export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
+  const { addToast } = useToast();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('ALL');
   const [busyId, setBusyId] = useState(null);
   const [contractHoldId, setContractHoldId] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -39,7 +43,7 @@ export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
       await load();
       onRoomsChanged?.();
     } catch (err) {
-      window.alert(err?.message || 'Cập nhật thất bại');
+      addToast(err?.message || 'Cập nhật thất bại', 'error');
     } finally {
       setBusyId(null);
     }
@@ -56,24 +60,20 @@ export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
       await load();
       onRoomsChanged?.();
     } catch (err) {
-      window.alert(err?.message || 'Giữ phòng thất bại');
+      addToast(err?.message || 'Giữ phòng thất bại', 'error');
     } finally {
       setBusyId(null);
     }
   };
 
-  const releaseHold = async (id) => {
-    if (!window.confirm('Hủy giữ chỗ và mở lại phòng trống?')) return;
-    setBusyId(id);
-    try {
-      await apiFetch(`/room-holds/admin/${id}/release-hold`, { token, method: 'POST' });
-      await load();
-      onRoomsChanged?.();
-    } catch (err) {
-      window.alert(err?.message || 'Hủy giữ thất bại');
-    } finally {
-      setBusyId(null);
-    }
+  const releaseHold = (id) => {
+    setConfirmAction({
+      type: 'release',
+      id,
+      title: 'Hủy giữ chỗ?',
+      description: 'Phòng sẽ được mở lại trạng thái trống để khách khác có thể đặt.',
+      confirmText: 'Hủy giữ chỗ',
+    });
   };
 
   const verifyDeposit = async (id) => {
@@ -83,21 +83,44 @@ export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
       await load();
       onRoomsChanged?.();
     } catch (err) {
-      window.alert(err?.message || 'Xác minh thất bại');
+      addToast(err?.message || 'Xác minh thất bại', 'error');
     } finally {
       setBusyId(null);
     }
   };
 
-  const rejectDeposit = async (id) => {
-    if (!window.confirm('Từ chối minh chứng cọc và mở lại phòng?')) return;
+  const rejectDeposit = (id) => {
+    setConfirmAction({
+      type: 'reject-deposit',
+      id,
+      title: 'Từ chối minh chứng cọc?',
+      description: 'Minh chứng sẽ bị từ chối và phòng được mở lại để tiếp tục cho thuê.',
+      confirmText: 'Từ chối cọc',
+    });
+  };
+
+  const closeConfirmAction = () => {
+    if (confirmAction && busyId === confirmAction.id) return;
+    setConfirmAction(null);
+  };
+
+  const confirmHoldAction = async () => {
+    if (!confirmAction) return;
+    const { id, type } = confirmAction;
     setBusyId(id);
     try {
-      await apiFetch(`/room-holds/admin/${id}/reject-deposit`, { token, method: 'POST' });
+      if (type === 'release') {
+        await apiFetch(`/room-holds/admin/${id}/release-hold`, { token, method: 'POST' });
+        addToast('Đã hủy giữ chỗ và mở lại phòng.', 'success');
+      } else if (type === 'reject-deposit') {
+        await apiFetch(`/room-holds/admin/${id}/reject-deposit`, { token, method: 'POST' });
+        addToast('Đã từ chối minh chứng cọc.', 'success');
+      }
+      setConfirmAction(null);
       await load();
       onRoomsChanged?.();
     } catch (err) {
-      window.alert(err?.message || 'Từ chối thất bại');
+      addToast(err?.message || 'Thao tác thất bại', 'error');
     } finally {
       setBusyId(null);
     }
@@ -309,6 +332,17 @@ export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
         </table>
       </div>
     </div>
+    <AppDialog
+      open={!!confirmAction}
+      onClose={closeConfirmAction}
+      title={confirmAction?.title || ''}
+      description={confirmAction?.description || ''}
+      confirmText={confirmAction?.confirmText || 'Xác nhận'}
+      cancelText="Giữ lại"
+      variant="danger"
+      busy={!!confirmAction && busyId === confirmAction.id}
+      onConfirm={confirmHoldAction}
+    />
     </>
   );
 }

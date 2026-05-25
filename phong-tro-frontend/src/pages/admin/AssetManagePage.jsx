@@ -14,6 +14,8 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
+import AppDialog from '../../components/common/AppDialog';
+import { useToast } from '../../context/ToastContext';
 
 const PAGE_SIZE = 10;
 
@@ -59,6 +61,7 @@ const STATUS_CHART_COLORS = {
 
 export default function AssetManagePage() {
   const { token } = useAuth();
+  const { addToast } = useToast();
   const [assets, setAssets] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -71,6 +74,8 @@ export default function AssetManagePage() {
   const [page, setPage] = useState(1);
   const [menuFor, setMenuFor] = useState(null);
   const menuRef = useRef(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -234,14 +239,23 @@ export default function AssetManagePage() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!token || !window.confirm('Xóa tài sản này khỏi danh mục?')) return;
+  const openDeleteConfirm = (asset) => {
+    setMenuFor(null);
+    setDeleteTarget({ id: asset.asset_id, name: asset.name || 'Tài sản' });
+  };
+
+  const confirmDeleteAsset = async () => {
+    if (!token || !deleteTarget) return;
+    setDeleteBusy(true);
     try {
-      await apiFetch(`/admin/assets/${id}`, { token, method: 'DELETE' });
-      setMenuFor(null);
+      await apiFetch(`/admin/assets/${deleteTarget.id}`, { token, method: 'DELETE' });
+      addToast(`Đã xóa «${deleteTarget.name}» khỏi danh mục.`, 'success');
+      setDeleteTarget(null);
       await refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      addToast(e?.message || 'Không xóa được tài sản.', 'error');
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -439,7 +453,7 @@ export default function AssetManagePage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDelete(a.asset_id)}
+                              onClick={() => openDeleteConfirm(a)}
                               className="flex w-full items-center gap-2 px-3 py-2 text-[13px] font-bold text-rose-600 hover:bg-rose-50"
                             >
                               <Trash2 className="w-4 h-4" /> Xóa
@@ -723,6 +737,22 @@ export default function AssetManagePage() {
           </div>
         </div>
       )}
+
+      <AppDialog
+        open={!!deleteTarget}
+        onClose={() => !deleteBusy && setDeleteTarget(null)}
+        title="Xóa tài sản?"
+        description={
+          deleteTarget
+            ? `Xóa «${deleteTarget.name}» khỏi danh mục thiết bị? Hành động không thể hoàn tác.`
+            : ''
+        }
+        confirmText="Xóa"
+        cancelText="Giữ lại"
+        variant="danger"
+        busy={deleteBusy}
+        onConfirm={confirmDeleteAsset}
+      />
     </div>
   );
 }
