@@ -364,7 +364,7 @@ export default function HomePage() {
               <div className="col-span-full py-20 text-center">
                 <h3 className="text-xl font-bold text-nest-text-primary mb-2">Chưa có phòng trống</h3>
                 <p className="text-nest-text-secondary max-w-md mx-auto leading-relaxed mb-6">
-                  Trong database hiện không có phòng nào ở trạng thái AVAILABLE. Khi admin đánh dấu phòng trống, danh sách sẽ tự cập nhật tại đây.
+                  Hiện tại không có phòng nào
                 </p>
                 {isAdmin ? (
                   <button
