@@ -9,6 +9,9 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch, API_BASE_URL } from '../../lib/api';
 
+const BANK_QR_IMAGE_URL = 'C:\\QLPT_CNPM\\Nhom-Do-An-CNPM-2026\\phong-tro-frontend\\public\\images\\home\\qr.png'
+';
+
 export default function PaymentPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -132,11 +135,7 @@ export default function PaymentPage() {
     return `INV${invoiceToPay.invoice_id}_${room}_${m}${y}`;
   }, [invoiceToPay]);
 
-  const qrUrl = useMemo(() => {
-    const amount = Number(invoiceToPay?.total_amount || 0);
-    const data = `${transferContent}_${amount}`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data)}`;
-  }, [invoiceToPay, transferContent]);
+  const qrUrl = BANK_QR_IMAGE_URL;
 
   const notifyThirdPartyGateway = (label) => {
     addToast(
@@ -383,8 +382,8 @@ export default function PaymentPage() {
                             alt="QR Payment" 
                             className="w-full h-full p-2"
                          />
-                         <div className="absolute inset-0 flex items-center justify-center bg-[#1E4D54] opacity-80 rounded-xl">
-                            <div className="bg-white p-2 rounded-lg text-[#1E4D54]">
+                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="bg-white/95 p-2 rounded-lg text-[#1E4D54] shadow-md">
                                <Sun className="w-6 h-6" strokeWidth={2.25} />
                             </div>
                          </div>
