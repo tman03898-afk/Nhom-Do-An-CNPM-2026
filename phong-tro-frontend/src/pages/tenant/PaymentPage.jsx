@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { apiFetch, API_BASE_URL } from '../../lib/api';
 
 const BANK_QR_IMAGE_URL = 'C:\\QLPT_CNPM\\Nhom-Do-An-CNPM-2026\\phong-tro-frontend\\public\\images\\home\\qr.png'
-';
+
 
 export default function PaymentPage() {
   const navigate = useNavigate();
