@@ -8,6 +8,7 @@ export function resolveBackendAssetUrl(pathOrUrl) {
   if (pathOrUrl == null || pathOrUrl === '') return '';
   const s = String(pathOrUrl).trim();
   if (/^https?:\/\//i.test(s)) return s;
+  const assetPath = s.replace(/^\/api(?=\/uploads\/)/i, '');
 
   let base = API_BASE_URL;
   if (!/^https?:\/\//i.test(base)) {
@@ -17,10 +18,10 @@ export function resolveBackendAssetUrl(pathOrUrl) {
 
   try {
     const u = new URL(base);
-    const path = s.startsWith('/') ? s : `/${s}`;
+    const path = assetPath.startsWith('/') ? assetPath : `/${assetPath}`;
     return `${u.origin}${path}`;
   } catch {
-    return s;
+    return assetPath;
   }
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, resolveBackendAssetUrl } from '../../lib/api';
 import { HOLD_REQUEST_STATUSES, formatHoldUntil } from '../../lib/roomHolds';
 import { useToast } from '../../context/ToastContext';
 import AppDialog from '../common/AppDialog';
@@ -127,10 +127,7 @@ export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
   };
 
   const proofUrl = (url) => {
-    if (!url) return '';
-    if (url.startsWith('http')) return url;
-    const base = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
-    return `${base}${url}`;
+    return resolveBackendAssetUrl(url);
   };
 
   const canCreateContract = (row) => {
