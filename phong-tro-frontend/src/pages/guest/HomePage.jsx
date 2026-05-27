@@ -263,8 +263,7 @@ export default function HomePage() {
             </p>
             <h2 className="text-3xl md:text-4xl font-sans font-bold text-nest-text-primary mb-3">Ba Loại Phòng Hiện Đại</h2>
             <p className="text-sm text-nest-text-secondary max-w-xl mx-auto leading-relaxed">
-              Tham khảo phong cách từng loại. Danh sách phòng bên dưới lấy trực tiếp từ database — chỉ hiện phòng đang{' '}
-              <span className="font-bold text-[#14B8A6]">trống (AVAILABLE)</span>.
+              Tham khảo phong cách từng loại.
             </p>
           </div>
 
