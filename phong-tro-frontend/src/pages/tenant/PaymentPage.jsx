@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { 
   Receipt, QrCode, Download, Upload, 
   Send, ChevronLeft, ChevronRight, Info,
-  CheckCircle2, Copy, Sun
+  CheckCircle2, Copy
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
@@ -382,11 +382,6 @@ export default function PaymentPage() {
                             alt="QR Payment" 
                             className="w-full h-full p-2"
                          />
-                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="bg-white/95 p-2 rounded-lg text-[#1E4D54] shadow-md">
-                               <Sun className="w-6 h-6" strokeWidth={2.25} />
-                            </div>
-                         </div>
                       </div>
                       <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-[#0F3A40] text-white px-5 py-2 rounded-full text-[11px] font-bold shadow-xl border border-[#14B8A6]/30">
                          Scan with Banking App
