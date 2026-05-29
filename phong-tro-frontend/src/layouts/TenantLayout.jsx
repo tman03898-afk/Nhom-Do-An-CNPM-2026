@@ -10,9 +10,10 @@ import { cachedApiFetch, invalidateApiCache } from '../lib/apiCache';
 export default function TenantLayout() {
   const { user, token, logout } = useAuth();
   const location = useLocation();
+  const routePrefix = location.pathname.startsWith('/app') ? '/app' : '/tenant';
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [roomLabel, setRoomLabel] = useState('—');
+  const [roomLabel, setRoomLabel] = useState('---');
   const [unreadCount, setUnreadCount] = useState(0);
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -26,23 +27,18 @@ export default function TenantLayout() {
     return `${origin}${String(raw).startsWith('/') ? raw : `/${raw}`}`;
   }, [API_BASE_URL, user?.avatar_url, user?.full_name, user?.name]);
 
-  // hydrate room label for tenant UI (no hardcoded demo)
   useEffect(() => {
     const run = async () => {
       if (!token) {
-        setRoomLabel('—');
+        setRoomLabel('---');
         return;
       }
       try {
         const data = await cachedApiFetch('/tenant/me', { token }, 120_000);
         const roomNumber = data?.tenant?.room_number;
-        if (data?.ok && roomNumber) {
-          setRoomLabel(`Phòng ${roomNumber}`);
-        } else {
-          setRoomLabel('—');
-        }
+        setRoomLabel(data?.ok && roomNumber ? `Phòng ${roomNumber}` : '---');
       } catch {
-        setRoomLabel('—');
+        setRoomLabel('---');
       }
     };
     run();
@@ -62,7 +58,7 @@ export default function TenantLayout() {
   }, [token]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- poll unread (async setState in loadUnread)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- poll unread notifications after layout mount
     loadUnread();
   }, [loadUnread]);
 
@@ -85,180 +81,191 @@ export default function TenantLayout() {
   }, [loadUnread]);
 
   const links = [
-    { name: 'Trang chủ', path: '/tenant/dashboard', icon: Home },
-    { name: 'Hóa đơn', path: '/tenant/invoices', icon: Receipt },
-    { name: 'Dịch vụ', path: '/tenant/services', icon: Sparkles },
-    { name: 'Hợp đồng', path: '/tenant/contract', icon: ClipboardList },
-    { name: 'Hỗ trợ', path: '/tenant/tickets', icon: AlertTriangle },
-    { name: 'Thông báo', path: '/tenant/notifications', icon: Bell },
-    { name: 'Tài khoản', path: '/tenant/profile', icon: User },
+    { name: 'Trang chủ', path: `${routePrefix}/dashboard`, icon: Home },
+    { name: 'Hóa đơn', path: `${routePrefix}/invoices`, icon: Receipt },
+    { name: 'Dịch vụ', path: `${routePrefix}/services`, icon: Sparkles },
+    { name: 'Hợp đồng', path: `${routePrefix}/contract`, icon: ClipboardList },
+    { name: 'Hỗ trợ', path: `${routePrefix}/tickets`, icon: AlertTriangle },
+    { name: 'Thông báo', path: `${routePrefix}/notifications`, icon: Bell },
+    { name: 'Tài khoản', path: `${routePrefix}/profile`, icon: User },
   ];
 
+  const bottomLinks = links.filter((link) =>
+    ['dashboard', 'invoices', 'services', 'tickets', 'profile'].some((slug) => link.path.endsWith(slug))
+  );
+
+  const currentTitle = links.find((link) => location.pathname.startsWith(link.path))?.name || 'Tổng quan';
+
   return (
-    <div className="flex min-h-screen bg-[#DDF5F7] overflow-hidden text-[#0F3A40] font-sans relative">
-      {/* Mobile Backdrop Overlay */}
+    <div className="relative flex min-h-screen overflow-hidden bg-[#DDF5F7] font-sans text-[#0F3A40]">
       {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[40] lg:hidden transition-opacity duration-300"
+        <div
+          className="fixed inset-0 z-[40] bg-black/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
-        ></div>
+        />
       )}
 
-      {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 lg:relative z-[50]
-        flex flex-col pt-8 pb-6 bg-[#1E4D54] border-r border-[#1E4D54]/20 shadow-2xl transition-all duration-300
+        fixed inset-y-0 left-0 z-[50] flex flex-col bg-[#1E4D54] pb-6 pt-8 shadow-2xl transition-all duration-300 lg:relative
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         ${isCollapsed ? 'w-[280px] lg:w-[88px] lg:px-3' : 'w-[280px] px-6'}
       `}>
-        {/* Toggle Button (Desktop Only) */}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="hidden lg:flex absolute -right-3 top-10 w-6 h-6 bg-[#14B8A6] text-white rounded-full items-center justify-center shadow-lg border-2 border-[#1E4D54] z-50 hover:scale-110 transition-transform cursor-pointer"
+          className="absolute -right-3 top-10 z-50 hidden h-6 w-6 items-center justify-center rounded-full border-2 border-[#1E4D54] bg-[#14B8A6] text-white shadow-lg transition-transform hover:scale-110 lg:flex"
+          aria-label={isCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
         >
           {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
 
-        {/* Close Button (Mobile Only) */}
         <button
           onClick={() => setIsMobileMenuOpen(false)}
-          className="lg:hidden absolute right-4 top-8 w-8 h-8 flex items-center justify-center text-white/70 hover:text-white"
+          className="absolute right-4 top-8 flex h-8 w-8 items-center justify-center text-white/70 hover:text-white lg:hidden"
+          aria-label="Đóng menu"
         >
           <X size={24} />
         </button>
 
-        {/* Logo */}
-        <div className={`relative flex flex-col mb-12 ${isCollapsed ? 'lg:items-center lg:px-0' : 'px-2'}`}>
-          <Link to="/" className="flex items-center gap-3 group overflow-hidden">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-nest-primary shadow-lg shadow-black/20 shrink-0 group-hover:scale-110 group-hover:rotate-6`}>
-              <Sun className="w-6 h-6 text-white" />
+        <div className={`relative mb-12 flex flex-col ${isCollapsed ? 'lg:items-center lg:px-0' : 'px-2'}`}>
+          <Link to="/" className="group flex items-center gap-3 overflow-hidden">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-nest-primary shadow-lg shadow-black/20 transition-all group-hover:scale-110 group-hover:rotate-6">
+              <Sun className="h-6 w-6 text-white" />
             </div>
             {(!isCollapsed || isMobileMenuOpen) && (
               <div className="flex flex-col">
-                <span className="text-white whitespace-nowrap leading-none font-bold">The Sun</span>
-                <span className="text-white/60 text-[10px] opacity-70 mt-1.5 font-bold tracking-[1px] uppercase whitespace-nowrap">TENANT DASHBOARD</span>
+                <span className="whitespace-nowrap font-bold leading-none text-white">The Sun</span>
+                <span className="mt-1.5 whitespace-nowrap text-[10px] font-bold uppercase tracking-[1px] text-white/60">TENANT APP</span>
               </div>
             )}
           </Link>
         </div>
 
-        {/* Navigation */}
-        <nav className="relative flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar">
+        <nav className="custom-scrollbar relative flex flex-1 flex-col gap-2 overflow-y-auto">
           {links.map((link) => {
             const isActive = location.pathname.startsWith(link.path);
             const showLabel = !isCollapsed || isMobileMenuOpen;
-            const isNotif = link.path === '/tenant/notifications';
-            const badgeText =
-              isNotif && unreadCount > 0 ? (unreadCount > 99 ? '99+' : String(unreadCount)) : null;
+            const isNotif = link.path.endsWith('/notifications');
+            const badgeText = isNotif && unreadCount > 0 ? (unreadCount > 99 ? '99+' : String(unreadCount)) : null;
+            const Icon = link.icon;
             return (
               <Link
                 key={link.path}
                 to={link.path}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className={`flex items-center gap-4 rounded-2xl transition-all duration-300 h-12 overflow-visible ${(isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : 'px-5'} ${isActive
-                  ? 'bg-white/15 text-white font-bold shadow-lg shadow-black/5'
-                  : 'text-white/70 hover:bg-white/5 hover:text-white font-medium'
-                  }`}
+                className={`flex h-12 items-center gap-4 overflow-visible rounded-2xl transition-all duration-300 ${(isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : 'px-5'} ${
+                  isActive ? 'bg-white/15 font-bold text-white shadow-lg shadow-black/5' : 'font-medium text-white/70 hover:bg-white/5 hover:text-white'
+                }`}
               >
-                <span className="relative inline-flex items-center justify-center shrink-0 w-[19px] h-[19px]">
-                  <link.icon className={`w-[19px] h-[19px] transition-colors ${isActive ? 'text-[#14B8A6]' : 'text-white/60'}`} />
+                <span className="relative inline-flex h-[19px] w-[19px] shrink-0 items-center justify-center">
+                  <Icon className={`h-[19px] w-[19px] transition-colors ${isActive ? 'text-[#14B8A6]' : 'text-white/60'}`} />
                   {isNotif && badgeText && !showLabel ? (
-                    <span className="absolute -right-2 -top-2 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center leading-none shadow-md border border-[#1E4D54]">
+                    <span className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-[#1E4D54] bg-red-500 px-0.5 text-[9px] font-extrabold leading-none text-white shadow-md">
                       {badgeText}
                     </span>
                   ) : null}
                 </span>
                 {showLabel && (
                   <>
-                    <span className="flex-1 text-[14px] tracking-wide whitespace-nowrap transition-opacity duration-300">{link.name}</span>
+                    <span className="flex-1 whitespace-nowrap text-[14px] tracking-wide transition-opacity duration-300">{link.name}</span>
                     {isNotif && badgeText ? (
-                      <span className="min-w-[22px] h-[22px] px-1 rounded-full bg-red-500 text-white text-[11px] font-extrabold flex items-center justify-center leading-none shrink-0">
+                      <span className="flex h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-extrabold leading-none text-white">
                         {badgeText}
                       </span>
                     ) : null}
-                    {isActive && <div className="ml-auto w-1.5 h-6 bg-[#14B8A6] rounded-full mr-[-4px]"></div>}
+                    {isActive && <div className="ml-auto mr-[-4px] h-6 w-1.5 rounded-full bg-[#14B8A6]" />}
                   </>
                 )}
               </Link>
-            )
+            );
           })}
         </nav>
 
-        {/* User Profile at Bottom */}
-        <div className={`mt-auto pt-6 border-t border-white/10 ${isCollapsed ? 'lg:items-center' : 'px-2'}`}>
-          <div className={`flex items-center gap-3 bg-white/5 p-3 rounded-2xl ${isCollapsed ? 'lg:justify-center lg:p-2' : ''}`}>
-            <div className="w-10 h-10 rounded-full bg-[#14B8A6]/20 border border-[#14B8A6]/30 overflow-hidden shrink-0 flex items-center justify-center">
-              <img
-                key={user?.avatar_url || 'av'}
-                src={tenantAvatarSrc}
-                alt=""
-                className="w-full h-full object-cover"
-              />
+        <div className={`mt-auto border-t border-white/10 pt-6 ${isCollapsed ? 'lg:items-center' : 'px-2'}`}>
+          <div className={`flex items-center gap-3 rounded-2xl bg-white/5 p-3 ${isCollapsed ? 'lg:justify-center lg:p-2' : ''}`}>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#14B8A6]/30 bg-[#14B8A6]/20">
+              <img key={user?.avatar_url || 'av'} src={tenantAvatarSrc} alt="" className="h-full w-full object-cover" />
             </div>
             {(!isCollapsed || isMobileMenuOpen) && (
-              <div className="flex flex-col min-w-0">
-                <span className="text-white text-[13px] font-bold truncate">{user?.full_name || user?.name || 'Khách thuê'}</span>
-                <span className="text-white/50 text-[11px] truncate mt-0.5 whitespace-nowrap">{roomLabel}</span>
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate text-[13px] font-bold text-white">{user?.full_name || user?.name || 'Khách thuê'}</span>
+                <span className="mt-0.5 truncate whitespace-nowrap text-[11px] text-white/50">{roomLabel}</span>
               </div>
             )}
           </div>
           {(!isCollapsed || isMobileMenuOpen) && (
-            <button onClick={logout} className="w-full mt-4 text-[#D14D4D] text-[11px] font-bold uppercase tracking-wider hover:opacity-80 transition-opacity">
+            <button onClick={logout} className="mt-4 w-full text-[11px] font-bold uppercase tracking-wider text-[#D14D4D] transition-opacity hover:opacity-80">
               Đăng xuất
             </button>
           )}
         </div>
       </aside>
 
-      {/* Main Container */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
-        {/* Top Header */}
-        <header className="h-[72px] lg:h-[88px] flex items-center justify-between px-4 lg:px-10 shrink-0 bg-white/90 backdrop-blur-2xl border-b border-nest-primary/10 shadow-[0_8px_30px_rgba(15,58,64,0.06)] z-20 relative">
-          <div className="flex items-center gap-4 lg:gap-6 flex-1">
-            {/* Mobile Hamburger Menu Toggle */}
+      <div className="relative flex h-screen flex-1 flex-col overflow-hidden transition-all duration-300">
+        <header className="relative z-20 flex h-[72px] shrink-0 items-center justify-between border-b border-nest-primary/10 bg-white/90 px-4 shadow-[0_8px_30px_rgba(15,58,64,0.06)] backdrop-blur-2xl lg:h-[88px] lg:px-10">
+          <div className="flex min-w-0 flex-1 items-center gap-4 lg:gap-6">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl bg-nest-bg text-nest-primary hover:bg-nest-primary hover:text-white transition-colors border border-nest-primary/10"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-nest-primary/10 bg-nest-bg text-nest-primary transition-colors hover:bg-nest-primary hover:text-white lg:hidden"
+              aria-label="Mở menu"
             >
               <Menu size={20} />
             </button>
 
-            <h2 className="text-[18px] lg:text-[22px] font-sans font-extrabold text-[#0F3A40] tracking-tight truncate">
-              {links.find(l => location.pathname.startsWith(l.path))?.name || 'Tổng quan'}
-            </h2>
+            <div className="min-w-0">
+              <h2 className="truncate text-[18px] font-extrabold tracking-tight text-[#0F3A40] lg:text-[22px]">
+                {currentTitle}
+              </h2>
+              <p className="truncate text-[11px] font-semibold text-[#5A8B91] sm:hidden">{roomLabel}</p>
+            </div>
 
-            {/* Context Pill */}
-            <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 bg-nest-bg/80 backdrop-blur-md rounded-full border border-nest-primary/20 shadow-sm ml-0 lg:ml-4">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span className="text-[10px] lg:text-[12px] font-bold text-[#4A787C] whitespace-nowrap">{roomLabel}</span>
+            <div className="ml-0 hidden items-center gap-2 rounded-full border border-nest-primary/20 bg-nest-bg/80 px-4 py-1.5 shadow-sm backdrop-blur-md sm:flex lg:ml-4">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+              <span className="whitespace-nowrap text-[10px] font-bold text-[#4A787C] lg:text-[12px]">{roomLabel}</span>
             </div>
           </div>
 
-          {/* User Actions */}
           <div className="flex items-center gap-3 lg:gap-5">
-            <Link to="/tenant/notifications" className="relative w-10 h-10 lg:w-11 lg:h-11 rounded-xl lg:rounded-2xl bg-white/80 backdrop-blur-md flex items-center justify-center text-[#4A787C] hover:text-[#14B8A6] hover:bg-white hover:shadow-lg hover:shadow-nest-primary/10 transition-all border border-transparent hover:border-nest-primary/10 group">
-              <Bell size={18} className="group-hover:rotate-12 transition-transform lg:size-[20px]" />
+            <Link to={`${routePrefix}/notifications`} className="group relative flex h-10 w-10 items-center justify-center rounded-xl border border-transparent bg-white/80 text-[#4A787C] backdrop-blur-md transition-all hover:border-nest-primary/10 hover:bg-white hover:text-[#14B8A6] hover:shadow-lg hover:shadow-nest-primary/10 lg:h-11 lg:w-11 lg:rounded-2xl">
+              <Bell size={18} className="transition-transform group-hover:rotate-12" />
               {unreadCount > 0 ? (
-                <span className="absolute top-1.5 right-1.5 lg:top-2 lg:right-2 min-w-[18px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">{unreadCount}</span>
+                <span className="absolute right-1.5 top-1.5 flex h-5 min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold text-white lg:right-2 lg:top-2">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
               ) : null}
             </Link>
-            <Link to="/tenant/profile" className="w-9 h-9 lg:w-10 lg:h-10 rounded-full overflow-hidden border-2 border-white shadow-md cursor-pointer hover:border-[#14B8A6]/50 hover:scale-110 transition-all">
-              <img
-                key={user?.avatar_url || 'av2'}
-                src={tenantAvatarSrc}
-                alt=""
-                className="w-full h-full object-cover"
-              />
+            <Link to={`${routePrefix}/profile`} className="h-9 w-9 cursor-pointer overflow-hidden rounded-full border-2 border-white shadow-md transition-all hover:scale-110 hover:border-[#14B8A6]/50 lg:h-10 lg:w-10">
+              <img key={user?.avatar_url || 'av2'} src={tenantAvatarSrc} alt="" className="h-full w-full object-cover" />
             </Link>
           </div>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto px-4 lg:px-10 pt-6 lg:pt-10 pb-10 scroll-smooth">
-          <div className="max-w-[1400px] mx-auto">
+        <main className="flex-1 overflow-y-auto px-4 pb-[104px] pt-4 scroll-smooth lg:px-10 lg:pb-10 lg:pt-10">
+          <div className="mx-auto max-w-[1400px]">
             <Outlet />
           </div>
         </main>
+
+        <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-nest-primary/15 bg-white/95 px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_28px_rgba(15,58,64,0.12)] backdrop-blur-xl lg:hidden">
+          <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+            {bottomLinks.map((link) => {
+              const isActive = location.pathname.startsWith(link.path);
+              const Icon = link.icon;
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  className={`flex h-[58px] flex-col items-center justify-center rounded-xl text-[10px] font-bold transition-colors ${
+                    isActive ? 'bg-nest-primary text-white shadow-md shadow-nest-primary/20' : 'text-[#5A8B91] hover:bg-nest-surface'
+                  }`}
+                  aria-label={link.name}
+                >
+                  <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                  <span className="mt-1 max-w-full truncate px-1 leading-none">{link.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </div>
   );

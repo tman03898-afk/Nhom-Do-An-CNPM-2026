@@ -32,6 +32,22 @@ import ContractManagePage from '../pages/admin/ContractManagePage';
 import RemovalHistoryPage from '../pages/admin/RemovalHistoryPage';
 import AdminProfilePage from '../pages/admin/AdminProfilePage';
 
+function renderTenantRoutes() {
+  return (
+    <>
+      <Route path="dashboard" element={<TenantDashboard />} />
+      <Route path="contract" element={<ContractPage />} />
+      <Route path="invoices" element={<TenantInvoicePage />} />
+      <Route path="payment" element={<PaymentPage />} />
+      <Route path="tickets" element={<TenantTicketPage />} />
+      <Route path="notifications" element={<TenantNotificationPage />} />
+      <Route path="services" element={<TenantServicesPage />} />
+      <Route path="profile" element={<ProfilePage />} />
+      <Route index element={<Navigate to="dashboard" replace />} />
+    </>
+  );
+}
+
 export default function AppRouter() {
   return (
     <Routes>
@@ -48,15 +64,12 @@ export default function AppRouter() {
 
       {/* Tenant Routes */}
       <Route path="/tenant" element={<TenantRoute />}>
-        <Route path="dashboard" element={<TenantDashboard />} />
-        <Route path="contract" element={<ContractPage />} />
-        <Route path="invoices" element={<TenantInvoicePage />} />
-        <Route path="payment" element={<PaymentPage />} />
-        <Route path="tickets" element={<TenantTicketPage />} />
-        <Route path="notifications" element={<TenantNotificationPage />} />
-        <Route path="services" element={<TenantServicesPage />} />
-        <Route path="profile" element={<ProfilePage />} />
-        <Route index element={<Navigate to="dashboard" replace />} />
+        {renderTenantRoutes()}
+      </Route>
+
+      {/* Mobile app alias for tenants */}
+      <Route path="/app" element={<TenantRoute />}>
+        {renderTenantRoutes()}
       </Route>
 
       {/* Admin Routes */}

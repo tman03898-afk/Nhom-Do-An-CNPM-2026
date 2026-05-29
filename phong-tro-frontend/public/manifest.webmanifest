@@ -1,0 +1,34 @@
+{
+  "name": "The Sun - Quản lý phòng trọ",
+  "short_name": "The Sun",
+  "description": "Ứng dụng dành cho người thuê phòng trọ The Sun.",
+  "start_url": "/app/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5FDFF",
+  "theme_color": "#14B8A6",
+  "categories": ["business", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Hóa đơn",
+      "short_name": "Hóa đơn",
+      "url": "/app/invoices",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Hỗ trợ",
+      "short_name": "Hỗ trợ",
+      "url": "/app/tickets",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}
