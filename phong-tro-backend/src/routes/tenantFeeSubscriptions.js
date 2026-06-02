@@ -7,6 +7,7 @@ const {
   ensureTenantFeeSubscriptionsTable,
   hasPublicTable,
   isFeeSubscribableRow,
+  EXCLUDED_FEE_NAMES_EXACT,
   firstDayOfCurrentMonthYmd,
 } = require('./_tenantFeeSubscriptions');
 
@@ -20,6 +21,7 @@ async function getTenantIdForUser(userId) {
 /** Các phí FIXED trong service_fees được phép đăng ký (đã loại Bảo vệ, Thang máy). */
 router.get('/tenant/fee-subscription-options', requireAuth, requireTenant, async (req, res) => {
   try {
+    await ensureTenantFeeSubscriptionsTable();
     if (!(await hasPublicTable('service_fees'))) {
       return res.json({ ok: true, fees: [] });
     }
@@ -28,8 +30,10 @@ router.get('/tenant/fee-subscription-options', requireAuth, requireTenant, async
        FROM service_fees
        WHERE COALESCE(is_active, true) = true
          AND fee_type::text = 'FIXED'
-         AND TRIM(fee_name) NOT IN ('Bảo vệ', 'Thang máy')
+         AND TRIM(fee_name) <> ALL($1::text[])
        ORDER BY fee_name ASC`
+      ,
+      [EXCLUDED_FEE_NAMES_EXACT]
     );
     const fees = result.rows.filter((row) => isFeeSubscribableRow(row));
     return res.json({ ok: true, fees });
@@ -67,6 +71,7 @@ router.get('/tenant/fee-subscriptions', requireAuth, requireTenant, async (req, 
        FROM tenant_fee_subscriptions tfs
        JOIN service_fees sf ON sf.fee_id = tfs.fee_id
        WHERE tfs.tenant_id = $1
+         AND TRIM(sf.fee_name) <> ALL($2::text[])
        ORDER BY
          CASE tfs.status
            WHEN 'PENDING' THEN 0
@@ -75,7 +80,7 @@ router.get('/tenant/fee-subscriptions', requireAuth, requireTenant, async (req, 
            ELSE 3
          END,
          tfs.created_at DESC`,
-      [tenantId]
+      [tenantId, EXCLUDED_FEE_NAMES_EXACT]
     );
     return res.json({ ok: true, subscriptions: result.rows });
   } catch (err) {
@@ -199,7 +204,9 @@ router.get('/admin/fee-subscriptions/pending', requireAuth, requireAdmin, async 
        LEFT JOIN rooms r ON r.room_id = t.room_id
        JOIN service_fees sf ON sf.fee_id = tfs.fee_id
        WHERE tfs.status = 'PENDING'
-       ORDER BY tfs.created_at ASC`
+         AND TRIM(sf.fee_name) <> ALL($1::text[])
+       ORDER BY tfs.created_at ASC`,
+      [EXCLUDED_FEE_NAMES_EXACT]
     );
     return res.json({ ok: true, pending: result.rows });
   } catch (err) {

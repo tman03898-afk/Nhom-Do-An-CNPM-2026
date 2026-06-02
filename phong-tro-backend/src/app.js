@@ -5,32 +5,8 @@ const cors = require('cors');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
-const explicitCorsOrigins = String(process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
-function isAllowedDevOrigin(origin) {
-  if (!origin) {
-    return true;
-  }
-
-  try {
-    const { hostname } = new URL(origin);
-    return hostname === 'localhost' || hostname === '127.0.0.1';
-  } catch (error) {
-    return false;
-  }
-}
-
 app.use(cors({
-  origin(origin, callback) {
-    if (!origin || explicitCorsOrigins.includes(origin) || isAllowedDevOrigin(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
-  },
+  origin: true,
   credentials: true,
 }));
 

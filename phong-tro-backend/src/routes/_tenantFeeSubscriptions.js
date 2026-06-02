@@ -14,7 +14,7 @@ async function hasPublicTable(tableName) {
 }
 
 /** Không cho đăng ký & ẩn khỏi luồng tiện ích (vẫn có thể giữ trong DB). */
-const EXCLUDED_FEE_NAMES_EXACT = ['Bảo vệ', 'Thang máy'];
+const EXCLUDED_FEE_NAMES_EXACT = ['Bảo vệ', 'Thang máy', 'Điều hòa'];
 
 function isFeeSubscribableRow(row) {
   if (!row) return false;
@@ -61,7 +61,7 @@ async function ensureTenantFeeSubscriptionsTable() {
 
   await pool.query(
     `UPDATE service_fees SET is_active = false
-     WHERE TRIM(fee_name) IN ('Bảo vệ', 'Thang máy')`
+     WHERE TRIM(fee_name) IN ('Bảo vệ', 'Thang máy', 'Điều hòa')`
   );
   });
 }
@@ -97,8 +97,10 @@ async function sumActiveFeeSubscriptionFeesForTenant(tenantId, billingMonthDate)
   const r = await pool.query(
     `SELECT COALESCE(SUM(tfs.monthly_price), 0)::numeric AS s
      FROM tenant_fee_subscriptions tfs
+     JOIN service_fees sf ON sf.fee_id = tfs.fee_id
      WHERE tfs.tenant_id = $1
        AND tfs.status = 'ACTIVE'
+       AND TRIM(sf.fee_name) NOT IN ('Bảo vệ', 'Thang máy', 'Điều hòa')
        AND tfs.effective_from IS NOT NULL
        AND date_trunc('month', tfs.effective_from)::date <= date_trunc('month', $2::date)::date
        AND (tfs.cancelled_at IS NULL OR (tfs.cancelled_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= date_trunc('month', $2::date)::date)`,
@@ -119,6 +121,7 @@ async function listActiveFeeSubscriptionLinesForTenant(tenantId, billingMonthDat
      JOIN service_fees sf ON sf.fee_id = tfs.fee_id
      WHERE tfs.tenant_id = $1
        AND tfs.status = 'ACTIVE'
+       AND TRIM(sf.fee_name) NOT IN ('Bảo vệ', 'Thang máy', 'Điều hòa')
        AND tfs.effective_from IS NOT NULL
        AND date_trunc('month', tfs.effective_from)::date <= date_trunc('month', $2::date)::date
        AND (tfs.cancelled_at IS NULL OR (tfs.cancelled_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= date_trunc('month', $2::date)::date)

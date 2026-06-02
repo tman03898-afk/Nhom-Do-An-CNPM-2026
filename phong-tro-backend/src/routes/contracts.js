@@ -569,6 +569,12 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
          c.updated_at,
          r.room_id,
          r.room_number,
+         r.floor,
+         r.area,
+         r.price,
+         r.description,
+         r.status AS room_status,
+         r.images,
          r.max_tenants
        FROM users u
        JOIN tenants t ON t.user_id = u.user_id
@@ -581,10 +587,39 @@ router.get('/tenant/contract', requireAuth, requireTenant, async (req, res) => {
     );
 
     if (result.rowCount === 0 || !result.rows[0].contract_id) {
-      return res.json({ ok: true, contract: null });
+      return res.json({ ok: true, contract: null, room: null });
     }
 
-    return res.json({ ok: true, contract: result.rows[0] });
+    const row = result.rows[0];
+    const contract = {
+      contract_id: row.contract_id,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      rent_price: row.rent_price,
+      deposit: row.deposit,
+      status: row.status,
+      notes: row.notes,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      room_id: row.room_id,
+      room_number: row.room_number,
+      max_tenants: row.max_tenants,
+    };
+    const room = row.room_id
+      ? {
+          room_id: row.room_id,
+          room_number: row.room_number,
+          floor: row.floor,
+          area: row.area,
+          price: row.price,
+          description: row.description,
+          status: row.room_status,
+          images: row.images,
+          max_tenants: row.max_tenants,
+        }
+      : null;
+
+    return res.json({ ok: true, contract, room });
   } catch (err) {
     console.error('Tenant contract error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
