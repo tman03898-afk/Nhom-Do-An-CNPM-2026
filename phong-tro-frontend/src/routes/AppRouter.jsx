@@ -30,6 +30,7 @@ import AnalyticsPage from '../pages/admin/AnalyticsPage';
 import AssetManagePage from '../pages/admin/AssetManagePage';
 import ContractManagePage from '../pages/admin/ContractManagePage';
 import RemovalHistoryPage from '../pages/admin/RemovalHistoryPage';
+import AdminProfilePage from '../pages/admin/AdminProfilePage';
 
 export default function AppRouter() {
   return (
@@ -72,6 +73,7 @@ export default function AppRouter() {
         <Route path="assets" element={<AssetManagePage />} />
         <Route path="contracts" element={<ContractManagePage />} />
         <Route path="removal-log" element={<RemovalHistoryPage />} />
+        <Route path="profile" element={<AdminProfilePage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
       </Route>
       

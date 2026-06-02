@@ -59,3 +59,23 @@ export async function apiFetch(path, { token, method = 'GET', headers, body } = 
   return data;
 }
 
+/** Upload ảnh phòng (admin) — trả về mảng URL tương đối /uploads/room-images/... */
+export async function apiUploadRoomImages(files, { token }) {
+  if (!files?.length) return [];
+  const fd = new FormData();
+  for (const f of files) {
+    fd.append('images', f);
+  }
+  const url = `${API_BASE_URL}/rooms/admin/upload-images`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  });
+  const data = await parseJsonSafe(response);
+  if (!response.ok || (data && data.ok === false)) {
+    throw new Error(data?.message || `Upload failed (${response.status})`);
+  }
+  return data?.urls || [];
+}
+

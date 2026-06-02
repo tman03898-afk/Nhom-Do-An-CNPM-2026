@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { 
   Receipt, QrCode, Download, Upload, 
   Send, ChevronLeft, ChevronRight, Info,
-  CheckCircle2, Copy, Leaf
+  CheckCircle2, Copy, Sun
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, API_BASE_URL } from '../../lib/api';
 
 export default function PaymentPage() {
   const navigate = useNavigate();
@@ -65,14 +65,19 @@ export default function PaymentPage() {
     run();
   }, [token]);
 
+  const isPayableInvoice = (i) => {
+    const s = String(i?.status || '').toUpperCase();
+    return s !== 'PAID' && s !== 'CANCELLED';
+  };
+
   const invoiceToPay = useMemo(() => {
     const requestedId = Number(searchParams.get('invoiceId'));
     if (Number.isInteger(requestedId) && requestedId > 0) {
       const found = invoices.find((i) => Number(i.invoice_id) === requestedId);
-      if (found) return found;
+      if (found && isPayableInvoice(found)) return found;
     }
 
-    const unpaid = invoices.find((i) => String(i.status || '').toUpperCase() !== 'PAID');
+    const unpaid = invoices.find((i) => isPayableInvoice(i));
     if (unpaid) return unpaid;
 
     return invoices[0] || null;
@@ -97,8 +102,10 @@ export default function PaymentPage() {
     };
   }, [token, invoiceToPay?.invoice_id]);
 
-  const isPaid = String(invoiceToPay?.status || '').toUpperCase() === 'PAID';
-  const needsPayment = Boolean(invoiceToPay) && !isPaid;
+  const invoiceStatus = String(invoiceToPay?.status || '').toUpperCase();
+  const isPaid = invoiceStatus === 'PAID';
+  const isCancelled = invoiceStatus === 'CANCELLED';
+  const needsPayment = Boolean(invoiceToPay) && !isPaid && !isCancelled;
   const latestPaymentForInvoice = useMemo(() => {
     if (!invoiceToPay) return null;
     const invoiceId = Number(invoiceToPay.invoice_id);
@@ -118,7 +125,7 @@ export default function PaymentPage() {
   const dueLabel = needsPayment ? formatDueDate(invoiceToPay?.due_date) : null;
 
   const transferContent = useMemo(() => {
-    if (!invoiceToPay) return 'THE_NEST_PAYMENT';
+    if (!invoiceToPay) return 'THE_SUN_PAYMENT';
     const m = String(invoiceToPay.period_month || '').padStart(2, '0');
     const y = String(invoiceToPay.period_year || '');
     const room = invoiceToPay.room_number ? String(invoiceToPay.room_number) : 'ROOM';
@@ -130,6 +137,35 @@ export default function PaymentPage() {
     const data = `${transferContent}_${amount}`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data)}`;
   }, [invoiceToPay, transferContent]);
+
+  const notifyThirdPartyGateway = (label) => {
+    addToast(
+      `${label} chưa tích hợp ví điện tử trong hệ thống. Vui lòng chuyển khoản qua mã QR bên phải hoặc theo thông tin tài khoản.`,
+      'info'
+    );
+  };
+
+  const handleDownloadQr = async () => {
+    try {
+      const res = await fetch(qrUrl);
+      if (!res.ok) throw new Error('fetch');
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = invoiceToPay
+        ? `qr-thesun-hd-${invoiceToPay.invoice_id}.png`
+        : 'qr-thesun-thanh-toan.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      addToast('Đã tải mã QR về máy.');
+    } catch {
+      window.open(qrUrl, '_blank', 'noopener,noreferrer');
+      addToast('Đã mở mã QR trong tab mới — nhấn chuột phải vào ảnh để lưu về máy.', 'info');
+    }
+  };
 
   const handleSubmit = async () => {
     if (!invoiceToPay) {
@@ -153,7 +189,7 @@ export default function PaymentPage() {
       const formData = new FormData();
       formData.append('proof', uploadedFile);
       
-      const uploadResponse = await fetch('http://localhost:5000/api/tenant/payments/upload', {
+      const uploadResponse = await fetch(`${API_BASE_URL}/tenant/payments/upload`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -305,11 +341,19 @@ export default function PaymentPage() {
              <div className="bg-white/40 rounded-[32px] p-8 border border-white/50 shadow-sm">
                 <h4 className="text-[13px] font-bold text-[#82ABB0] uppercase tracking-widest mb-6">CỔNG THANH TOÁN KHÁC</h4>
                 <div className="flex gap-4">
-                   <button className="flex-1 bg-white hover:bg-[#F2FCFD] border border-[#BCE1E5]/30 p-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-3">
+                   <button
+                     type="button"
+                     onClick={() => notifyThirdPartyGateway('VNPay')}
+                     className="flex-1 bg-white hover:bg-[#F2FCFD] border border-[#BCE1E5]/30 p-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-3"
+                   >
                       <div className="w-8 h-8 rounded-lg bg-[#E11D48]/10 flex items-center justify-center text-[#E11D48] text-[10px] font-extrabold italic uppercase">VNPay</div>
                       <span className="text-[13px] font-bold text-[#4A787C]">VNPay</span>
                    </button>
-                   <button className="flex-1 bg-white hover:bg-[#F2FCFD] border border-[#BCE1E5]/30 p-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-3 text-pink-500">
+                   <button
+                     type="button"
+                     onClick={() => notifyThirdPartyGateway('MoMo')}
+                     className="flex-1 bg-white hover:bg-[#F2FCFD] border border-[#BCE1E5]/30 p-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-3 text-pink-500"
+                   >
                       <div className="w-8 h-8 rounded-lg bg-pink-500 flex items-center justify-center text-white text-[10px] font-extrabold uppercase">MoMo</div>
                       <span className="text-[13px] font-bold text-[#4A787C]">Momo</span>
                    </button>
@@ -341,7 +385,7 @@ export default function PaymentPage() {
                          />
                          <div className="absolute inset-0 flex items-center justify-center bg-[#1E4D54] opacity-80 rounded-xl">
                             <div className="bg-white p-2 rounded-lg text-[#1E4D54]">
-                               <Leaf className="fill-current w-6 h-6" />
+                               <Sun className="w-6 h-6" strokeWidth={2.25} />
                             </div>
                          </div>
                       </div>
@@ -353,7 +397,7 @@ export default function PaymentPage() {
                    <div className="w-full max-w-[400px] space-y-4">
                       <div className="flex flex-col items-center mb-6">
                          <p className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-widest mb-1">CHỦ TÀI KHOẢN</p>
-                         <h4 className="text-[16px] font-bold text-[#0F3A40]">NGUYEN MINH QUAN - THE NEST</h4>
+                         <h4 className="text-[16px] font-bold text-[#0F3A40]">NGUYEN MINH QUAN - THE SUN</h4>
                       </div>
 
                       <div className="bg-white/40 p-1.5 pl-5 rounded-2xl flex items-center justify-between border border-white">
@@ -370,8 +414,10 @@ export default function PaymentPage() {
                       </div>
 
                       <button 
-                        onClick={() => addToast('Đã lưu mã QR vào thư viện ảnh!')}
-                        className="w-full py-3.5 rounded-2xl bg-[#0F3A40] text-white font-bold text-[13.5px] hover:bg-[#1F545B] transition-all flex items-center justify-center gap-2 shadow-lg"
+                        type="button"
+                        onClick={handleDownloadQr}
+                        disabled={isLoading}
+                        className="w-full py-3.5 rounded-2xl bg-[#0F3A40] text-white font-bold text-[13.5px] hover:bg-[#1F545B] transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                          <Download size={16} /> Lưu mã QR
                       </button>
@@ -448,7 +494,7 @@ export default function PaymentPage() {
                 ) : null}
                 
                 <p className="text-center mt-6 text-[11px] font-medium text-[#82ABB0] leading-relaxed max-w-[500px] mx-auto">
-                   Bằng cách nhấn xác nhận, bạn đồng ý với các điều khoản thanh toán của The Nest Living. 
+                   Bằng cách nhấn xác nhận, bạn đồng ý với các điều khoản thanh toán của The Sun. 
                    Giao dịch sẽ được xử lý trong vòng 2-4 giờ làm việc.
                 </p>
              </div>

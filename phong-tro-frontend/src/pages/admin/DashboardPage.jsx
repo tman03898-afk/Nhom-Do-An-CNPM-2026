@@ -15,6 +15,15 @@ import {
    CreditCard,
    Phone,
 } from 'lucide-react';
+import {
+   Bar,
+   BarChart,
+   CartesianGrid,
+   ResponsiveContainer,
+   Tooltip,
+   XAxis,
+   YAxis,
+} from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 
@@ -23,22 +32,53 @@ function isUnpaidInvoiceStatus(status) {
    return s !== 'PAID' && s !== 'CANCELLED';
 }
 
+function formatRelativeTime(iso) {
+   if (!iso) return '—';
+   const d = new Date(iso);
+   if (Number.isNaN(d.getTime())) return '—';
+   const diff = Date.now() - d.getTime();
+   const mins = Math.floor(diff / 60000);
+   if (mins < 1) return 'Vừa xong';
+   if (mins < 60) return `${mins} phút trước`;
+   const hours = Math.floor(mins / 60);
+   if (hours < 24) return `${hours} giờ trước`;
+   const days = Math.floor(hours / 24);
+   if (days < 7) return `${days} ngày trước`;
+   return d.toLocaleDateString('vi-VN');
+}
+
+function activityIcon(type) {
+   if (type === 'payment') return CheckCircle2;
+   if (type === 'ticket') return Wrench;
+   if (type === 'contract') return FileText;
+   return UserPlus;
+}
+
 export default function DashboardPage() {
    const [activeTab, setActiveTab] = useState('revenue');
+   const chartYear = new Date().getFullYear();
    const { token } = useAuth();
    const [rooms, setRooms] = useState([]);
-   const [overview, setOverview] = useState(null);
    const [invoices, setInvoices] = useState([]);
    const [tickets, setTickets] = useState([]);
    const [contracts, setContracts] = useState([]);
    const [tenants, setTenants] = useState([]);
+   const [monthlySeries, setMonthlySeries] = useState([]);
+   const [activities, setActivities] = useState([]);
+   const [collectionSummary, setCollectionSummary] = useState(null);
+   /** Mốc thời gian cho thống kê quá hạn (tránh Date.now trong render). */
+   const [invoiceAsOf, setInvoiceAsOf] = useState(null);
+
+   useEffect(() => {
+      queueMicrotask(() => setInvoiceAsOf(Date.now()));
+   }, [invoices]);
 
    useEffect(() => {
       const fetchRooms = async () => {
          try {
             const data = await apiFetch('/rooms', { token });
             setRooms(data.rooms || []);
-         } catch (error) {
+         } catch {
             setRooms([]);
          }
       };
@@ -49,20 +89,18 @@ export default function DashboardPage() {
       const run = async () => {
          if (!token) return;
          try {
-            const [ov, inv, tk, con, tn] = await Promise.all([
+            const [, inv, tk, con, tn] = await Promise.all([
                apiFetch('/admin/analytics/overview', { token }),
                apiFetch('/admin/invoices', { token }),
                apiFetch('/admin/tickets', { token }),
                apiFetch('/admin/contracts', { token }),
                apiFetch('/admin/tenants', { token }),
             ]);
-            setOverview(ov.overview || null);
             setInvoices(inv.invoices || []);
             setTickets(tk.tickets || []);
             setContracts(con.contracts || []);
             setTenants(tn.tenants || []);
-         } catch (e) {
-            setOverview(null);
+         } catch {
             setInvoices([]);
             setTickets([]);
             setContracts([]);
@@ -72,12 +110,35 @@ export default function DashboardPage() {
       run();
    }, [token]);
 
+   useEffect(() => {
+      const loadAnalytics = async () => {
+         if (!token) return;
+         try {
+            const [series, activity, collection] = await Promise.all([
+               apiFetch(`/admin/analytics/monthly-series?year=${chartYear}`, { token }),
+               apiFetch('/admin/analytics/recent-activity?limit=8', { token }),
+               apiFetch('/admin/analytics/collection-summary', { token }),
+            ]);
+            setMonthlySeries(series?.months || []);
+            setActivities(activity?.activities || []);
+            setCollectionSummary(collection || null);
+         } catch {
+            setMonthlySeries([]);
+            setActivities([]);
+            setCollectionSummary(null);
+         }
+      };
+      loadAnalytics();
+   }, [token, chartYear]);
+
    const expiringContractsSoon = useMemo(() => {
       const now = new Date();
       const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-      return contracts.filter(
-         (c) => c.status === 'ACTIVE' && c.end_date && new Date(c.end_date) <= in30Days
-      ).length;
+      return contracts.filter((c) => {
+         if (c.status !== 'ACTIVE' || !c.end_date) return false;
+         const end = new Date(c.end_date);
+         return end >= now && end <= in30Days;
+      }).length;
    }, [contracts]);
 
    /** Ghép tenant + phòng + hợp đồng ACTIVE + hóa đơn chưa trả (giống góc nhìn tenant). */
@@ -149,18 +210,54 @@ export default function DashboardPage() {
 
    const invoiceStats = useMemo(() => {
       const unpaid = invoices.filter((i) => i.status !== 'PAID' && i.status !== 'CANCELLED').length;
-      return { unpaid };
-   }, [invoices]);
+      if (invoiceAsOf == null) {
+         return { unpaid, overdueCount: 0, avgOverdueDays: null };
+      }
+      const now = invoiceAsOf;
+      const overdue = invoices.filter(
+         (i) => i.status !== 'PAID' && i.status !== 'CANCELLED' && i.due_date && new Date(i.due_date).getTime() < now
+      );
+      const avgOverdueDays =
+         overdue.length > 0
+            ? Math.round(
+                 overdue.reduce((sum, i) => sum + (now - new Date(i.due_date).getTime()) / 86400000, 0) / overdue.length
+              )
+            : null;
+      return { unpaid, overdueCount: overdue.length, avgOverdueDays };
+   }, [invoices, invoiceAsOf]);
 
    const ticketStats = useMemo(() => {
       const open = tickets.filter((t) => t.status === 'OPEN').length;
       return { open };
    }, [tickets]);
 
-   const totalRevenue = useMemo(() => {
-      const paid = invoices.filter((i) => i.status === 'PAID');
-      return paid.reduce((sum, i) => sum + Number(i.total_amount || 0), 0);
-   }, [invoices]);
+   const monthRevenue = useMemo(() => {
+      if (collectionSummary?.revenue) {
+         return {
+            amount: Number(collectionSummary.revenue.current || 0),
+            changePct: collectionSummary.revenue.change_pct,
+         };
+      }
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth() + 1;
+      const cur = invoices
+         .filter((i) => i.status === 'PAID' && Number(i.period_year) === y && Number(i.period_month) === m)
+         .reduce((s, i) => s + Number(i.total_amount || 0), 0);
+      return { amount: cur, changePct: null };
+   }, [collectionSummary, invoices]);
+
+   const chartData = useMemo(() => {
+      return (monthlySeries.length ? monthlySeries : Array.from({ length: 12 }, (_, i) => ({
+         month: i + 1,
+         label: `T${i + 1}`,
+         revenue: 0,
+         cost: 0,
+      }))).map((row) => ({
+         name: row.label || `T${row.month}`,
+         value: activeTab === 'revenue' ? Number(row.revenue || 0) : Number(row.cost || 0),
+      }));
+   }, [monthlySeries, activeTab]);
 
    return (
       <div className="w-full max-w-[1200px] mx-auto mt-2">
@@ -183,11 +280,19 @@ export default function DashboardPage() {
                   <div className="w-[42px] h-[42px] rounded-full bg-nest-primary/10 flex items-center justify-center group-hover:bg-nest-primary/20 transition-colors">
                      <Banknote className="w-5 h-5 text-nest-text-primary" />
                   </div>
-                  <span className="bg-nest-bg text-nest-primary text-xs font-bold px-3 py-1.5 rounded-full border border-nest-primary/10 shadow-sm">+12.5%</span>
+                  {monthRevenue.changePct != null ? (
+                     <span className={`text-xs font-bold px-3 py-1.5 rounded-full border shadow-sm ${
+                        monthRevenue.changePct >= 0
+                           ? 'bg-nest-bg text-nest-primary border-nest-primary/10'
+                           : 'bg-red-50 text-red-600 border-red-100'
+                     }`}>
+                        {monthRevenue.changePct >= 0 ? '+' : ''}{monthRevenue.changePct}%
+                     </span>
+                  ) : null}
                </div>
                <div>
-                  <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Tổng doanh thu tháng</p>
-                  <h3 className="text-2xl font-bold text-nest-text-primary">{Number(totalRevenue || 0).toLocaleString('vi-VN')}đ</h3>
+                  <p className="text-[11px] font-bold text-nest-text-secondary uppercase tracking-widest mb-2">Doanh thu tháng này</p>
+                  <h3 className="text-2xl font-bold text-nest-text-primary">{Number(monthRevenue.amount || 0).toLocaleString('vi-VN')}đ</h3>
                   <Link to="/admin/payments" className="mt-4 text-[11px] font-bold text-nest-primary flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                      Xem chi tiết <ArrowRight size={12} />
                   </Link>
@@ -243,9 +348,13 @@ export default function DashboardPage() {
                         Xem chi tiết <ArrowRight size={12} />
                      </Link>
                   </div>
-                  <span className="text-red-500 text-[11px] font-bold whitespace-pre-line text-right mb-5">
-                     - 3 days late<br />avg
-                  </span>
+                  {invoiceStats.overdueCount > 0 && invoiceStats.avgOverdueDays != null ? (
+                     <span className="text-red-500 text-[11px] font-bold whitespace-pre-line text-right mb-5">
+                        {invoiceStats.overdueCount} quá hạn
+                        <br />
+                        ~{invoiceStats.avgOverdueDays} ngày TB
+                     </span>
+                  ) : null}
                </div>
             </div>
 
@@ -387,7 +496,7 @@ export default function DashboardPage() {
                <div className="flex justify-between items-start mb-12">
                   <div>
                      <h3 className="text-xl font-bold text-nest-text-primary">Doanh thu hàng tháng</h3>
-                     <p className="text-[13px] text-nest-text-secondary mt-1.5 font-medium">Phân tích hiệu suất theo năm</p>
+                     <p className="text-[13px] text-nest-text-secondary mt-1.5 font-medium">Năm {chartYear} — từ hóa đơn đã thanh toán</p>
                   </div>
                   <div className="flex bg-nest-bg/50 backdrop-blur-sm rounded-full p-1 border border-nest-primary/10 shadow-sm">
                      <button
@@ -404,99 +513,74 @@ export default function DashboardPage() {
                      </button>
                   </div>
                </div>
-               <div className="h-[240px] w-full flex flex-col relative mt-2">
-                  <div className="flex-1 relative w-full flex items-end px-2">
-                     <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100">
-                        <defs>
-                           <linearGradient id="chartGradientRev" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#14B8A6" stopOpacity="0.25" />
-                              <stop offset="100%" stopColor="#14B8A6" stopOpacity="0" />
-                           </linearGradient>
-                           <linearGradient id="chartGradientCost" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#D14D4D" stopOpacity="0.25" />
-                              <stop offset="100%" stopColor="#D14D4D" stopOpacity="0" />
-                           </linearGradient>
-                        </defs>
-
-                        {/* Grid lines */}
-                        <line x1="0" y1="20" x2="100" y2="20" stroke="#BCE1E5" strokeWidth="1" strokeOpacity="0.6" vectorEffect="non-scaling-stroke" strokeDasharray="4 4" />
-                        <line x1="0" y1="40" x2="100" y2="40" stroke="#BCE1E5" strokeWidth="1" strokeOpacity="0.6" vectorEffect="non-scaling-stroke" strokeDasharray="4 4" />
-                        <line x1="0" y1="60" x2="100" y2="60" stroke="#BCE1E5" strokeWidth="1" strokeOpacity="0.6" vectorEffect="non-scaling-stroke" strokeDasharray="4 4" />
-                        <line x1="0" y1="80" x2="100" y2="80" stroke="#BCE1E5" strokeWidth="1" strokeOpacity="0.6" vectorEffect="non-scaling-stroke" strokeDasharray="4 4" />
-
-                        {/* Chart Gradient Fill */}
-                        <polygon
-                           points={activeTab === 'revenue'
-                              ? "0,100 0,60 9.1,55 18.2,70 27.3,40 36.4,45 45.5,20 54.5,30 63.6,50 72.7,65 81.8,30 90.9,40 100,25 100,100"
-                              : "0,100 0,80 9.1,85 18.2,75 27.3,90 36.4,85 45.5,70 54.5,60 63.6,80 72.7,85 81.8,60 90.9,75 100,50 100,100"
-                           }
-                           fill={activeTab === 'revenue' ? "url(#chartGradientRev)" : "url(#chartGradientCost)"}
-                           style={{ transition: 'all 0.5s ease-in-out' }}
-                        />
-                        {/* Chart Line */}
-                        <polyline
-                           points={activeTab === 'revenue'
-                              ? "0,60 9.1,55 18.2,70 27.3,40 36.4,45 45.5,20 54.5,30 63.6,50 72.7,65 81.8,30 90.9,40 100,25"
-                              : "0,80 9.1,85 18.2,75 27.3,90 36.4,85 45.5,70 54.5,60 63.6,80 72.7,85 81.8,60 90.9,75 100,50"
-                           }
-                           fill="none"
-                           stroke={activeTab === 'revenue' ? "#14B8A6" : "#D14D4D"}
-                           strokeWidth="3.5"
-                           vectorEffect="non-scaling-stroke"
-                           strokeLinecap="round"
-                           strokeLinejoin="round"
-                           style={{ transition: 'all 0.5s ease-in-out' }}
-                        />
-                     </svg>
-                  </div>
-                  <div className="h-8 border-t border-[#BCE1E5]/80 flex items-center justify-between px-2 pt-4 z-10 w-full">
-                     {['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'].map((month, i) => (
-                        <span key={i} className="text-[11px] font-bold text-[#4A787C] w-full text-center">{month}</span>
-                     ))}
-                  </div>
+               <div className="h-[260px] w-full mt-2">
+                  {chartData.every((d) => d.value === 0) ? (
+                     <p className="text-[13px] text-nest-text-secondary font-medium text-center py-16">
+                        Chưa có dữ liệu {activeTab === 'revenue' ? 'doanh thu' : 'chi phí'} trong năm {chartYear}.
+                     </p>
+                  ) : (
+                     <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                           <CartesianGrid strokeDasharray="4 4" stroke="#BCE1E5" vertical={false} />
+                           <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#4A787C', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                           <YAxis
+                              tick={{ fontSize: 10, fill: '#82ABB0' }}
+                              axisLine={false}
+                              tickLine={false}
+                              tickFormatter={(v) => (v >= 1_000_000 ? `${(v / 1_000_000).toFixed(0)}tr` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)}
+                           />
+                           <Tooltip
+                              formatter={(val) => [`${Number(val || 0).toLocaleString('vi-VN')}đ`, activeTab === 'revenue' ? 'Doanh thu' : 'Chi phí']}
+                              contentStyle={{ borderRadius: 12, border: '1px solid #BCE1E5', fontSize: 12 }}
+                           />
+                           <Bar
+                              dataKey="value"
+                              fill={activeTab === 'revenue' ? '#14B8A6' : '#D14D4D'}
+                              radius={[6, 6, 0, 0]}
+                              maxBarSize={36}
+                           />
+                        </BarChart>
+                     </ResponsiveContainer>
+                  )}
                </div>
             </div>
 
             {/* Recent Activity (Right) */}
             <div className="lg:col-span-4 bg-white/80 rounded-[2.5rem] p-5 sm:p-9 shadow-[0_8px_30px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm">
                <h3 className="text-xl font-bold text-nest-text-primary mb-8">Hoạt động gần đây</h3>
-               <div className="space-y-7">
-                  <div className="flex gap-5 items-start hover:bg-nest-bg/60 p-3 -m-3 rounded-2xl transition-all cursor-pointer group">
-                     <div className="w-[42px] h-[42px] rounded-full bg-nest-primary/10 flex items-center justify-center shrink-0 group-hover:bg-nest-primary/20 transition-colors">
-                        <UserPlus className="w-5 h-5 text-nest-text-primary" />
-                     </div>
-                     <div className="mt-0.5">
-                     <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đang cập nhật hoạt động</h4>
-                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">—</p>
-                     </div>
-                  </div>
-                  <div className="flex gap-5 items-start hover:bg-white/60 p-3 -m-3 rounded-2xl transition-all cursor-pointer group">
-                     <div className="w-[42px] h-[42px] rounded-full bg-orange-100 flex items-center justify-center shrink-0 group-hover:bg-orange-200 transition-colors">
-                        <Wrench className="w-5 h-5 text-orange-600" />
-                     </div>
-                     <div className="mt-0.5">
-                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đang cập nhật hoạt động</h4>
-                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">—</p>
-                     </div>
-                  </div>
-                  <div className="flex gap-5 items-start hover:bg-white/60 p-3 -m-3 rounded-2xl transition-all cursor-pointer group">
-                     <div className="w-[42px] h-[42px] rounded-full bg-nest-primary/10 flex items-center justify-center shrink-0 group-hover:bg-nest-primary/20 transition-colors">
-                        <CheckCircle2 className="w-5 h-5 text-nest-primary" />
-                     </div>
-                     <div className="mt-0.5">
-                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đang cập nhật hoạt động</h4>
-                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">—</p>
-                     </div>
-                  </div>
-                  <div className="flex gap-5 items-start hover:bg-white/60 p-3 -m-3 rounded-2xl transition-all cursor-pointer group">
-                     <div className="w-[42px] h-[42px] rounded-full bg-gray-100 flex items-center justify-center shrink-0 group-hover:bg-gray-200 transition-colors">
-                        <BedDouble className="w-5 h-5 text-gray-500" />
-                     </div>
-                     <div className="mt-0.5">
-                        <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">Đang cập nhật hoạt động</h4>
-                        <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5">—</p>
-                     </div>
-                  </div>
+               <div className="space-y-5">
+                  {activities.length === 0 ? (
+                     <p className="text-[13px] text-nest-text-secondary font-medium py-6 text-center">
+                        Chưa có hoạt động gần đây.
+                     </p>
+                  ) : (
+                     activities.map((item, idx) => {
+                        const Icon = activityIcon(item.type);
+                        const iconWrap =
+                           item.type === 'ticket'
+                              ? 'bg-orange-100 group-hover:bg-orange-200'
+                              : item.type === 'payment'
+                                ? 'bg-nest-primary/10 group-hover:bg-nest-primary/20'
+                                : 'bg-slate-100 group-hover:bg-slate-200';
+                        const iconColor =
+                           item.type === 'ticket' ? 'text-orange-600' : item.type === 'payment' ? 'text-nest-primary' : 'text-slate-600';
+                        return (
+                           <div
+                              key={`${item.type}-${item.at}-${idx}`}
+                              className="flex gap-5 items-start hover:bg-nest-bg/60 p-3 -m-3 rounded-2xl transition-all group"
+                           >
+                              <div className={`w-[42px] h-[42px] rounded-full flex items-center justify-center shrink-0 transition-colors ${iconWrap}`}>
+                                 <Icon className={`w-5 h-5 ${iconColor}`} />
+                              </div>
+                              <div className="mt-0.5 min-w-0">
+                                 <h4 className="text-[13px] font-bold text-nest-text-primary leading-snug">{item.title}</h4>
+                                 <p className="text-[11px] font-medium text-nest-text-secondary mt-1.5 truncate">{item.detail}</p>
+                                 <p className="text-[10px] font-bold text-[#82ABB0] mt-1">{formatRelativeTime(item.at)}</p>
+                              </div>
+                           </div>
+                        );
+                     })
+                  )}
                </div>
             </div>
          </div>

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { MapPin, CheckCircle2, UserCheck, BarChart3, Edit3, Trash2, ArrowUpRight, Plus } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
+import RoomFormModal from '../../components/rooms/RoomFormModal';
+import RoomHoldManagePanel from '../../components/rooms/RoomHoldManagePanel';
 
 export default function RoomManagePage() {
   const { token } = useAuth();
@@ -13,11 +16,11 @@ export default function RoomManagePage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
-  const [form, setForm] = useState({ room_number: '', floor: '', area: '', max_tenants: 2, price: '', status: 'AVAILABLE', description: '' });
 
   const statusView = useMemo(
     () => ({
       AVAILABLE: { label: 'TRỐNG', pill: 'bg-[#EBFDFB] text-[#14B8A6]', dot: 'bg-[#14B8A6]' },
+      HELD: { label: 'ĐANG GIỮ', pill: 'bg-amber-50 text-amber-800', dot: 'bg-amber-500' },
       RENTED: { label: 'ĐANG THUÊ', pill: 'bg-slate-100 text-slate-500', dot: 'bg-slate-400' },
       MAINTENANCE: { label: 'BẢO TRÌ', pill: 'bg-[#FFF3E0] text-[#E68A00]', dot: 'bg-[#E68A00]' },
     }),
@@ -27,9 +30,17 @@ export default function RoomManagePage() {
   const stats = useMemo(() => {
     const total = rooms.length;
     const available = rooms.filter((r) => r.status === 'AVAILABLE').length;
+    const held = rooms.filter((r) => r.status === 'HELD').length;
     const rented = rooms.filter((r) => r.status === 'RENTED').length;
+    const maintenance = rooms.filter((r) => r.status === 'MAINTENANCE').length;
     const occupancy = total > 0 ? Math.round((rented / total) * 100) : 0;
-    return { total, available, rented, occupancy };
+    return { total, available, held, rented, maintenance, occupancy };
+  }, [rooms]);
+
+  const spotlightRoom = useMemo(() => {
+    if (!rooms.length) return null;
+    const sorted = [...rooms].sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+    return sorted.find((r) => r.status === 'AVAILABLE') || sorted[0];
   }, [rooms]);
 
   const filteredRooms = useMemo(() => {
@@ -54,7 +65,7 @@ export default function RoomManagePage() {
         const nextRooms = data.rooms || [];
         setRooms(nextRooms);
         setCurrentPage(1);
-      } catch (error) {
+      } catch {
         setRooms([]);
       } finally {
         setIsLoading(false);
@@ -73,48 +84,20 @@ export default function RoomManagePage() {
     setCurrentPage(1);
   }, [statusFilter]);
 
+  const reloadRooms = async () => {
+    const data = await apiFetch('/rooms', { token });
+    setRooms(data.rooms || []);
+    setCurrentPage(1);
+  };
+
   const openCreate = () => {
     setEditingRoom(null);
-    setForm({ room_number: '', floor: '', area: '', max_tenants: 2, price: '', status: 'AVAILABLE', description: '' });
     setIsModalOpen(true);
   };
 
   const openEdit = (room) => {
     setEditingRoom(room);
-    setForm({
-      room_number: room.room_number || '',
-      floor: room.floor ?? '',
-      area: room.area ?? '',
-      max_tenants: room.max_tenants ?? 2,
-      price: room.price ?? '',
-      status: room.status || 'AVAILABLE',
-      description: room.description || '',
-    });
     setIsModalOpen(true);
-  };
-
-  const saveRoom = async () => {
-    if (!token) return;
-    const payload = {
-      room_number: String(form.room_number || '').trim(),
-      floor: form.floor === '' ? null : Number(form.floor),
-      area: Number(form.area),
-      max_tenants: Number(form.max_tenants || 1),
-      price: Number(form.price),
-      status: form.status,
-      description: form.description ? String(form.description) : null,
-    };
-
-    if (editingRoom?.room_id) {
-      await apiFetch(`/rooms/${editingRoom.room_id}`, { token, method: 'PUT', body: payload });
-    } else {
-      await apiFetch('/rooms', { token, method: 'POST', body: payload });
-    }
-    setIsModalOpen(false);
-    // reload
-    const data = await apiFetch('/rooms', { token });
-    setRooms(data.rooms || []);
-    setCurrentPage(1);
   };
 
   const deleteRoom = async (room) => {
@@ -140,6 +123,7 @@ export default function RoomManagePage() {
             {[
               { key: 'ALL', label: 'Tất cả' },
               { key: 'AVAILABLE', label: 'Phòng trống' },
+              { key: 'HELD', label: 'Đang giữ' },
               { key: 'RENTED', label: 'Đang thuê' },
             ].map(({ key, label }) => {
               const active = statusFilter === key;
@@ -195,6 +179,8 @@ export default function RoomManagePage() {
            </div>
         </div>
       </div>
+
+      <RoomHoldManagePanel token={token} onRoomsChanged={reloadRooms} />
 
       {/* Main Table */}
       <div className="bg-white/80 rounded-[32px] p-8 shadow-[0_4px_24px_rgba(15,58,64,0.04)] border border-slate-200/60 backdrop-blur-sm mb-8">
@@ -317,81 +303,77 @@ export default function RoomManagePage() {
         </div>
       </div>
 
-      {/* Bottom Layout sections */}
+      {/* Tóm tắt vận hành — dữ liệu thật từ danh sách phòng */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Market Analysis Insight Card */}
         <div className="bg-white rounded-[32px] p-10 flex flex-col justify-between shadow-[0_8px_30px_rgba(15,58,64,0.04)] border border-slate-200/60 self-stretch relative overflow-hidden group">
-           <div className="absolute top-0 right-0 w-32 h-32 bg-nest-primary/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+           <div className="absolute top-0 right-0 w-32 h-32 bg-nest-primary/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
            <div className="relative z-10">
-              <p className="text-[11px] font-bold text-nest-primary uppercase tracking-widest mb-6">Phân tích thị trường</p>
+              <p className="text-[11px] font-bold text-nest-primary uppercase tracking-widest mb-6">Tổng quan vận hành</p>
               <h3 className="text-2xl font-bold text-nest-text-primary leading-snug mb-5">
-                 Xu hướng tăng trưởng mạnh
+                 Tỷ lệ lấp đầy {stats.occupancy}%
               </h3>
               <p className="text-[14px] text-nest-text-secondary font-medium leading-relaxed">
-                 Dựa trên dữ liệu 30 ngày qua, nhu cầu tìm kiếm phòng tại khu vực này đã tăng 15%. Xem xét điều chỉnh chiến lược giá cho các phòng trống.
+                 Hiện có {stats.rented} phòng đang cho thuê, {stats.available} phòng trống
+                 {stats.maintenance > 0 ? ` và ${stats.maintenance} phòng bảo trì` : ''}.
+                 {stats.available > 0
+                    ? ' Nên ưu tiên đẩy nhanh các phòng trống để tối ưu doanh thu.'
+                    : ' Toàn bộ phòng đã có khách hoặc đang bảo trì.'}
               </p>
            </div>
-           <button className="text-nest-primary hover:text-[#0da090] font-bold text-[14px] items-center gap-1.5 flex mt-10 w-fit transition-colors group relative z-10">
-              Xem báo cáo chi tiết <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-           </button>
+           <Link
+              to="/admin/analytics"
+              className="text-nest-primary hover:text-[#0da090] font-bold text-[14px] items-center gap-1.5 flex mt-10 w-fit transition-colors group relative z-10"
+           >
+              Xem phân tích chi tiết <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+           </Link>
         </div>
 
-        {/* Penthouse Spotlight */}
         <div className="bg-[#F2FCFD] rounded-[32px] shadow-sm overflow-hidden flex flex-col self-stretch border border-transparent">
-           <div className="h-[220px] relative w-full overflow-hidden relative">
-              <img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80" alt="Penthouse" className="w-full h-full object-cover" />
-              <div className="absolute top-4 left-4 bg-white/40 backdrop-blur-md px-3 py-1.5 rounded-lg text-[10px] font-bold text-white uppercase tracking-widest shadow-sm border border-white/20">
-                 Căn hộ cao cấp
+           <div className="h-[220px] relative w-full overflow-hidden bg-gradient-to-br from-[#0F3A40] to-[#14B8A6] flex items-center justify-center">
+              <div className="text-center text-white px-6">
+                 <p className="text-[11px] font-bold uppercase tracking-widest text-white/70 mb-2">Phòng nổi bật</p>
+                 <p className="text-3xl font-bold">{spotlightRoom ? `Phòng ${spotlightRoom.room_number}` : '—'}</p>
               </div>
+              {spotlightRoom ? (
+                 <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-lg text-[10px] font-bold text-[#0F3A40] uppercase tracking-widest shadow-sm">
+                    {statusView[spotlightRoom.status]?.label || spotlightRoom.status}
+                 </div>
+              ) : null}
            </div>
            <div className="p-8 flex-1 flex flex-col justify-between">
-              <div>
-                 <h4 className="text-[20px] font-bold text-[#0F3A40] mb-3">P.601 Penthouse Suite</h4>
-                 <p className="text-[13px] text-[#4A787C] font-medium leading-relaxed mb-6">
-                    Mẫu thiết kế mới cho phân khúc cao cấp đã hoàn thiện và sẵn sàng để giới thiệu.
-                 </p>
-              </div>
-              <div className="flex items-center gap-3">
-                 <div className="flex -space-x-3">
-                    <img className="w-8 h-8 rounded-full border-2 border-white object-cover" src="https://ui-avatars.com/api/?name=Jane&background=14B8A6&color=fff" />
-                    <img className="w-8 h-8 rounded-full border-2 border-white object-cover" src="https://ui-avatars.com/api/?name=Mark&background=0F3A40&color=fff" />
-                 </div>
-                 <span className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wider">+12 Đăng ký xem</span>
-              </div>
+              {spotlightRoom ? (
+                 <>
+                    <div>
+                       <h4 className="text-[20px] font-bold text-[#0F3A40] mb-3">
+                          {Number(spotlightRoom.area || 0).toLocaleString('vi-VN')} m² · Tầng {spotlightRoom.floor ?? '—'}
+                       </h4>
+                       <p className="text-[13px] text-[#4A787C] font-medium leading-relaxed mb-6 line-clamp-3">
+                          {spotlightRoom.description?.trim() || 'Chưa có mô tả phòng.'}
+                       </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                       <span className="text-[18px] font-bold text-[#14B8A6]">
+                          {Number(spotlightRoom.price || 0).toLocaleString('vi-VN')}đ/tháng
+                       </span>
+                       <span className="text-[11px] font-bold text-[#82ABB0] uppercase tracking-wider">
+                          Tối đa {spotlightRoom.max_tenants ?? 1} người
+                       </span>
+                    </div>
+                 </>
+              ) : (
+                 <p className="text-[14px] text-[#82ABB0]">Chưa có dữ liệu phòng.</p>
+              )}
            </div>
         </div>
       </div>
 
-      {/* Create/Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-bold text-nest-text-primary">{editingRoom ? 'Sửa phòng' : 'Thêm phòng'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500">
-                ✕
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input value={form.room_number} onChange={(e) => setForm((p) => ({ ...p, room_number: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Số phòng (VD: A101)" />
-              <input value={form.floor} onChange={(e) => setForm((p) => ({ ...p, floor: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Tầng" />
-              <input value={form.area} onChange={(e) => setForm((p) => ({ ...p, area: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Diện tích (m²)" />
-              <input value={form.price} onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Giá thuê (VNĐ)" />
-              <input value={form.max_tenants} onChange={(e) => setForm((p) => ({ ...p, max_tenants: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Số người tối đa" />
-              <select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary">
-                <option value="AVAILABLE">AVAILABLE</option>
-                <option value="RENTED">RENTED</option>
-                <option value="MAINTENANCE">MAINTENANCE</option>
-              </select>
-              <textarea value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} className="md:col-span-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-nest-primary" placeholder="Mô tả" rows={3} />
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setIsModalOpen(false)} className="px-6 py-3 rounded-full font-bold text-nest-text-secondary hover:text-nest-text-primary">Hủy</button>
-              <button onClick={saveRoom} className="px-8 py-3 rounded-full bg-nest-primary hover:bg-[#0da090] text-white font-bold shadow-lg shadow-nest-primary/20">Lưu</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RoomFormModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        room={editingRoom}
+        token={token}
+        onSaved={reloadRooms}
+      />
     </div>
   );
 }

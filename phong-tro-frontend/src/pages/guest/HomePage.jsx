@@ -1,9 +1,43 @@
 import { Link } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { ArrowRight, Wifi, Phone, MapPin, MessageCircle, ChevronDown, ShieldCheck, ParkingCircle, BrushCleaning, Maximize, Armchair, Home, CircleDollarSign, Search } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  Wifi,
+  Phone,
+  MapPin,
+  MessageCircle,
+  ChevronDown,
+  ShieldCheck,
+  ParkingCircle,
+  BrushCleaning,
+  Maximize,
+  Armchair,
+  Home,
+  CircleDollarSign,
+  Search,
+  Sparkles,
+  Plus,
+  Edit3,
+  Trash2,
+} from 'lucide-react';
 import CustomSelect from '../../components/common/CustomSelect';
+import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
+import RoomFormModal from '../../components/rooms/RoomFormModal';
+import {
+  HERO_SLIDES,
+  HOME_GALLERY_STRIP,
+  ROOM_TYPE_CATALOG,
+  ROOM_TYPE_FILTER_OPTIONS,
+  mapApiRoomToGuestCard,
+  isRoomAvailable,
+  isRoomVisibleOnGuestListing,
+} from '../../lib/guestRoomMedia';
 
 export default function HomePage() {
+  const { user, token } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const [roomModalOpen, setRoomModalOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState(null);
   const [roomType, setRoomType] = useState('Tất cả');
   const [priceRange, setPriceRange] = useState('Tất cả');
   const [area, setArea] = useState('Tất cả');
@@ -11,15 +45,9 @@ export default function HomePage() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=Tr%C6%B0%E1%BB%9Dng%20%C4%90%E1%BA%A1i%20h%E1%BB%8Dc%20C%C3%B4ng%20ngh%E1%BB%87%20Th%C3%B4ng%20tin%2C%20%C4%90HQG-HCM';
 
-  const heroSlides = [
-    { src: '/images/home/mezzanine.png', alt: 'Không gian sống hiện đại' },
-    { src: '/images/home/workspace.png', alt: 'Góc làm việc tri thức' },
-    { src: '/images/home/balcony.png', alt: 'Ban công thoáng đãng' },
-  ];
-
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
+      setCurrentSlide((prev) => (prev + 1) % HERO_SLIDES.length);
     }, 5000);
     return () => clearInterval(timer);
   }, []);
@@ -28,39 +56,61 @@ export default function HomePage() {
   const [roomsFromApi, setRoomsFromApi] = useState([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
 
+  const loadAvailableRooms = async () => {
+    setRoomsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/rooms?for_guest=1`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) throw new Error(data?.message || 'failed');
+      const list = (data.rooms || []).filter((r) => isRoomVisibleOnGuestListing(r.status));
+      setRoomsFromApi(list);
+    } catch {
+      setRoomsFromApi([]);
+    } finally {
+      setRoomsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchRooms = async () => {
-      setRoomsLoading(true);
-      try {
-        const response = await fetch(`${API_BASE_URL}/rooms`);
-        const data = await response.json();
-        if (!response.ok || !data?.ok) throw new Error(data?.message || 'failed');
-        setRoomsFromApi(data.rooms || []);
-      } catch (error) {
-        setRoomsFromApi([]);
-      } finally {
-        setRoomsLoading(false);
-      }
-    };
-    fetchRooms();
+    loadAvailableRooms();
   }, [API_BASE_URL]);
 
-  const featuredRooms = roomsFromApi
-    .filter((r) => r.status === 'AVAILABLE')
-    .slice(0, 6)
-    .map((r) => ({
-      id: r.room_id,
-      name: r.room_number ? `Phòng ${r.room_number}` : 'Phòng',
-      price: r.price || 0,
-      size: r.area || 0,
-      category: 'Phòng',
-      tag: r.description || 'Liên hệ để xem phòng',
-      furniture: '—',
-      image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80',
-      status: 'Còn phòng',
-    }));
+  const openCreateRoom = () => {
+    setEditingRoom(null);
+    setRoomModalOpen(true);
+  };
 
-  const filteredRooms = featuredRooms.filter(room => {
+  const openEditRoom = (card) => {
+    setEditingRoom(card.rawRoom || null);
+    setRoomModalOpen(true);
+  };
+
+  const deleteRoom = async (card) => {
+    if (!token || !card?.id) return;
+    if (!window.confirm(`Xóa ${card.name}? Hành động này xóa luôn trong Quản lý phòng.`)) return;
+    try {
+      await apiFetch(`/rooms/${card.id}`, { token, method: 'DELETE' });
+      await loadAvailableRooms();
+    } catch (err) {
+      window.alert(err?.message || 'Không xóa được phòng');
+    }
+  };
+
+  /** Phòng AVAILABLE + HELD từ DB (hiển thị trên landing). */
+  const availableRooms = useMemo(
+    () => roomsFromApi.filter((r) => isRoomVisibleOnGuestListing(r.status)).map(mapApiRoomToGuestCard),
+    [roomsFromApi]
+  );
+
+  const availableCountByType = useMemo(() => {
+    const counts = { 'Phòng thường': 0, 'Phòng gác lửng': 0, 'Phòng ban công': 0 };
+    for (const room of availableRooms) {
+      if (room.available && counts[room.category] !== undefined) counts[room.category] += 1;
+    }
+    return counts;
+  }, [availableRooms]);
+
+  const filteredRooms = availableRooms.filter((room) => {
     // Filter Type
     if (roomType !== 'Tất cả' && room.category !== roomType) return false;
     
@@ -79,10 +129,10 @@ export default function HomePage() {
     // Filter Area
     if (area !== 'Tất cả') {
       const size = room.size;
-      if (area === 'Dưới 20 m²' && size >= 20) return false;
-      if (area === '20 m² - 25 m²' && (size < 20 || size > 25)) return false; // Fixed typo in previous room size filter options
+      if (area === 'Dưới 25 m²' && size >= 25) return false;
       if (area === '25 m² - 30 m²' && (size < 25 || size > 30)) return false;
-      if (area === 'Trên 30 m²' && size <= 30) return false;
+      if (area === '30 m² - 35 m²' && (size < 30 || size > 35)) return false;
+      if (area === 'Trên 35 m²' && size <= 35) return false;
     }
 
     return true;
@@ -94,7 +144,7 @@ export default function HomePage() {
       <section className="relative h-[85vh] min-h-[650px] w-full flex items-center">
         {/* Background Slider */}
         <div className="absolute inset-0 z-0 overflow-hidden">
-          {heroSlides.map((slide, index) => (
+          {HERO_SLIDES.map((slide, index) => (
             <div
               key={index}
               className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
@@ -115,7 +165,7 @@ export default function HomePage() {
           
           {/* Slider Indicators */}
           <div className="absolute bottom-12 left-8 md:left-24 flex gap-2 z-20">
-            {heroSlides.map((_, i) => (
+            {HERO_SLIDES.map((_, i) => (
               <div 
                 key={i} 
                 className={`h-1 rounded-full transition-all duration-300 ${
@@ -146,7 +196,7 @@ export default function HomePage() {
             <CustomSelect
               label="Loại phòng"
               icon={Home}
-              options={['Tất cả', 'Phòng thường', 'Phòng gác lửng', 'Phòng ban công']}
+              options={ROOM_TYPE_FILTER_OPTIONS}
               value={roomType}
               onChange={setRoomType}
             />
@@ -191,18 +241,128 @@ export default function HomePage() {
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-8 pt-36">
 
+        {/* Loại phòng — showcase ảnh tham khảo trọ hiện đại */}
+        <section id="loai-phong" className="mb-20 scroll-mt-32">
+          <div className="text-center mb-10">
+            <p className="text-[#006B5F] font-bold text-[11px] uppercase tracking-widest mb-2 flex items-center justify-center gap-2">
+              <Sparkles className="w-3.5 h-3.5" /> KHÔNG GIAN THE SUN
+            </p>
+            <h2 className="text-3xl md:text-4xl font-sans font-bold text-nest-text-primary mb-3">Ba Loại Phòng Hiện Đại</h2>
+            <p className="text-sm text-nest-text-secondary max-w-xl mx-auto leading-relaxed">
+              Tham khảo phong cách từng loại. Danh sách phòng bên dưới lấy trực tiếp từ database — chỉ hiện phòng đang{' '}
+              <span className="font-bold text-[#14B8A6]">trống (AVAILABLE)</span>.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {ROOM_TYPE_CATALOG.map((type) => {
+              const vacantCount = availableCountByType[type.label] || 0;
+              return (
+              <button
+                key={type.id}
+                type="button"
+                disabled={vacantCount === 0}
+                onClick={() => {
+                  if (vacantCount === 0) return;
+                  setRoomType(type.label);
+                  document.getElementById('phong-trong')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className={`group text-left rounded-[2rem] overflow-hidden border-2 transition-all duration-300 shadow-[0_8px_30px_rgba(15,58,64,0.08)] ${
+                  vacantCount === 0
+                    ? 'opacity-60 cursor-not-allowed border-gray-100'
+                    : 'hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(20,184,166,0.15)]'
+                } ${
+                  roomType === type.label && vacantCount > 0 ? 'border-[#14B8A6] ring-2 ring-[#14B8A6]/30' : 'border-white/80'
+                }`}
+              >
+                <div className="relative aspect-[4/3] overflow-hidden">
+                  <img
+                    src={type.cover}
+                    alt={type.label}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0F3A40]/75 via-[#0F3A40]/20 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
+                    <span className="text-[10px] font-bold uppercase tracking-widest bg-white/20 px-2.5 py-1 rounded-full">
+                      {vacantCount > 0 ? `${vacantCount} phòng trống` : 'Hết phòng'}
+                    </span>
+                    <h3 className="text-xl font-bold mt-2">{type.label}</h3>
+                    <p className="text-sm text-white/85 font-medium">{type.tagline}</p>
+                  </div>
+                </div>
+                <div className="bg-white p-5 space-y-3">
+                  <p className="text-[13px] text-nest-text-secondary leading-relaxed line-clamp-3">{type.description}</p>
+                  <ul className="flex flex-wrap gap-2">
+                    {type.highlights.map((h) => (
+                      <li
+                        key={h}
+                        className="text-[10px] font-bold text-[#006B5F] bg-[#CCFBF1] px-2.5 py-1 rounded-full"
+                      >
+                        {h}
+                      </li>
+                    ))}
+                  </ul>
+                  <span className={`inline-flex items-center gap-1 text-[12px] font-bold transition-all ${vacantCount > 0 ? 'text-[#14B8A6] group-hover:gap-2' : 'text-nest-text-secondary'}`}>
+                    {vacantCount > 0 ? (
+                      <>Xem {vacantCount} phòng trống <ChevronDown className="w-4 h-4 rotate-[-90deg]" /></>
+                    ) : (
+                      'Chưa có phòng trống loại này'
+                    )}
+                  </span>
+                </div>
+              </button>
+            );
+            })}
+          </div>
+        </section>
+
         {/* Featured Rooms */}
         <section id="phong-trong" className="min-h-[100vh] flex flex-col justify-center scroll-mt-24 pb-24">
-          <div className="flex justify-between items-end mb-10">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-10">
             <div>
-              <p className="text-[#006B5F] font-bold text-[11px] uppercase tracking-widest mb-2">SẴN SÀNG ĐỂ Ở</p>
-              <h2 className="text-3xl md:text-4xl font-sans font-bold text-nest-text-primary">Phòng Nổi Bật</h2>
+              <p className="text-[#006B5F] font-bold text-[11px] uppercase tracking-widest mb-2">ĐỒNG BỘ TỪ HỆ THỐNG</p>
+              <h2 className="text-3xl md:text-4xl font-sans font-bold text-nest-text-primary">Phòng Trống &amp; Đang Giữ</h2>
+              {!roomsLoading ? (
+                <p className="text-sm text-nest-text-secondary mt-2 font-medium">
+                  Hiện có{' '}
+                  <span className="font-bold text-[#14B8A6]">{availableRooms.length}</span> phòng hiển thị (trống + đang giữ)
+                  {filteredRooms.length !== availableRooms.length
+                    ? ` · đang hiển thị ${filteredRooms.length} sau bộ lọc`
+                    : ''}
+                </p>
+              ) : null}
             </div>
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={openCreateRoom}
+                className="shrink-0 inline-flex items-center gap-2 bg-nest-primary hover:bg-[#0fa696] text-white px-6 py-3 rounded-full text-sm font-bold shadow-lg shadow-nest-primary/25"
+              >
+                <Plus className="w-4 h-4" /> Thêm phòng
+              </button>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {roomsLoading ? (
               <div className="text-nest-text-secondary font-medium">Đang tải danh sách phòng...</div>
+            ) : availableRooms.length === 0 ? (
+              <div className="col-span-full py-20 text-center">
+                <h3 className="text-xl font-bold text-nest-text-primary mb-2">Chưa có phòng trống</h3>
+                <p className="text-nest-text-secondary max-w-md mx-auto leading-relaxed mb-6">
+                  Trong database hiện không có phòng nào ở trạng thái AVAILABLE. Khi admin đánh dấu phòng trống, danh sách sẽ tự cập nhật tại đây.
+                </p>
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    onClick={openCreateRoom}
+                    className="inline-flex items-center gap-2 bg-nest-primary text-white px-6 py-3 rounded-full text-sm font-bold"
+                  >
+                    <Plus className="w-4 h-4" /> Thêm phòng đầu tiên
+                  </button>
+                ) : null}
+              </div>
             ) : filteredRooms.length > 0 ? (
               filteredRooms.map(room => (
                 <div key={room.id} className="group relative flex flex-col items-stretch h-full">
@@ -215,11 +375,48 @@ export default function HomePage() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-nest-text-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     
-                    <div className="absolute top-4 left-4">
-                      <div className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest backdrop-blur-md shadow-sm border border-white/20 ${room.status === 'Còn phòng' ? 'bg-[#14B8A6] text-white' : 'bg-gray-100 text-gray-500'}`}>
+                    <div className="absolute top-4 left-4 flex flex-col gap-2">
+                      <div
+                        className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest backdrop-blur-md shadow-sm border border-white/20 ${
+                          room.available
+                            ? 'bg-[#14B8A6] text-white'
+                            : room.held
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
                         {room.status}
                       </div>
+                      <div className="px-3 py-1 rounded-full text-[10px] font-bold bg-white/90 text-[#0F3A40] backdrop-blur-md shadow-sm">
+                        {room.category}
+                      </div>
                     </div>
+                    {isAdmin ? (
+                      <div className="absolute top-4 right-4 flex gap-2 z-20">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            openEditRoom(room);
+                          }}
+                          className="w-9 h-9 rounded-full bg-white/95 text-[#14B8A6] flex items-center justify-center shadow-md hover:scale-105"
+                          title="Sửa phòng"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            deleteRoom(room);
+                          }}
+                          className="w-9 h-9 rounded-full bg-white/95 text-red-500 flex items-center justify-center shadow-md hover:scale-105"
+                          title="Xóa phòng"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="p-4 flex-1 flex flex-col bg-white rounded-b-[1.75rem] mx-1 mb-1 mt-[-10px] z-10 shadow-sm relative">
                     <div className="flex justify-between items-start mb-2">
@@ -256,8 +453,15 @@ export default function HomePage() {
                     </div>
 
                     <div className="mt-auto">
-                      <Link to={`/rooms/${room.id}`} className={`block w-full py-2.5 rounded-xl text-center text-sm font-bold transition-all ${room.status === 'Còn phòng' ? 'bg-nest-primary text-white hover:bg-[#0fa696] hover:scale-[1.02]' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
-                        {room.status === 'Còn phòng' ? 'Xem chi tiết' : 'Đã cho thuê'}
+                      <Link
+                        to={`/rooms/${room.id}`}
+                        className={`block w-full py-2.5 rounded-xl text-center text-sm font-bold transition-all ${
+                          room.available || room.held
+                            ? 'bg-nest-primary text-white hover:bg-[#0fa696] hover:scale-[1.02]'
+                            : 'bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        Xem chi tiết
                       </Link>
                     </div>
                   </div>
@@ -268,8 +472,10 @@ export default function HomePage() {
                 <div className="w-20 h-20 bg-nest-surface-low rounded-full flex items-center justify-center mx-auto mb-6">
                   <Search className="w-10 h-10 text-nest-primary/20" />
                 </div>
-                <h3 className="text-xl font-bold text-nest-text-primary mb-2">Không tìm thấy phòng phù hợp</h3>
-                <p className="text-nest-text-secondary mb-8">Hãy thử điều chỉnh bộ lọc để tìm thấy nhiều lựa chọn hơn nhé!</p>
+                <h3 className="text-xl font-bold text-nest-text-primary mb-2">Không có phòng trống khớp bộ lọc</h3>
+                <p className="text-nest-text-secondary mb-8">
+                  Vẫn còn {availableRooms.length} phòng trống — hãy đổi loại phòng, giá hoặc diện tích.
+                </p>
                 <button 
                   onClick={() => {
                     setRoomType('Tất cả');
@@ -351,7 +557,7 @@ export default function HomePage() {
           <div className="text-center mb-16">
             <p className="text-[#006B5F] font-bold text-[11px] uppercase tracking-widest mb-2">ĐƠN GIẢN &amp; NHANH CHÓNG</p>
             <h2 className="text-3xl md:text-4xl font-sans font-bold text-nest-text-primary mb-4">Quy Trình Thuê Phòng</h2>
-            <p className="text-sm text-nest-text-secondary max-w-md mx-auto leading-relaxed">Chỉ 3 bước đơn giản để sở hữu không gian sống lý tưởng của riêng bạn tại The Nest.</p>
+            <p className="text-sm text-nest-text-secondary max-w-md mx-auto leading-relaxed">Chỉ 3 bước đơn giản để sở hữu không gian sống lý tưởng của riêng bạn tại The Sun.</p>
           </div>
 
           {/* Steps Cards */}
@@ -373,12 +579,7 @@ export default function HomePage() {
 
           {/* Bottom Photo Strip */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            {[
-              { src: '/images/home/workspace.png', label: 'Góc làm việc tri thức' },
-              { src: '/images/home/mezzanine.png', label: 'Không gian nghỉ ngơi' },
-              { src: '/images/home/kitchenette.png', label: 'Khu vực nấu nướng' },
-              { src: '/images/home/balcony.png', label: 'Ban công thoáng đãng' },
-            ].map((photo, i) => (
+            {HOME_GALLERY_STRIP.map((photo, i) => (
               <div key={i} className="relative h-40 md:h-52 rounded-[1.5rem] overflow-hidden group cursor-pointer">
                 <img src={photo.src} alt={photo.label} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0F3A40]/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
@@ -398,7 +599,7 @@ export default function HomePage() {
                 <p className="text-[#006B5F] font-bold text-[11px] uppercase tracking-widest mb-3">LIÊN HỆ NGAY</p>
                 <h2 className="text-3xl md:text-4xl font-sans font-bold text-nest-text-primary mb-4">Kết Nối Với Chúng Tôi</h2>
                 <p className="text-sm text-nest-text-secondary leading-relaxed max-w-sm">
-                  Đội ngũ quản lý The Nest luôn sẵn sàng hỗ trợ bạn tìm kiếm một không gian sống lý tưởng nhất.
+                  Đội ngũ quản lý The Sun luôn sẵn sàng hỗ trợ bạn tìm kiếm một không gian sống lý tưởng nhất.
                 </p>
               </div>
 
@@ -457,6 +658,14 @@ export default function HomePage() {
         </div>
 
       </div>
+
+      <RoomFormModal
+        open={roomModalOpen}
+        onClose={() => setRoomModalOpen(false)}
+        room={editingRoom}
+        token={token}
+        onSaved={loadAvailableRooms}
+      />
     </div>
   );
 }

@@ -6,14 +6,17 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
-import { useToast } from '../../context/ToastContext';
+import InvoiceUtilityDetails from '../../components/invoice/InvoiceUtilityDetails';
+import { parseInvoiceElectricityBreakdown } from '../../components/invoice/parseElectricityBreakdown';
+import { parseInvoiceWaterBreakdown } from '../../components/invoice/parseWaterBreakdown';
 
 export default function TenantInvoicePage() {
    const navigate = useNavigate();
    const { token } = useAuth();
    const [searchQuery, setSearchQuery] = useState('');
-   const [filterMonth, setFilterMonth] = useState('Tất cả');
-   const [filterStatus, setFilterStatus] = useState('Tất cả');
+   const [filterMonth, setFilterMonth] = useState('all');
+   const [filterStatus, setFilterStatus] = useState('Trạng thái Tất cả');
+   const [page, setPage] = useState(1);
 
    const [invoices, setInvoices] = useState([]);
    const [payments, setPayments] = useState([]);
@@ -96,18 +99,48 @@ export default function TenantInvoicePage() {
       });
    }, [invoices, latestPaymentByInvoice]);
 
+   const monthChoices = useMemo(() => {
+      const keys = new Set();
+      for (const inv of invoices) {
+         keys.add(formatMonth(inv.period_month, inv.period_year));
+      }
+      return [...keys].sort((a, b) => {
+         const [ma, ya] = a.split('/').map(Number);
+         const [mb, yb] = b.split('/').map(Number);
+         if (yb !== ya) return yb - ya;
+         return mb - ma;
+      });
+   }, [invoices]);
+
    const filteredInvoices = displayInvoices.filter((inv) => {
       const matchesSearch =
          inv.month.toLowerCase().includes(searchQuery.toLowerCase()) ||
          inv.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
          inv.total.includes(searchQuery);
 
-      const matchesMonth = filterMonth === 'Tất cả' || filterMonth.includes(inv.month);
-      const normalizedFilter = filterStatus.replace('Trạng thái ', '');
-      const matchesStatus = filterStatus === 'Trạng thái Tất cả' || normalizedFilter === 'Tất cả' || inv.status === normalizedFilter;
+      const matchesMonth = filterMonth === 'all' || inv.month === filterMonth;
+      const normalizedFilter = filterStatus.replace(/^Trạng thái\s+/, '');
+      const matchesStatus =
+         filterStatus === 'Trạng thái Tất cả' || normalizedFilter === 'Tất cả' || inv.status === normalizedFilter;
 
       return matchesSearch && matchesMonth && matchesStatus;
    });
+
+   const PAGE_SIZE = 8;
+   const totalFiltered = filteredInvoices.length;
+   const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE) || 1);
+   const currentPage = Math.min(Math.max(1, page), totalPages);
+   const pagedInvoices = filteredInvoices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+   const rangeFrom = totalFiltered === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+   const rangeTo = totalFiltered === 0 ? 0 : Math.min(currentPage * PAGE_SIZE, totalFiltered);
+
+   useEffect(() => {
+      setPage(1);
+   }, [filterMonth, filterStatus, searchQuery]);
+
+   useEffect(() => {
+      setPage((p) => Math.min(p, totalPages));
+   }, [totalPages]);
 
    const totalDebt = displayInvoices
       .filter((i) => i.statusType !== 'approved')
@@ -127,6 +160,23 @@ export default function TenantInvoicePage() {
       if (Number.isNaN(dt.getTime())) return '—';
       return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
    };
+
+   const detailInvoiceUtility = useMemo(() => {
+      const vi = detailInvoice;
+      if (!vi) return { showMergedUtility: false, utilityEmptyHint: '' };
+      const hasTierE = !!parseInvoiceElectricityBreakdown(vi.electricity_breakdown);
+      const hasTierW = !!parseInvoiceWaterBreakdown(vi.water_breakdown);
+      const hasSnap = vi.utility_meter_snapshot != null && typeof vi.utility_meter_snapshot === 'object';
+      const amtE = Number(vi.electricity_amount || 0);
+      const amtW = Number(vi.water_amount || 0);
+      const showMergedUtility = amtE > 0 || amtW > 0 || hasTierE || hasTierW || hasSnap;
+      const utilityEmptyHint =
+         !hasTierE && !hasTierW && !hasSnap && (amtE > 0 || amtW > 0)
+            ? 'Chưa có chỉ số công tơ (cũ → mới) và bảng bậc lưu trên hóa đơn — thường do kỳ này nhập tay hoặc tạo trước khi lưu chỉ số. Ban quản lý có thể xác nhận chỉ số đúng phòng/kỳ để các hóa đơn sau hiện đầy đủ tại đây.'
+            : '';
+      return { showMergedUtility, utilityEmptyHint };
+   }, [detailInvoice]);
+
    const latestDueDate = formatDueDate(latestActionableInvoiceRaw?.due_date);
    const hasUnpaid = Boolean(latestActionableInvoiceRaw);
 
@@ -152,7 +202,7 @@ export default function TenantInvoicePage() {
             {/* <p className="text-[11px] font-bold text-[#14B8A6] uppercase tracking-widest mb-1.5">QUẢN LÝ TÀI CHÍNH</p> */}
             <h1 className="text-[34px] font-sans font-bold text-[#0F3A40] tracking-tight">Lịch sử Hóa đơn</h1>
             <p className="text-[14.5px] text-[#4A787C] font-medium mt-2 max-w-[600px]">
-               Theo dõi chi tiết chi phí hàng tháng và quản lý các giao dịch thanh toán của bạn tại The Nest Living.
+               Theo dõi chi tiết chi phí hàng tháng và quản lý các giao dịch thanh toán của bạn tại The Sun.
             </p>
          </div>
 
@@ -209,9 +259,12 @@ export default function TenantInvoicePage() {
                         onChange={(e) => setFilterMonth(e.target.value)}
                         className="appearance-none bg-[#F2FCFD] border border-[#BCE1E5]/40 rounded-2xl px-6 py-2.5 pr-12 text-[13px] font-bold text-[#0F3A40] outline-none cursor-pointer hover:border-[#14B8A6]/30 transition-all"
                      >
-                        <option>Tháng Tất cả</option>
-                        <option>Tháng 10/2023</option>
-                        <option>Tháng 09/2023</option>
+                        <option value="all">Tháng — Tất cả</option>
+                        {monthChoices.map((m) => (
+                           <option key={m} value={m}>
+                              Tháng {m}
+                           </option>
+                        ))}
                      </select>
                      <Filter size={14} className="absolute right-5 top-1/2 -translate-y-1/2 text-[#4A787C] pointer-events-none" />
                   </div>
@@ -267,8 +320,15 @@ export default function TenantInvoicePage() {
                      </tr>
                   </thead>
                   <tbody className="space-y-4">
-                     {filteredInvoices.map((inv, i) => (
-                        <tr key={i} className="group hover:bg-[#F2FCFD]/60 transition-all cursor-pointer">
+                     {isLoading ? (
+                        <tr>
+                           <td colSpan={8} className="px-6 py-12 text-center text-[#82ABB0] font-medium">
+                              Đang tải hóa đơn…
+                           </td>
+                        </tr>
+                     ) : (
+                     pagedInvoices.map((inv) => (
+                        <tr key={inv.invoice_id} className="group hover:bg-[#F2FCFD]/60 transition-all cursor-pointer">
                            <td className="px-6 py-6 transition-all first:rounded-l-3xl">
                               <span className="font-bold text-[#0F3A40] text-[15px]">{inv.month}</span>
                            </td>
@@ -312,22 +372,62 @@ export default function TenantInvoicePage() {
                               </div>
                            </td>
                         </tr>
-                     ))}
+                     ))
+                     )}
                   </tbody>
                </table>
             </div>
 
             {/* Pagination */}
-            <div className="p-8 border-t border-[#BCE1E5]/30 flex justify-between items-center text-[12px] font-bold text-[#82ABB0]">
-               <span>
-                  Hiển thị {filteredInvoices.length} trong tổng số <span className="text-[#0F3A40]">{invoices.length} hóa đơn</span>
+            <div className="p-8 border-t border-[#BCE1E5]/30 flex flex-col sm:flex-row justify-between items-center gap-4 text-[12px] font-bold text-[#82ABB0]">
+               <span className="text-center sm:text-left">
+                  Hiển thị{' '}
+                  <span className="text-[#0F3A40]">
+                     {rangeFrom}-{rangeTo}
+                  </span>{' '}
+                  trong <span className="text-[#0F3A40]">{totalFiltered}</span> bản ghi (tổng{' '}
+                  <span className="text-[#0F3A40]">{invoices.length}</span> hóa đơn)
                   {latestPendingInvoice ? ` • ${latestPendingInvoice.month} đang chờ phê duyệt` : ''}
                </span>
-               <div className="flex items-center gap-3">
-                  <button className="p-2 rounded-full hover:bg-[#F2FCFD] transition-all"><ChevronLeft size={16} /></button>
-                  <button className="w-8 h-8 rounded-full bg-[#0F3A40] text-white flex items-center justify-center shadow-lg shadow-[#0F3A40]/20">1</button>
-                  <button className="w-8 h-8 rounded-full text-[#4A787C] hover:bg-[#F2FCFD] flex items-center justify-center transition-all">2</button>
-                  <button className="p-2 rounded-full hover:bg-[#F2FCFD] transition-all"><ChevronRight size={16} /></button>
+               <div className="flex items-center gap-2 flex-wrap justify-center">
+                  <button
+                     type="button"
+                     aria-label="Trang trước"
+                     disabled={currentPage <= 1}
+                     onClick={() => setPage((p) => Math.max(1, p - 1))}
+                     className="p-2 rounded-full hover:bg-[#F2FCFD] transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                  >
+                     <ChevronLeft size={16} />
+                  </button>
+                  {totalPages <= 12
+                     ? Array.from({ length: totalPages }, (_, i) => i + 1).map((num) => (
+                          <button
+                             key={num}
+                             type="button"
+                             onClick={() => setPage(num)}
+                             className={`min-w-8 h-8 px-1 rounded-full flex items-center justify-center transition-all ${
+                                num === currentPage
+                                   ? 'bg-[#0F3A40] text-white shadow-lg shadow-[#0F3A40]/20'
+                                   : 'text-[#4A787C] hover:bg-[#F2FCFD]'
+                             }`}
+                          >
+                             {num}
+                          </button>
+                       ))
+                     : (
+                       <span className="text-[#0F3A40] font-bold px-2 tabular-nums">
+                          Trang {currentPage} / {totalPages}
+                       </span>
+                     )}
+                  <button
+                     type="button"
+                     aria-label="Trang sau"
+                     disabled={currentPage >= totalPages}
+                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                     className="p-2 rounded-full hover:bg-[#F2FCFD] transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                  >
+                     <ChevronRight size={16} />
+                  </button>
                </div>
             </div>
          </div>
@@ -367,14 +467,25 @@ export default function TenantInvoicePage() {
                                  <span className="text-[#82ABB0]">Tiền phòng</span>
                                  <span className="font-bold text-[#0F3A40]">{formatMoney(detailInvoice.rent_amount)}₫</span>
                               </div>
-                              <div className="flex justify-between px-4 py-3">
-                                 <span className="text-[#82ABB0]">Điện</span>
-                                 <span className="font-bold text-[#0F3A40]">{formatMoney(detailInvoice.electricity_amount)}₫</span>
-                              </div>
-                              <div className="flex justify-between px-4 py-3">
-                                 <span className="text-[#82ABB0]">Nước</span>
-                                 <span className="font-bold text-[#0F3A40]">{formatMoney(detailInvoice.water_amount)}₫</span>
-                              </div>
+                              {detailInvoiceUtility.showMergedUtility ? (
+                                 <div className="px-4 py-3 border-t border-[#BCE1E5]/20 bg-[#F2FCFD]/35">
+                                    <p className="text-[10px] font-bold text-[#82ABB0] uppercase tracking-widest mb-2">Điện — Nước</p>
+                                    <p className="font-bold text-[#0F3A40] text-[15px] mb-1">
+                                       {formatMoney(detailInvoice.electricity_amount)}₫{' '}
+                                       <span className="text-[#82ABB0] font-bold">/</span>{' '}
+                                       {formatMoney(detailInvoice.water_amount)}₫
+                                    </p>
+                                    <p className="text-[11px] text-[#82ABB0] mb-3">
+                                       Tổng trên hóa đơn; chỉ số và bậc điện/nước (nếu có) ngay dưới.
+                                    </p>
+                                    <InvoiceUtilityDetails
+                                       electricity_breakdown={detailInvoice.electricity_breakdown}
+                                       water_breakdown={detailInvoice.water_breakdown}
+                                       utility_meter_snapshot={detailInvoice.utility_meter_snapshot}
+                                       emptyHint={detailInvoiceUtility.utilityEmptyHint}
+                                    />
+                                 </div>
+                              ) : null}
                               <div className="px-4 py-3">
                                  <div className="flex justify-between">
                                     <span className="text-[#82ABB0]">Dịch vụ &amp; tiện ích</span>

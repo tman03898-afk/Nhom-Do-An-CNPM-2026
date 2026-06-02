@@ -325,9 +325,10 @@ export default function AnalyticsPage() {
           <p className="text-[#4A787C] font-medium">Cập nhật hiệu suất kinh doanh thời gian thực</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 bg-white border border-[#BCE1E5]/50 px-5 py-3 rounded-2xl text-[14px] font-bold text-[#0F3A40] shadow-sm hover:shadow-md transition-all">
-            <Calendar className="w-4 h-4 text-[#14B8A6]" /> 30 ngày qua
-          </button>
+          <span className="flex items-center gap-2 bg-white border border-[#BCE1E5]/50 px-5 py-3 rounded-2xl text-[14px] font-bold text-[#4A787C] shadow-sm">
+            <Calendar className="w-4 h-4 text-[#14B8A6]" />
+            Toàn bộ dữ liệu hệ thống
+          </span>
           <button
             type="button"
             onClick={handleExportCsv}

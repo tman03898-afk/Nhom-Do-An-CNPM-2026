@@ -69,7 +69,7 @@ export function printTicketReceipt(ticket, viewer = {}) {
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
-  doc.text('THE NEST', margin, 13);
+  doc.text('THE SUN', margin, 13);
   doc.setFontSize(18);
   doc.text(pdfSafeText('BIEN LAI SUA CHUA'), margin, 25);
   doc.setFontSize(11);

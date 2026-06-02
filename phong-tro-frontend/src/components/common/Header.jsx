@@ -1,11 +1,12 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { User, LogOut, Bird, Menu, X } from 'lucide-react';
+import { User, LogOut, Sun, Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 export default function Header() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeNav, setActiveNav] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -18,9 +19,9 @@ export default function Header() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Close menu when location changes
+  // Close menu when location changes (defer to satisfy react-hooks/set-state-in-effect).
   useEffect(() => {
-    setIsMenuOpen(false);
+    queueMicrotask(() => setIsMenuOpen(false));
   }, [location.pathname]);
 
   const isHome = location.pathname === '/';
@@ -32,6 +33,7 @@ export default function Header() {
 
   const textColor = isTransparent ? "text-white" : "text-nest-text-primary";
   const navItems = [
+    { id: 'loai-phong', label: 'Loại phòng' },
     { id: 'phong-trong', label: 'Phòng nổi bật' },
     { id: 'tien-ich',   label: 'Tiện ích' },
     { id: 'quy-trinh', label: 'Quy trình' },
@@ -42,7 +44,7 @@ export default function Header() {
     setActiveNav(id);
     setIsMenuOpen(false);
     if (location.pathname !== '/') {
-      window.location.href = `/#${id}`;
+      navigate({ pathname: '/', hash: id });
     } else {
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
     }
@@ -73,9 +75,9 @@ export default function Header() {
           className={`${textColor} font-sans font-bold text-xl md:text-2xl tracking-tight flex items-center gap-2.5 transition-transform hover:scale-[1.02] active:scale-95`}
         >
           <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${isTransparent ? 'bg-white/10' : 'bg-nest-primary/10'}`}>
-            <Bird className={`w-5 h-5 md:w-6 md:h-6 ${isTransparent ? 'text-white' : 'text-nest-primary'}`} />
+            <Sun className={`w-5 h-5 md:w-6 md:h-6 ${isTransparent ? 'text-white' : 'text-nest-primary'}`} />
           </div>
-          <span>The Nest<span className={isTransparent ? 'text-white/60' : 'text-nest-primary'}>Living</span></span>
+          <span>The <span className={isTransparent ? 'text-white/90' : 'text-nest-primary'}>Sun</span></span>
         </Link>
         
         {/* Desktop Nav */}

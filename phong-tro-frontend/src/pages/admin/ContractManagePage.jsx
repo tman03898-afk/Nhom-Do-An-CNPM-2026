@@ -1,16 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ClipboardList, Search,
-  Download, Plus,
+  Download, Plus, Pencil,
   Wallet, AlertCircle, XCircle,
   Info, Trash2, AlertTriangle, X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 import { downloadCsv } from '../../utils/exportCsv';
+import ContractFromHoldModal from '../../components/rooms/ContractFromHoldModal';
+
+function toIsoDateInput(value) {
+  if (value == null || value === '') return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
 
 export default function ContractManagePage() {
   const { token } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const holdRequestIdFromUrl = searchParams.get('hold_request_id');
+  const [contractHoldId, setContractHoldId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [contracts, setContracts] = useState([]);
@@ -21,6 +33,17 @@ export default function ContractManagePage() {
   const [deleteModalContract, setDeleteModalContract] = useState(null);
   const [deleteModalDeleting, setDeleteModalDeleting] = useState(false);
   const [deleteModalError, setDeleteModalError] = useState('');
+  const [editModalContract, setEditModalContract] = useState(null);
+  const [editForm, setEditForm] = useState({
+    start_date: '',
+    end_date: '',
+    rent_price: '',
+    deposit: '',
+    status: 'ACTIVE',
+    notes: '',
+  });
+  const [editError, setEditError] = useState('');
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
@@ -38,7 +61,7 @@ export default function ContractManagePage() {
     try {
       const data = await apiFetch('/admin/contracts', { token });
       setContracts(data.contracts || []);
-    } catch (e) {
+    } catch {
       setContracts([]);
     } finally {
       setIsLoading(false);
@@ -50,11 +73,23 @@ export default function ContractManagePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  useEffect(() => {
+    const id = Number(holdRequestIdFromUrl);
+    if (Number.isInteger(id) && id > 0) {
+      setContractHoldId(id);
+      setSearchParams({}, { replace: true });
+    }
+  }, [holdRequestIdFromUrl, setSearchParams]);
+
   const stats = useMemo(() => {
     const total = contracts.length;
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const expiringSoon = contracts.filter((c) => c.status === 'ACTIVE' && c.end_date && new Date(c.end_date) <= in30Days).length;
+    const expiringSoon = contracts.filter((c) => {
+      if (c.status !== 'ACTIVE' || !c.end_date) return false;
+      const end = new Date(c.end_date);
+      return end >= now && end <= in30Days;
+    }).length;
     const ended = contracts.filter((c) => c.status !== 'ACTIVE').length;
     const deposits = contracts.reduce((sum, c) => sum + Number(c.deposit || 0), 0);
     return { total, expiringSoon, ended, deposits };
@@ -134,6 +169,63 @@ export default function ContractManagePage() {
     if (status === 'ACTIVE') return 'bg-[#EBFDFB] text-[#14B8A6]';
     if (status === 'EXPIRED') return 'bg-[#FFF3E0] text-[#E68A00]';
     return 'bg-slate-100 text-slate-500';
+  };
+
+  const openEditModal = (c) => {
+    setEditForm({
+      start_date: toIsoDateInput(c.start_date),
+      end_date: toIsoDateInput(c.end_date),
+      rent_price: c.rent_price != null ? String(c.rent_price) : '',
+      deposit: c.deposit != null ? String(c.deposit) : '',
+      status: c.status || 'ACTIVE',
+      notes: c.notes || '',
+    });
+    setEditError('');
+    setEditModalContract(c);
+  };
+
+  const closeEditModal = () => {
+    if (isEditSubmitting) return;
+    setEditModalContract(null);
+    setEditError('');
+  };
+
+  const handleUpdateContract = async () => {
+    if (!token || !editModalContract) return;
+
+    if (!editForm.start_date || !editForm.end_date) {
+      setEditError('Vui lòng nhập ngày bắt đầu và ngày kết thúc.');
+      return;
+    }
+    if (editForm.end_date < editForm.start_date) {
+      setEditError('Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.');
+      return;
+    }
+
+    const payload = {
+      start_date: editForm.start_date,
+      end_date: editForm.end_date,
+      rent_price: Number(editForm.rent_price || 0),
+      deposit: Number(editForm.deposit || 0),
+      status: editForm.status,
+      notes: editForm.notes.trim() ? editForm.notes.trim() : null,
+    };
+
+    setEditError('');
+    setIsEditSubmitting(true);
+    try {
+      await apiFetch(`/admin/contracts/${editModalContract.contract_id}`, {
+        token,
+        method: 'PUT',
+        body: payload,
+      });
+      setEditModalContract(null);
+      await refresh();
+    } catch (err) {
+      setEditError(err?.data?.message || err.message || 'Không cập nhật được hợp đồng.');
+    } finally {
+      setIsEditSubmitting(false);
+    }
   };
 
   const openDeleteContractModal = (c) => {
@@ -321,15 +413,26 @@ export default function ContractManagePage() {
                       </span>
                     </td>
                     <td className="py-5 px-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openDeleteContractModal(c)}
-                        className="p-2 rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 transition-all inline-flex"
-                        title="Xóa hợp đồng (giữ khách thuê)"
-                        aria-label={`Xóa hợp đồng ${c.contract_id}`}
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(c)}
+                          className="p-2 rounded-xl text-[#14B8A6] hover:text-[#0da090] hover:bg-[#EBFDFB] transition-all inline-flex"
+                          title="Chỉnh sửa hợp đồng"
+                          aria-label={`Sửa hợp đồng ${c.contract_id}`}
+                        >
+                          <Pencil size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openDeleteContractModal(c)}
+                          className="p-2 rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 transition-all inline-flex"
+                          title="Xóa hợp đồng (giữ khách thuê)"
+                          aria-label={`Xóa hợp đồng ${c.contract_id}`}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -402,7 +505,9 @@ export default function ContractManagePage() {
           <div>
             <h4 className="text-[16px] font-bold text-[#0F3A40] mb-2">Lưu ý gia hạn hợp đồng</h4>
             <p className="text-[13px] text-[#4A787C] font-medium leading-relaxed">
-              Có 8 hợp đồng sẽ hết hạn trong vòng 30 ngày tới. Hệ thống đã tự động gửi thông báo nhắc nhở đến khách thuê. Vui lòng kiểm tra phản hồi để chuẩn bị thủ tục gia hạn hoặc thanh lý.
+              {stats.expiringSoon > 0
+                ? `Có ${stats.expiringSoon} hợp đồng sẽ hết hạn trong 30 ngày tới. Vui lòng liên hệ khách thuê để gia hạn hoặc thanh lý.`
+                : 'Không có hợp đồng nào sắp hết hạn trong 30 ngày tới.'}
             </p>
           </div>
         </div>
@@ -412,16 +517,153 @@ export default function ContractManagePage() {
             <Info size={24} />
           </div>
           <div>
-            <h4 className="text-[16px] font-bold text-[#0F3A40] mb-2">Hợp đồng điện tử mẫu</h4>
+            <h4 className="text-[16px] font-bold text-[#0F3A40] mb-2">Tạo hợp đồng mới</h4>
             <p className="text-[13px] text-[#4A787C] font-medium leading-relaxed">
-               Bạn có thể sử dụng các mẫu hợp đồng chuẩn đã được phê duyệt để tạo nhanh hợp đồng mới cho khách thuê. Mọi thay đổi về điều khoản cần được lưu lại thành bản phụ lục.
+               Ghi chú điều khoản trong trường &quot;Ghi chú&quot; khi tạo/sửa hợp đồng — khách thuê sẽ thấy nội dung này trên trang Hợp đồng.
             </p>
-            <button className="mt-4 text-[13px] font-bold text-[#14B8A6] hover:underline flex items-center gap-1.5 group">
-              Tải xuống biểu mẫu <Download size={14} className="group-hover:translate-y-0.5 transition-transform" />
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(true)}
+              className="mt-4 text-[13px] font-bold text-[#14B8A6] hover:underline flex items-center gap-1.5 group"
+            >
+              Tạo hợp đồng <Download size={14} className="group-hover:translate-y-0.5 transition-transform" />
             </button>
           </div>
         </div>
       </div>
+
+      {editModalContract && (
+        <div
+          className="fixed inset-0 z-[105] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={() => !isEditSubmitting && closeEditModal()}
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-[32px] p-7 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-contract-title"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 id="edit-contract-title" className="text-2xl font-bold text-[#0F3A40]">
+                Chỉnh sửa hợp đồng #{editModalContract.contract_id}
+              </h3>
+              <button
+                type="button"
+                onClick={closeEditModal}
+                disabled={isEditSubmitting}
+                className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 disabled:opacity-50"
+                aria-label="Đóng"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-[13px] font-medium text-[#4A787C] mb-6">
+              Khách: <span className="font-bold text-[#0F3A40]">{editModalContract.full_name}</span>
+              {' · '}
+              Phòng: <span className="font-bold text-[#0F3A40]">{editModalContract.room_number}</span>
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide mb-1.5">
+                  Ngày bắt đầu
+                </label>
+                <input
+                  type="date"
+                  value={editForm.start_date}
+                  onChange={(e) => setEditForm((p) => ({ ...p, start_date: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide mb-1.5">
+                  Ngày kết thúc
+                </label>
+                <input
+                  type="date"
+                  value={editForm.end_date}
+                  onChange={(e) => setEditForm((p) => ({ ...p, end_date: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide mb-1.5">
+                  Giá thuê (VNĐ)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editForm.rent_price}
+                  onChange={(e) => setEditForm((p) => ({ ...p, rent_price: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                  placeholder="Giá thuê"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide mb-1.5">
+                  Tiền cọc (VNĐ)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editForm.deposit}
+                  onChange={(e) => setEditForm((p) => ({ ...p, deposit: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                  placeholder="Tiền cọc"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide mb-1.5">
+                  Trạng thái
+                </label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6] font-bold text-[#0F3A40]"
+                >
+                  <option value="ACTIVE">Đang hiệu lực</option>
+                  <option value="EXPIRED">Hết hạn</option>
+                  <option value="TERMINATED">Thanh lý</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-[#82ABB0] uppercase tracking-wide mb-1.5">
+                  Ghi chú
+                </label>
+                <textarea
+                  rows={3}
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                  placeholder="Ghi chú"
+                />
+              </div>
+            </div>
+
+            {editError ? <p className="mt-4 text-sm font-medium text-red-600">{editError}</p> : null}
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={closeEditModal}
+                disabled={isEditSubmitting}
+                className="px-6 py-3 rounded-full font-bold text-[#4A787C] hover:text-[#0F3A40] disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateContract}
+                disabled={isEditSubmitting}
+                className="px-8 py-3 rounded-full bg-[#14B8A6] hover:bg-[#0da090] text-white font-bold shadow-lg shadow-[#14B8A6]/20 disabled:opacity-60"
+              >
+                {isEditSubmitting ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteModalContract && (
         <div
@@ -623,13 +865,31 @@ export default function ContractManagePage() {
               <button onClick={() => setIsCreateOpen(false)} className="px-6 py-3 rounded-full font-bold text-[#4A787C] hover:text-[#0F3A40]">
                 Hủy
               </button>
-              <button onClick={handleCreate} className="px-8 py-3 rounded-full bg-[#14B8A6] hover:bg-[#0da090] text-white font-bold shadow-lg shadow-[#14B8A6]/20">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleCreate}
+                className="px-8 py-3 rounded-full bg-[#14B8A6] hover:bg-[#0da090] text-white font-bold shadow-lg shadow-[#14B8A6]/20 disabled:opacity-60 disabled:pointer-events-none"
+              >
                 Tạo hợp đồng
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {contractHoldId ? (
+        <ContractFromHoldModal
+          holdRequestId={contractHoldId}
+          token={token}
+          onClose={() => setContractHoldId(null)}
+          onSuccess={async () => {
+            setContractHoldId(null);
+            await refresh();
+            window.dispatchEvent(new Event('admin-nav-badges-refresh'));
+          }}
+        />
+      ) : null}
     </div>
   );
 }
