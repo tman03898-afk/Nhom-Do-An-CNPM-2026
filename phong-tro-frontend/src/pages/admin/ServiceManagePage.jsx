@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Zap, Droplet, Wifi, Trash2, Save, Plus, X,
-  Settings2, User, Hash, Box, Info, UserCheck, XCircle, RefreshCw
+  Settings2, User, Box, Info, UserCheck, XCircle, RefreshCw
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
+import AppDialog from '../../components/common/AppDialog';
 
 export default function ServiceManagePage() {
   const { addToast } = useToast();
@@ -14,8 +15,15 @@ export default function ServiceManagePage() {
   const [services, setServices] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingFeeSubs, setPendingFeeSubs] = useState([]);
+  const [pendingSvcSubs, setPendingSvcSubs] = useState([]);
+  const [pendingSvcCancels, setPendingSvcCancels] = useState([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [busyFeeId, setBusyFeeId] = useState(null);
+  const [busySvcId, setBusySvcId] = useState(null);
+  /** @type {null | { kind: string, id: number, reason: string }} */
+  const [rejectModal, setRejectModal] = useState(null);
+  const [deleteSvcId, setDeleteSvcId] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const [isAdding, setIsAdding] = useState(false);
   const [newSvc, setNewSvc] = useState({ title: '', desc: '', value: '', method: 'fixed' });
@@ -31,8 +39,12 @@ export default function ServiceManagePage() {
     }
   };
 
+  const isMeterUnit = (unit) => {
+    const u = String(unit || '').trim().toLowerCase().replace(/³/g, '3');
+    return u === 'kwh' || u === 'm3';
+  };
+
   const toUiMethod = (unit) => {
-    if (unit === 'kWh' || unit === 'm3' || unit === 'm³') return 'meter';
     if (unit === 'person') return 'person';
     return 'fixed';
   };
@@ -40,7 +52,6 @@ export default function ServiceManagePage() {
   const fromUi = (svc) => {
     const method = svc.method;
     let unit = 'month';
-    if (method === 'meter') unit = 'kWh';
     if (method === 'person') unit = 'person';
     if (method === 'fixed') unit = 'month';
     return {
@@ -56,15 +67,17 @@ export default function ServiceManagePage() {
     setIsLoading(true);
     try {
       const data = await apiFetch('/admin/services', { token });
-      const mapped = (data.services || []).map((s) => ({
-        id: String(s.service_id),
-        service_id: s.service_id,
-        title: s.name,
-        desc: s.unit ? `Đơn vị: ${s.unit}` : '',
-        icon: 'Settings2',
-        method: toUiMethod(s.unit),
-        value: String(s.price ?? ''),
-      }));
+      const mapped = (data.services || [])
+        .filter((s) => !isMeterUnit(s.unit))
+        .map((s) => ({
+          id: String(s.service_id),
+          service_id: s.service_id,
+          title: s.name,
+          desc: s.unit === 'person' ? 'Tính theo số người đăng ký' : 'Phí cố định mỗi tháng',
+          icon: 'Settings2',
+          method: toUiMethod(s.unit),
+          value: String(s.price ?? ''),
+        }));
       setServices(mapped);
       setDirtyIds(new Set());
     } catch {
@@ -79,30 +92,37 @@ export default function ServiceManagePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const loadPendingFeeSubs = useCallback(async () => {
+  const loadPendingApprovals = useCallback(async () => {
     if (!token) return;
     setPendingLoading(true);
     try {
-      const d = await apiFetch('/admin/fee-subscriptions/pending', { token });
-      setPendingFeeSubs(d.pending || []);
+      const [fee, svc] = await Promise.allSettled([
+        apiFetch('/admin/fee-subscriptions/pending', { token }),
+        apiFetch('/admin/service-subscriptions/pending', { token }),
+      ]);
+      setPendingFeeSubs(fee.status === 'fulfilled' ? fee.value?.pending || [] : []);
+      setPendingSvcSubs(svc.status === 'fulfilled' ? svc.value?.pending || [] : []);
+      setPendingSvcCancels(svc.status === 'fulfilled' ? svc.value?.pending_cancellations || [] : []);
     } catch {
       setPendingFeeSubs([]);
+      setPendingSvcSubs([]);
+      setPendingSvcCancels([]);
     } finally {
       setPendingLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
-    loadPendingFeeSubs();
-  }, [loadPendingFeeSubs]);
+    loadPendingApprovals();
+  }, [loadPendingApprovals]);
 
   const approveFeeSub = async (id) => {
     if (!token) return;
     setBusyFeeId(id);
     try {
       await apiFetch(`/admin/fee-subscriptions/${id}/approve`, { token, method: 'POST', body: {} });
-      addToast('Đã duyệt. Phí sẽ cộng vào hóa đơn từ tháng sau.', 'success');
-      await loadPendingFeeSubs();
+      addToast('Đã duyệt tiện ích. Phí cộng vào hóa đơn kỳ đang mở.', 'success');
+      await loadPendingApprovals();
     } catch (e) {
       addToast(e?.message || 'Không duyệt được.', 'error');
     } finally {
@@ -110,34 +130,133 @@ export default function ServiceManagePage() {
     }
   };
 
-  const rejectFeeSub = async (id) => {
-    if (!token) return;
-    const reason = window.prompt('Lý do từ chối (có thể để trống):') ?? '';
-    setBusyFeeId(id);
+  const openRejectFee = (id) => {
+    setRejectModal({ kind: 'fee', id, reason: '' });
+  };
+
+  const runRejectModal = async () => {
+    if (!token || !rejectModal) return;
+    const { kind, id, reason } = rejectModal;
+    const body = { reason: reason.trim() || undefined };
+
+    if (kind === 'fee') {
+      setBusyFeeId(id);
+      try {
+        await apiFetch(`/admin/fee-subscriptions/${id}/reject`, { token, method: 'POST', body });
+        addToast('Đã từ chối yêu cầu tiện ích.', 'success');
+        setRejectModal(null);
+        await loadPendingApprovals();
+      } catch (e) {
+        addToast(e?.message || 'Không từ chối được.', 'error');
+      } finally {
+        setBusyFeeId(null);
+      }
+      return;
+    }
+
+    setBusySvcId(id);
     try {
-      await apiFetch(`/admin/fee-subscriptions/${id}/reject`, { token, method: 'POST', body: { reason } });
-      addToast('Đã từ chối yêu cầu.', 'success');
-      await loadPendingFeeSubs();
+      if (kind === 'svc-reg') {
+        await apiFetch(`/admin/service-subscriptions/${id}/reject`, { token, method: 'POST', body });
+        addToast('Đã từ chối yêu cầu đăng ký.', 'success');
+      } else if (kind === 'svc-cancel') {
+        await apiFetch(`/admin/service-subscriptions/${id}/reject-cancel`, { token, method: 'POST', body });
+        addToast('Đã từ chối yêu cầu ngưng — tenant tiếp tục dùng dịch vụ.', 'success');
+      }
+      setRejectModal(null);
+      await loadPendingApprovals();
     } catch (e) {
       addToast(e?.message || 'Không từ chối được.', 'error');
     } finally {
-      setBusyFeeId(null);
+      setBusySvcId(null);
     }
+  };
+
+  const approveSvcSub = async (id) => {
+    if (!token) return;
+    setBusySvcId(id);
+    try {
+      await apiFetch(`/admin/service-subscriptions/${id}/approve`, { token, method: 'POST', body: {} });
+      addToast('Đã duyệt dịch vụ. Phí cộng vào hóa đơn kỳ đang mở.', 'success');
+      await loadPendingApprovals();
+    } catch (e) {
+      addToast(e?.message || 'Không duyệt được.', 'error');
+    } finally {
+      setBusySvcId(null);
+    }
+  };
+
+  const openRejectSvcReg = (id) => {
+    setRejectModal({ kind: 'svc-reg', id, reason: '' });
+  };
+
+  const approveSvcCancel = async (id) => {
+    if (!token) return;
+    setBusySvcId(id);
+    try {
+      await apiFetch(`/admin/service-subscriptions/${id}/approve-cancel`, { token, method: 'POST', body: {} });
+      addToast('Đã duyệt ngưng dùng. Phí đã trừ khỏi hóa đơn kỳ đang mở.', 'success');
+      await loadPendingApprovals();
+    } catch (e) {
+      addToast(e?.message || 'Không duyệt được.', 'error');
+    } finally {
+      setBusySvcId(null);
+    }
+  };
+
+  const openRejectSvcCancel = (id) => {
+    setRejectModal({ kind: 'svc-cancel', id, reason: '' });
+  };
+
+  const rejectModalMeta = () => {
+    if (!rejectModal) return null;
+    if (rejectModal.kind === 'fee') {
+      return { title: 'Từ chối đăng ký tiện ích', hint: 'Tenant sẽ thấy lý do (nếu có).' };
+    }
+    if (rejectModal.kind === 'svc-reg') {
+      return { title: 'Từ chối đăng ký dịch vụ', hint: 'Tenant có thể gửi lại yêu cầu sau.' };
+    }
+    return { title: 'Giữ tiếp dịch vụ', hint: 'Từ chối yêu cầu ngưng — tenant tiếp tục bị tính phí.' };
   };
 
   const getUnitLabel = (method) => {
     switch (method) {
-      case 'meter': return 'VNĐ / Đơn vị';
-      case 'person': return 'VNĐ / Người';
+      case 'person': return 'VNĐ / Người / tháng';
       case 'fixed': return 'VNĐ / Tháng';
       default: return 'VNĐ';
     }
   };
 
   const handleDelete = (id) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa dịch vụ này không?')) {
-      setServices(services.filter(s => s.id !== id));
-      addToast('Đã xóa dịch vụ thành công!');
+    setDeleteSvcId(id);
+  };
+
+  const confirmDeleteSvc = async () => {
+    if (!token || !deleteSvcId) return;
+    const svc = services.find((s) => s.id === deleteSvcId);
+    const serviceId = Number(svc?.service_id || deleteSvcId);
+    if (!Number.isInteger(serviceId) || serviceId <= 0) return;
+
+    setDeleteBusy(true);
+    try {
+      const data = await apiFetch(`/admin/services/${serviceId}`, { token, method: 'DELETE' });
+      setDeleteSvcId(null);
+      setDirtyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(String(serviceId));
+        return next;
+      });
+      addToast(
+        data?.deactivated
+          ? `Dịch vụ đã được ngưng, ẩn khỏi danh sách và hủy ${Number(data.cancelled_subscriptions || 0)} đăng ký đang mở.`
+          : 'Đã xóa dịch vụ khỏi hệ thống.',
+        'success'
+      );
+      await refresh();
+    } catch (e) {
+      addToast(e?.message || 'Không thể xóa dịch vụ.', 'error');
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -203,6 +322,159 @@ export default function ServiceManagePage() {
           </button>
         </div>
 
+        {/* Duyệt đăng ký dịch vụ (tenant → services) */}
+        <div className="mb-8 rounded-[32px] border border-[#14B8A6]/25 bg-white p-6 shadow-[0_4px_24px_rgba(15,58,64,0.04)]">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#F2FCFD] text-[#14B8A6] flex items-center justify-center">
+                <UserCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-[#0F3A40]">Duyệt đăng ký dịch vụ</h2>
+                <p className="text-xs text-[#4A787C] font-medium">
+                  Tenant đăng ký từ trang Dịch vụ. Sau khi duyệt, phí cộng vào <span className="font-bold">hóa đơn kỳ đang mở</span>.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadPendingApprovals()}
+              disabled={pendingLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#BCE1E5] text-[13px] font-bold text-[#0F3A40] hover:bg-[#F2FCFD] disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${pendingLoading ? 'animate-spin' : ''}`} /> Làm mới
+            </button>
+          </div>
+          {pendingLoading && pendingSvcSubs.length === 0 ? (
+            <p className="text-sm text-[#4A787C] py-4">Đang tải…</p>
+          ) : pendingSvcSubs.length === 0 ? (
+            <p className="text-sm text-[#4A787C] py-2">Không có yêu cầu dịch vụ chờ duyệt.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-[#BCE1E5]/40">
+              <table className="w-full text-left text-sm min-w-[720px]">
+                <thead>
+                  <tr className="bg-[#F2FCFD] text-[10px] font-bold uppercase tracking-wider text-[#82ABB0]">
+                    <th className="px-3 py-2.5">Phòng</th>
+                    <th className="px-3 py-2.5">Tenant</th>
+                    <th className="px-3 py-2.5">Dịch vụ</th>
+                    <th className="px-3 py-2.5">Số người</th>
+                    <th className="px-3 py-2.5 whitespace-nowrap">Phí/tháng</th>
+                    <th className="px-3 py-2.5 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingSvcSubs.map((row) => {
+                    const busy = busySvcId === row.subscription_id;
+                    return (
+                      <tr key={row.subscription_id} className="border-t border-[#BCE1E5]/30">
+                        <td className="px-3 py-2.5 font-bold text-[#0F3A40]">{row.room_number || '—'}</td>
+                        <td className="px-3 py-2.5 text-[#4A787C]">
+                          <div className="font-medium text-[#0F3A40]">{row.tenant_name || '—'}</div>
+                          <div className="text-xs">{row.tenant_email || ''}</div>
+                        </td>
+                        <td className="px-3 py-2.5 text-[#0F3A40]">{row.service_name}</td>
+                        <td className="px-3 py-2.5 text-[#4A787C]">
+                          {row.head_count != null ? row.head_count : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                          {Number(row.monthly_price || 0).toLocaleString('vi-VN')}đ
+                        </td>
+                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => approveSvcSub(row.subscription_id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#14B8A6] text-white text-xs font-bold mr-2 hover:bg-[#0da090] disabled:opacity-50"
+                          >
+                            Duyệt
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => openRejectSvcReg(row.subscription_id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> Từ chối
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Duyệt yêu cầu ngưng dịch vụ */}
+        <div className="mb-8 rounded-[32px] border border-orange-200/80 bg-white p-6 shadow-[0_4px_24px_rgba(15,58,64,0.04)]">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-[#0F3A40]">Duyệt yêu cầu ngưng dùng</h2>
+            <p className="text-xs text-[#4A787C] font-medium mt-1">
+              Tenant gửi &quot;Ngưng&quot; khi đang dùng. Sau khi duyệt, phí được trừ khỏi hóa đơn kỳ đang mở.
+            </p>
+          </div>
+          {pendingLoading && pendingSvcCancels.length === 0 ? (
+            <p className="text-sm text-[#4A787C] py-4">Đang tải…</p>
+          ) : pendingSvcCancels.length === 0 ? (
+            <p className="text-sm text-[#4A787C] py-2">Không có yêu cầu ngưng chờ duyệt.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-orange-100">
+              <table className="w-full text-left text-sm min-w-[720px]">
+                <thead>
+                  <tr className="bg-orange-50/80 text-[10px] font-bold uppercase tracking-wider text-[#82ABB0]">
+                    <th className="px-3 py-2.5">Phòng</th>
+                    <th className="px-3 py-2.5">Tenant</th>
+                    <th className="px-3 py-2.5">Dịch vụ</th>
+                    <th className="px-3 py-2.5">Số người</th>
+                    <th className="px-3 py-2.5 whitespace-nowrap">Phí/tháng</th>
+                    <th className="px-3 py-2.5 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingSvcCancels.map((row) => {
+                    const busy = busySvcId === row.subscription_id;
+                    return (
+                      <tr key={`cancel-${row.subscription_id}`} className="border-t border-orange-100/80">
+                        <td className="px-3 py-2.5 font-bold text-[#0F3A40]">{row.room_number || '—'}</td>
+                        <td className="px-3 py-2.5 text-[#4A787C]">
+                          <div className="font-medium text-[#0F3A40]">{row.tenant_name || '—'}</div>
+                          <div className="text-xs">{row.tenant_email || ''}</div>
+                        </td>
+                        <td className="px-3 py-2.5 text-[#0F3A40]">{row.service_name}</td>
+                        <td className="px-3 py-2.5 text-[#4A787C]">
+                          {row.head_count != null ? row.head_count : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                          {Number(row.monthly_price || 0).toLocaleString('vi-VN')}đ
+                        </td>
+                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => approveSvcCancel(row.subscription_id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#14B8A6] text-white text-xs font-bold mr-2 hover:bg-[#0da090] disabled:opacity-50"
+                          >
+                            Duyệt ngưng
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => openRejectSvcCancel(row.subscription_id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> Giữ tiếp
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {/* Duyệt đăng ký tiện ích (tenant → service_fees) */}
         <div className="mb-10 rounded-[32px] border border-[#BCE1E5]/60 bg-white p-6 shadow-[0_4px_24px_rgba(15,58,64,0.04)]">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -213,13 +485,13 @@ export default function ServiceManagePage() {
               <div>
                 <h2 className="text-lg font-bold text-[#0F3A40]">Duyệt đăng ký tiện ích</h2>
                 <p className="text-xs text-[#4A787C] font-medium">
-                  Tenant gửi từ trang dịch vụ. Sau khi duyệt, phí được cộng vào hóa đơn từ <span className="font-bold">kỳ tháng tiếp theo</span>.
+                  Tenant gửi từ trang dịch vụ (bảng tiện ích cũ). Sau khi duyệt, phí cộng vào hóa đơn kỳ đang mở.
                 </p>
               </div>
             </div>
             <button
               type="button"
-              onClick={() => loadPendingFeeSubs()}
+              onClick={() => loadPendingApprovals()}
               disabled={pendingLoading}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#BCE1E5] text-[13px] font-bold text-[#0F3A40] hover:bg-[#F2FCFD] disabled:opacity-50"
             >
@@ -229,7 +501,7 @@ export default function ServiceManagePage() {
           {pendingLoading && pendingFeeSubs.length === 0 ? (
             <p className="text-sm text-[#4A787C] py-4">Đang tải…</p>
           ) : pendingFeeSubs.length === 0 ? (
-            <p className="text-sm text-[#4A787C] py-2">Không có yêu cầu chờ duyệt.</p>
+            <p className="text-sm text-[#4A787C] py-2">Không có yêu cầu tiện ích chờ duyệt.</p>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-[#BCE1E5]/40">
               <table className="w-full text-left text-sm min-w-[640px]">
@@ -268,7 +540,7 @@ export default function ServiceManagePage() {
                           <button
                             type="button"
                             disabled={busy}
-                            onClick={() => rejectFeeSub(row.id)}
+                            onClick={() => openRejectFee(row.id)}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 disabled:opacity-50"
                           >
                             <XCircle className="w-3.5 h-3.5" /> Từ chối
@@ -324,7 +596,6 @@ export default function ServiceManagePage() {
                       >
                          <option value="fixed" className="text-[#0F3A40]">Cố định / Trọn gói</option>
                          <option value="person" className="text-[#0F3A40]">Theo đầu người</option>
-                         <option value="meter" className="text-[#0F3A40]">Theo chỉ số (Điện/Nước)</option>
                       </select>
                       <Settings2 className="absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60 pointer-events-none" />
                     </div>
@@ -383,9 +654,8 @@ export default function ServiceManagePage() {
                        onChange={(e) => handleUpdate(svc.id, 'method', e.target.value)}
                        className="w-full bg-[#F2FCFD] border border-[#BCE1E5]/40 rounded-2xl px-5 pr-12 py-3.5 text-[14px] font-bold text-[#0F3A40] outline-none appearance-none cursor-pointer focus:border-[#14B8A6]/40"
                     >
-                    <option value="meter">Theo chỉ số (Tự động tính theo mức chênh lệch)</option>
-                    <option value="person">Theo đầu người (Số khách x Đơn giá)</option>
-                    <option value="fixed">Cố định / Trọn gói (Áp dụng theo từng hóa đơn)</option>
+                    <option value="person">Theo đầu người (Số khách × Đơn giá)</option>
+                    <option value="fixed">Cố định / Trọn gói (mỗi hóa đơn)</option>
                   </select>
                   <Settings2 className="absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#82ABB0] pointer-events-none" />
                 </div>
@@ -393,7 +663,7 @@ export default function ServiceManagePage() {
 
               <div className="relative">
                 <div className="absolute -top-3 left-6 z-10 bg-white px-3 py-1 rounded-full text-[10px] font-bold text-[#4A787C] tracking-widest uppercase shadow-sm border border-[#BCE1E5]/30 flex items-center gap-2">
-                  {svc.method === 'meter' ? <Hash size={10} /> : svc.method === 'person' ? <User size={10} /> : <Box size={10} />}
+                  {svc.method === 'person' ? <User size={10} /> : <Box size={10} />}
                   {getUnitLabel(svc.method)}
                 </div>
                 <div className="flex items-center bg-[#DDF5F7]/40 rounded-[28px] px-8 py-5 border-2 border-transparent focus-within:border-[#14B8A6]/30 transition-all shadow-inner">
@@ -416,8 +686,8 @@ export default function ServiceManagePage() {
             <Info size={20} />
           </div>
           <p className="text-[14px] text-[#4A787C] font-medium leading-relaxed">
-            **Lưu ý:** Việc thay đổi cách tính phí sẽ ảnh hưởng trực tiếp đến quy trình lập hóa đơn. <br />
-            Ví dụ: Dịch vụ **"Theo chỉ số"** sẽ yêu cầu người quản lý nhập chỉ số cũ và mới khi chốt sổ hàng tháng.
+            **Lưu ý:** Điện/nước tính riêng trên trang <strong>Hóa đơn</strong> (nhập chỉ số công tơ). <br />
+            Dịch vụ <strong>theo đầu người</strong>: tenant nhập số người khi đăng ký (≤ sức chứa phòng); phí = đơn giá × số người, cộng thẳng vào hóa đơn đang mở.
           </p>
         </div>
 
@@ -433,12 +703,56 @@ export default function ServiceManagePage() {
           </button>
           <button
             onClick={handleSaveAll}
-            className="bg-[#14B8A6] hover:bg-[#0da090] text-white px-10 py-4 rounded-full text-[15px] font-bold transition-all shadow-xl shadow-[#14B8A6]/20 flex items-center gap-3 animate-pulse-slow"
+            disabled={isLoading || dirtyIds.size === 0}
+            className="bg-[#14B8A6] hover:bg-[#0da090] text-white px-10 py-4 rounded-full text-[15px] font-bold transition-all shadow-xl shadow-[#14B8A6]/20 flex items-center gap-3 animate-pulse-slow disabled:opacity-45 disabled:cursor-not-allowed disabled:animate-none"
           >
             <Save className="w-5 h-5" /> ÁP DỤNG HỆ THỐNG
           </button>
         </div>
       </div>
+
+      {rejectModal && rejectModalMeta() ? (
+        <AppDialog
+          open
+          onClose={() => {
+            if (!busyFeeId && !busySvcId) setRejectModal(null);
+          }}
+          title={rejectModalMeta().title}
+          description={rejectModalMeta().hint}
+          confirmText="Xác nhận từ chối"
+          cancelText="Đóng"
+          variant="danger"
+          busy={busyFeeId === rejectModal.id || busySvcId === rejectModal.id}
+          onConfirm={runRejectModal}
+        >
+          <label className="block text-[10px] font-bold uppercase tracking-widest text-[#82ABB0] mb-2">
+            Lý do (tùy chọn)
+          </label>
+          <textarea
+            value={rejectModal.reason}
+            onChange={(e) =>
+              setRejectModal((m) => (m ? { ...m, reason: e.target.value } : m))
+            }
+            rows={3}
+            placeholder="Nhập lý do để tenant đối chiếu…"
+            className="w-full rounded-2xl border border-[#BCE1E5]/60 bg-[#F2FCFD] px-4 py-3 text-[14px] text-[#0F3A40] outline-none focus:border-[#14B8A6]/50 resize-none"
+          />
+        </AppDialog>
+      ) : null}
+
+      {deleteSvcId ? (
+        <AppDialog
+          open
+          onClose={() => !deleteBusy && setDeleteSvcId(null)}
+          title="Xóa dịch vụ?"
+          description="Dịch vụ sẽ bị gỡ khỏi danh sách và tenant không thể đăng ký mới. Nếu đã có lịch sử đăng ký, hệ thống sẽ ngưng dịch vụ thay vì xóa dữ liệu cũ."
+          confirmText="Xóa"
+          cancelText="Giữ lại"
+          variant="danger"
+          busy={deleteBusy}
+          onConfirm={confirmDeleteSvc}
+        />
+      ) : null}
     </div>
   );
 }

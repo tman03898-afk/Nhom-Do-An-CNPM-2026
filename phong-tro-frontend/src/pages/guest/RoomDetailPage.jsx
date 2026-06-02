@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
+import AppDialog from '../../components/common/AppDialog';
+import { useToast } from '../../context/ToastContext';
 import RoomFormModal from '../../components/rooms/RoomFormModal';
 import RoomHoldRequestModal from '../../components/rooms/RoomHoldRequestModal';
 import { canGuestRequestHold, formatHoldUntil } from '../../lib/roomHolds';
@@ -34,7 +36,10 @@ export default function RoomDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const { addToast } = useToast();
   const isAdmin = user?.role === 'ADMIN';
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
   const [room, setRoom] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -81,14 +86,18 @@ export default function RoomDetailPage() {
     return { label: room.status, color: 'text-nest-text-secondary', icon: CheckCircle2 };
   }, [room]);
 
-  const deleteRoom = async () => {
+  const confirmDeleteRoom = async () => {
     if (!token || !room?.room_id) return;
-    if (!window.confirm(`Xóa phòng ${room.room_number}?`)) return;
+    setDeleteBusy(true);
     try {
       await apiFetch(`/rooms/${room.room_id}`, { token, method: 'DELETE' });
+      addToast(`Đã xóa phòng ${room.room_number}.`, 'success');
+      setDeleteOpen(false);
       navigate('/#phong-trong');
     } catch (err) {
-      window.alert(err?.message || 'Không xóa được phòng');
+      addToast(err?.message || 'Không xóa được phòng.', 'error');
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -113,7 +122,7 @@ export default function RoomDetailPage() {
           </button>
           <button
             type="button"
-            onClick={deleteRoom}
+            onClick={() => setDeleteOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white text-red-600 text-sm font-bold shadow-sm hover:bg-red-50"
           >
             <Trash2 className="w-4 h-4" /> Xóa phòng
@@ -339,6 +348,22 @@ export default function RoomDetailPage() {
         roomId={Number(room?.room_id || id)}
         roomNumber={room?.room_number}
         onSuccess={loadRoom}
+      />
+
+      <AppDialog
+        open={deleteOpen}
+        onClose={() => !deleteBusy && setDeleteOpen(false)}
+        title="Xóa phòng?"
+        description={
+          room?.room_number
+            ? `Bạn có chắc muốn xóa phòng ${room.room_number}? Hành động không thể hoàn tác.`
+            : 'Bạn có chắc muốn xóa phòng này?'
+        }
+        confirmText="Xóa phòng"
+        cancelText="Giữ lại"
+        variant="danger"
+        busy={deleteBusy}
+        onConfirm={confirmDeleteRoom}
       />
     </div>
   );

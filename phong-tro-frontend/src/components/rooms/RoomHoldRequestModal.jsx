@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const ASSET_BASE = API_BASE_URL.replace(/\/api\/?$/, '');
+const BANK_QR_IMAGE_URL = `${import.meta.env.BASE_URL}images/home/qr.png`;
 
 /**
  * @param {{ open: boolean, onClose: () => void, roomId: number, roomNumber?: string, onSuccess?: () => void }} props
@@ -144,11 +144,7 @@ export default function RoomHoldRequestModal({ open, onClose, roomId, roomNumber
     setProofPreview(URL.createObjectURL(file));
   };
 
-  const qrSrc = depositInfo?.qr_image_url
-    ? (depositInfo.qr_image_url.startsWith('http')
-      ? depositInfo.qr_image_url
-      : `${ASSET_BASE}${depositInfo.qr_image_url}`)
-    : null;
+  const qrSrc = BANK_QR_IMAGE_URL;
 
   return (
     <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm">
@@ -203,7 +199,7 @@ export default function RoomHoldRequestModal({ open, onClose, roomId, roomNumber
               Phòng đã khóa cho bạn. Chuyển khoản đặt cọc và tải ảnh bill để xác nhận.
             </p>
             {depositInfo ? (
-              <div className="rounded-2xl bg-[#F8FAFB] border border-slate-100 p-4 space-y-3 text-sm">
+              <div className="rounded-2xl bg-[#F8FAFB] border border-slate-100 p-4 text-sm [&>p]:hidden">
                 <p className="font-bold text-[#0F3A40]">
                   Số tiền: {Number(depositInfo.amount || 0).toLocaleString('vi-VN')}đ
                 </p>

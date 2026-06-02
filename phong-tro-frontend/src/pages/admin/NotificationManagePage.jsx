@@ -146,65 +146,6 @@ export default function NotificationManagePage() {
     return uiNotifs.length;
   };
 
-  const refresh = async () => {
-    if (!token) return;
-    setIsLoading(true);
-    try {
-      const data = await apiFetch('/admin/notifications', { token });
-      setNotifications(data.notifications || []);
-    } catch (e) {
-      setNotifications([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  /** Vào trang thông báo → đánh dấu đã đọc (badge/chuông về 0) → làm mới danh sách. */
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        await apiFetch('/admin/notifications/mark-all-read', { token, method: 'POST' });
-      } catch {
-        /* ignore */
-      }
-      if (!cancelled) {
-        window.dispatchEvent(new Event('admin-nav-badges-refresh'));
-        await refresh();
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  const send = async () => {
-    if (!token) return;
-    if (!title.trim()) return;
-    setIsSending(true);
-    try {
-      await apiFetch('/admin/notifications', { token, method: 'POST', body: { title: title.trim(), body: body.trim() || null } });
-      setTitle('');
-      setBody('');
-      await refresh();
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const uiNotifs = useMemo(() => {
-    return notifications.map((n) => ({
-      id: n.notification_id,
-      time: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : '',
-      audience: n.user_id ? `USER #${n.user_id}` : '—',
-      title: n.title,
-      content: n.body || '',
-      status: n.is_read ? 'inactive' : 'active',
-    }));
-  }, [notifications]);
-
   return (
     <div className="w-full max-w-[1200px] mx-auto mt-2 px-4 pb-12 flex flex-col gap-8">
       <header className="flex flex-col gap-3">

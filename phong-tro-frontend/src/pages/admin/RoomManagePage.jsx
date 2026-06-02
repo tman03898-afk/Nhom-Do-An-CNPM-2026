@@ -5,9 +5,12 @@ import { MapPin, CheckCircle2, UserCheck, BarChart3, Edit3, Trash2, ArrowUpRight
 import { apiFetch } from '../../lib/api';
 import RoomFormModal from '../../components/rooms/RoomFormModal';
 import RoomHoldManagePanel from '../../components/rooms/RoomHoldManagePanel';
+import AppDialog from '../../components/common/AppDialog';
+import { useToast } from '../../context/ToastContext';
 
 export default function RoomManagePage() {
   const { token } = useAuth();
+  const { addToast } = useToast();
   const [rooms, setRooms] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -16,6 +19,8 @@ export default function RoomManagePage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const statusView = useMemo(
     () => ({
@@ -100,12 +105,20 @@ export default function RoomManagePage() {
     setIsModalOpen(true);
   };
 
-  const deleteRoom = async (room) => {
-    if (!token) return;
-    if (!window.confirm(`Xóa phòng ${room.room_number}?`)) return;
-    await apiFetch(`/rooms/${room.room_id}`, { token, method: 'DELETE' });
-    const data = await apiFetch('/rooms', { token });
-    setRooms(data.rooms || []);
+  const confirmDeleteRoom = async () => {
+    if (!token || !deleteTarget) return;
+    setDeleteBusy(true);
+    try {
+      await apiFetch(`/rooms/${deleteTarget.room_id}`, { token, method: 'DELETE' });
+      addToast(`Đã xóa phòng ${deleteTarget.room_number}.`, 'success');
+      setDeleteTarget(null);
+      const data = await apiFetch('/rooms', { token });
+      setRooms(data.rooms || []);
+    } catch (e) {
+      addToast(e?.message || 'Không xóa được phòng.', 'error');
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   return (
@@ -241,7 +254,7 @@ export default function RoomManagePage() {
                   <td className="py-5 px-2 text-right">
                     <div className="flex items-center justify-end gap-3 text-[#82ABB0]">
                        <button onClick={() => openEdit(room)} className="hover:text-[#14B8A6] transition-colors p-1"><Edit3 className="w-[18px] h-[18px]" /></button>
-                       <button onClick={() => deleteRoom(room)} className="hover:text-[#D14D4D] transition-colors p-1"><Trash2 className="w-[18px] h-[18px]" /></button>
+                       <button onClick={() => setDeleteTarget({ room_id: room.room_id, room_number: room.room_number })} className="hover:text-[#D14D4D] transition-colors p-1"><Trash2 className="w-[18px] h-[18px]" /></button>
                     </div>
                   </td>
                 </tr>
@@ -373,6 +386,22 @@ export default function RoomManagePage() {
         room={editingRoom}
         token={token}
         onSaved={reloadRooms}
+      />
+
+      <AppDialog
+        open={!!deleteTarget}
+        onClose={() => !deleteBusy && setDeleteTarget(null)}
+        title="Xóa phòng?"
+        description={
+          deleteTarget
+            ? `Bạn có chắc muốn xóa phòng ${deleteTarget.room_number}? Hành động không thể hoàn tác.`
+            : ''
+        }
+        confirmText="Xóa phòng"
+        cancelText="Giữ lại"
+        variant="danger"
+        busy={deleteBusy}
+        onConfirm={confirmDeleteRoom}
       />
     </div>
   );

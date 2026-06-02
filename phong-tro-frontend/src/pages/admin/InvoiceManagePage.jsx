@@ -1170,7 +1170,12 @@ export default function InvoiceManagePage() {
                         key={`${s.source || 'svc'}-${s.fee_id ?? ''}-${s.service_id ?? ''}-${s.service_name}`}
                         className="flex flex-wrap justify-between gap-2 text-[14px] font-bold text-nest-text-primary"
                       >
-                        <span>{s.service_name}</span>
+                        <span>
+                          {s.service_name}
+                          {s.head_count && String(s.service_unit || '').toLowerCase() === 'person'
+                            ? ` (${s.head_count} người)`
+                            : ''}
+                        </span>
                         <span className="text-nest-text-secondary font-bold">{formatMoney(s.monthly_price)}đ / tháng</span>
                       </li>
                     ))}

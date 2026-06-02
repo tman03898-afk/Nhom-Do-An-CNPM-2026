@@ -5,8 +5,15 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    min-height: 100%;
+    background: #F5FDFF;
+  }
   body {
     @apply bg-nest-bg text-nest-text-primary font-body antialiased leading-[1.6];
+    min-height: 100%;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-sans tracking-[-0.02em] font-bold;

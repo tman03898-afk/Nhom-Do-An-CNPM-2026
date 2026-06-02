@@ -1,6 +1,13 @@
 /* eslint-disable react-refresh/only-export-components -- context exports Provider + useAuth hook */
 import { createContext, useContext, useEffect, useState } from 'react';
 import { clearApiCache } from '../lib/apiCache';
+import {
+  clearAuthSession,
+  getActiveToken,
+  patchStoredUser,
+  persistAuthSession,
+  readAuthSession,
+} from '../lib/authStorage';
 
 const AuthContext = createContext(null);
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -29,16 +36,8 @@ function normalizeApiError(error, fallbackMessage) {
 }
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(() => localStorage.getItem('access_token'));
-  const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('user');
-    try {
-      return savedUser ? JSON.parse(savedUser) : null;
-    } catch (error) {
-      console.error('Failed to parse user from localStorage', error);
-      return null;
-    }
-  });
+  const [token, setToken] = useState(() => readAuthSession().token);
+  const [user, setUser] = useState(() => readAuthSession().user);
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
@@ -59,11 +58,10 @@ export const AuthProvider = ({ children }) => {
           throw new Error(data?.message || 'Phien dang nhap khong hop le');
         }
 
-        localStorage.setItem('user', JSON.stringify(data.user));
+        patchStoredUser(data.user);
         setUser(data.user);
       } catch {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('user');
+        clearAuthSession();
         setToken(null);
         setUser(null);
       } finally {
@@ -74,7 +72,7 @@ export const AuthProvider = ({ children }) => {
     hydrateMe();
   }, [token, user]);
 
-  const login = async ({ email, password }) => {
+  const login = async ({ email, password, remember = true }) => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
@@ -89,8 +87,13 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data?.message || 'Dang nhap that bai');
       }
 
-      localStorage.setItem('access_token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      persistAuthSession({
+        token: data.token,
+        user: data.user,
+        remember: Boolean(remember),
+        email,
+        password,
+      });
       setToken(data.token);
       setUser(data.user);
 
@@ -101,7 +104,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    const currentToken = token || localStorage.getItem('access_token');
+    const currentToken = getActiveToken(token);
     if (currentToken) {
       try {
         await fetch(`${API_BASE_URL}/auth/logout`, {
@@ -115,15 +118,14 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('user');
+    clearAuthSession({ keepRememberedCredentials: true });
     clearApiCache();
     setToken(null);
     setUser(null);
   };
 
   const refreshUser = async () => {
-    const currentToken = token || localStorage.getItem('access_token');
+    const currentToken = getActiveToken(token);
     if (!currentToken) return null;
     try {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
@@ -131,7 +133,7 @@ export const AuthProvider = ({ children }) => {
       });
       const data = await parseJsonSafe(response);
       if (!response.ok || !data?.ok) return null;
-      localStorage.setItem('user', JSON.stringify(data.user));
+      patchStoredUser(data.user);
       setUser(data.user);
       return data.user;
     } catch {
