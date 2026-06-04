@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Wallet, Image as ImageIcon, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -20,7 +20,7 @@ export default function PaymentManagePage() {
    const [monthlyBars, setMonthlyBars] = useState([]);
    const recentTransactionsRef = useRef(null);
 
-   const refresh = async () => {
+   const refresh = useCallback(async () => {
       if (!token) return;
       setIsLoading(true);
       try {
@@ -31,39 +31,39 @@ export default function PaymentManagePage() {
       } finally {
          setIsLoading(false);
       }
-   };
+   }, [token]);
+
+   const loadStats = useCallback(async () => {
+      if (!token) return;
+      try {
+         const year = new Date().getFullYear();
+         const [collection, series] = await Promise.all([
+            apiFetch('/admin/analytics/collection-summary', { token }),
+            apiFetch(`/admin/analytics/monthly-series?year=${year}`, { token }),
+         ]);
+         setCollectionSummary(collection || null);
+         const months = series?.months || [];
+         const last6 = months.slice(-6);
+         const maxRev = Math.max(...last6.map((m) => Number(m.revenue || 0)), 1);
+         setMonthlyBars(
+            last6.map((m) => ({
+               label: m.label,
+               pct: Math.round((Number(m.revenue || 0) / maxRev) * 100),
+            }))
+         );
+      } catch {
+         setCollectionSummary(null);
+         setMonthlyBars([]);
+      }
+   }, [token]);
 
    useEffect(() => {
       refresh();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [token]);
+   }, [refresh]);
 
    useEffect(() => {
-      const loadStats = async () => {
-         if (!token) return;
-         try {
-            const year = new Date().getFullYear();
-            const [collection, series] = await Promise.all([
-               apiFetch('/admin/analytics/collection-summary', { token }),
-               apiFetch(`/admin/analytics/monthly-series?year=${year}`, { token }),
-            ]);
-            setCollectionSummary(collection || null);
-            const months = series?.months || [];
-            const last6 = months.slice(-6);
-            const maxRev = Math.max(...last6.map((m) => Number(m.revenue || 0)), 1);
-            setMonthlyBars(
-               last6.map((m) => ({
-                  label: m.label,
-                  pct: Math.round((Number(m.revenue || 0) / maxRev) * 100),
-               }))
-            );
-         } catch {
-            setCollectionSummary(null);
-            setMonthlyBars([]);
-         }
-      };
       loadStats();
-   }, [token]);
+   }, [loadStats]);
 
    const sendInvoiceDueReminders = async () => {
       if (!token) return;
@@ -137,6 +137,7 @@ export default function PaymentManagePage() {
          await apiFetch(`/admin/payments/${paymentId}/approve`, { token, method: 'POST', body: {} });
          addToast('Đã duyệt thanh toán thành công!', 'success');
          await refresh();
+         await loadStats();
          setTimeout(() => {
             recentTransactionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
          }, 350);
@@ -154,6 +155,7 @@ export default function PaymentManagePage() {
          await apiFetch(`/admin/payments/${paymentId}/reject`, { token, method: 'POST', body: {} });
          addToast('Đã từ chối thanh toán!', 'success');
          await refresh();
+         await loadStats();
          setTimeout(() => {
             recentTransactionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
          }, 350);
