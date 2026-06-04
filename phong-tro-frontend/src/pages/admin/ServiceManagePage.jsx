@@ -314,12 +314,6 @@ export default function ServiceManagePage() {
               Tùy chỉnh danh mục dịch vụ và cấu hình cách tính phí cho toàn bộ tòa nhà.
             </p>
           </div>
-          <button
-            onClick={() => setIsAdding(true)}
-            className="bg-[#0F3A40] hover:bg-[#1F545B] text-white px-6 py-3.5 rounded-2xl text-[14px] font-bold transition-all shadow-xl shadow-[#0F3A40]/10 flex items-center gap-2 h-fit"
-          >
-            <Plus className="w-5 h-5" /> Thêm dịch vụ
-          </button>
         </div>
 
         {/* Duyệt đăng ký dịch vụ (tenant → services) */}
