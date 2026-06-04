@@ -438,7 +438,7 @@ router.get('/tenant/payments', requireAuth, requireTenant, async (req, res) => {
 });
 
 router.post('/admin/payments/:id/approve', requireAuth, requireAdmin, async (req, res) => {
-  const client = await pool.connect();
+  let client;
   try {
     await ensureUsersTable();
     await ensureRoomsTable();
@@ -451,6 +451,7 @@ router.post('/admin/payments/:id/approve', requireAuth, requireAdmin, async (req
       return res.status(400).json({ ok: false, message: 'invalid payment id' });
     }
 
+    client = await pool.connect();
     await client.query('BEGIN');
     const payment = await client.query(
       `SELECT payment_id, invoice_id, COALESCE(status, 'PENDING') AS status FROM payments WHERE payment_id = $1 FOR UPDATE`,
@@ -493,7 +494,7 @@ router.post('/admin/payments/:id/approve', requireAuth, requireAdmin, async (req
     console.error('Approve payment error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 

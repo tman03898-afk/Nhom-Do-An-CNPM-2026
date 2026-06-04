@@ -134,7 +134,7 @@ export default function PaymentManagePage() {
       if (!token) return;
       setActionLoadingId(paymentId);
       try {
-         await apiFetch(`/admin/payments/${paymentId}/approve`, { token, method: 'POST' });
+         await apiFetch(`/admin/payments/${paymentId}/approve`, { token, method: 'POST', body: {} });
          addToast('Đã duyệt thanh toán thành công!', 'success');
          await refresh();
          setTimeout(() => {
@@ -151,7 +151,7 @@ export default function PaymentManagePage() {
       if (!token) return;
       setActionLoadingId(paymentId);
       try {
-         await apiFetch(`/admin/payments/${paymentId}/reject`, { token, method: 'POST' });
+         await apiFetch(`/admin/payments/${paymentId}/reject`, { token, method: 'POST', body: {} });
          addToast('Đã từ chối thanh toán!', 'success');
          await refresh();
          setTimeout(() => {
