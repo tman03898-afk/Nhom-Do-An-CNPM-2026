@@ -515,8 +515,7 @@ router.post('/admin/payments/:id/reject', requireAuth, requireAdmin, async (req,
       `UPDATE payments
        SET status = 'REJECTED'::payment_status,
            recorded_by = $2,
-           updated_at = NOW(),
-           paid_at = NULL
+           updated_at = NOW()
        WHERE payment_id = $1
        RETURNING payment_id`,
       [paymentId, req.auth.sub]
