@@ -7,6 +7,7 @@ const pool = require('../config/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { ensureUsersTable, ensureTenantsTable } = require('./_dbHelpers');
 const { once } = require('./_schemaCache');
+const { isValidPhoneNumber } = require('../utils/phone');
 const { sendPasswordResetOtpEmail } = require('../services/mail');
 const {
   clientIp,
@@ -755,6 +756,14 @@ router.post('/auth/users/tenant', requireAuth, requireAdmin, async (req, res) =>
       });
     }
 
+    const normalizedPhone = String(phone).trim();
+    if (!isValidPhoneNumber(normalizedPhone)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Số điện thoại sai định dạng',
+      });
+    }
+
     await client.query('BEGIN');
 
     const roomResult = await client.query(
@@ -790,7 +799,7 @@ router.post('/auth/users/tenant', requireAuth, requireAdmin, async (req, res) =>
     await client.query(
       `INSERT INTO tenants (user_id, phone, room_id)
        VALUES ($1, $2, $3)`,
-      [createdUser.user_id, String(phone).trim(), room.room_id]
+      [createdUser.user_id, normalizedPhone, room.room_id]
     );
 
     await client.query(
@@ -807,7 +816,7 @@ router.post('/auth/users/tenant', requireAuth, requireAdmin, async (req, res) =>
       message: 'tenant account created by admin',
       user: toPublicUser(createdUser),
       tenant: {
-        phone: String(phone).trim(),
+        phone: normalizedPhone,
         room_id: room.room_id,
         room_number: room.room_number,
         room_status: 'RENTED',

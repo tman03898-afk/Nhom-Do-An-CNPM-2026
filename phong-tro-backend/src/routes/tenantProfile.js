@@ -8,6 +8,7 @@ const pool = require('../config/db');
 const { requireAuth, requireTenant } = require('../middleware/auth');
 const { ensureTenantsTable, ensureUsersTable } = require('./_dbHelpers');
 const { once } = require('./_schemaCache');
+const { isValidPhoneNumber } = require('../utils/phone');
 const { sendProfileOtpSms, sendPasswordRecoverySms } = require('../services/sms');
 const { sendTenantEmailVerificationCode, sendTenantPasswordRecoveryEmail } = require('../services/mail');
 const {
@@ -866,10 +867,12 @@ router.post('/tenant/profile/update', requireAuth, requireTenant, async (req, re
 
       if (phoneChanging && nextPhone) {
         const normalized = String(nextPhone).trim();
-        const digits = normalized.replace(/\D/g, '');
-        if (digits.length < 9 || digits.length > 15) {
+        if (!isValidPhoneNumber(normalized)) {
           await client.query('ROLLBACK');
-          return res.status(400).json({ ok: false, message: 'Số điện thoại không hợp lệ.' });
+          return res.status(400).json({
+            ok: false,
+            message: 'Số điện thoại sai định dạng',
+          });
         }
         await client.query(`UPDATE tenants SET phone = $1, updated_at = NOW() WHERE user_id = $2`, [
           normalized,
