@@ -314,6 +314,24 @@ export default function ServiceManagePage() {
               Tùy chỉnh danh mục dịch vụ và cấu hình cách tính phí cho toàn bộ tòa nhà.
             </p>
           </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {dirtyIds.size > 0 && (
+              <button
+                type="button"
+                onClick={handleSaveAll}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#14B8A6] hover:bg-[#0da090] text-white font-bold shadow-lg shadow-[#14B8A6]/20 transition-all"
+              >
+                <Save className="w-5 h-5" /> Lưu tất cả
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsAdding(true)}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#14B8A6] hover:bg-[#0da090] text-white font-bold shadow-lg shadow-[#14B8A6]/20 transition-all"
+            >
+              <Plus className="w-5 h-5" /> Thêm dịch vụ
+            </button>
+          </div>
         </div>
 
         {/* Duyệt đăng ký dịch vụ (tenant → services) */}
