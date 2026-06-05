@@ -57,6 +57,7 @@ export default function ContractManagePage() {
     notes: '',
   });
   const [tenantsList, setTenantsList] = useState([]);
+  const [roomsList, setRoomsList] = useState([]);
 
   const refresh = async () => {
     if (!token) return;
@@ -90,12 +91,42 @@ export default function ContractManagePage() {
   }, [token]);
 
   useEffect(() => {
+    const fetchRooms = async () => {
+      if (!token) return;
+      try {
+        const data = await apiFetch('/rooms', { token });
+        setRoomsList(data.rooms || []);
+      } catch (e) {
+        setRoomsList([]);
+      }
+    };
+    fetchRooms();
+  }, [token]);
+
+  useEffect(() => {
     const id = Number(holdRequestIdFromUrl);
     if (Number.isInteger(id) && id > 0) {
       setContractHoldId(id);
       setSearchParams({}, { replace: true });
     }
   }, [holdRequestIdFromUrl, setSearchParams]);
+
+  // Auto-fill room/rent/deposit when tenant selected
+  useEffect(() => {
+    if (!createForm.tenant_id) return;
+    const tenant = tenantsList.find((t) => String(t.tenant_id) === String(createForm.tenant_id));
+    if (!tenant) return;
+    const roomNumber = tenant.room_number || tenant.room || tenant.room_number || null;
+    if (!roomNumber) return;
+    // set room number if not already set or different
+    setCreateForm((p) => ({ ...p, room_number: roomNumber }));
+    // find matching room and fill rent/deposit if available
+    const room = roomsList.find((r) => r.room_number === roomNumber || String(r.room_id) === String(tenant.room_id));
+    if (!room) return;
+    const rent = room.rent_price ?? room.price ?? room.monthly_rent ?? room.rent ?? 0;
+    const deposit = room.deposit ?? room.security_deposit ?? room.deposit_amount ?? 0;
+    setCreateForm((p) => ({ ...p, rent_price: String(rent), deposit: String(deposit) }));
+  }, [createForm.tenant_id, tenantsList, roomsList]);
 
   const stats = useMemo(() => {
     const total = contracts.length;
@@ -152,7 +183,12 @@ export default function ContractManagePage() {
     if (!token) return;
     // basic validation
     if (!createForm.tenant_id || !createForm.room_number || !createForm.start_date || !createForm.end_date) {
-      addToast('Vui lòng điền đầy đủ tenant_id, số phòng, ngày bắt đầu và ngày kết thúc.', 'error');
+      addToast('Vui lòng điền đầy đủ tenant, số phòng, ngày bắt đầu và ngày kết thúc.', 'error');
+      return;
+    }
+    // date validation
+    if (createForm.end_date < createForm.start_date) {
+      addToast('Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.', 'error');
       return;
     }
 
