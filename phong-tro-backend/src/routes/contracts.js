@@ -259,6 +259,14 @@ router.post('/admin/contracts', requireAuth, requireAdmin, async (req, res) => {
     const end = normalizeDate(end_date);
     const normalizedRoomNumber = String(room_number || '').trim();
 
+    // Validate date range
+    if (!start || !end) {
+      return res.status(400).json({ ok: false, message: 'start_date and end_date are required and must be valid dates' });
+    }
+    if (end < start) {
+      return res.status(400).json({ ok: false, message: 'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.' });
+    }
+
     // Accept either `tenant_id` (tenant PK) or `user_id` (users.user_id from frontend)
     if (!tenant_id && user_id) {
       const tRes = await client.query(`SELECT tenant_id FROM tenants WHERE user_id = $1 LIMIT 1`, [Number(user_id)]);
@@ -280,8 +288,8 @@ router.post('/admin/contracts', requireAuth, requireAdmin, async (req, res) => {
     console.log('Resolved tenant_id:', tenant_id, 'from user_id:', user_id);
     console.log('Resolved room_id:', room_id, 'from room_number:', normalizedRoomNumber || null);
 
-    if (!tenant_id || !room_id || !start || !end) {
-      return res.status(400).json({ ok: false, message: 'tenant_id (or user_id), room_id (or room_number), start_date, end_date are required' });
+    if (!tenant_id || !room_id) {
+      return res.status(400).json({ ok: false, message: 'tenant_id (or user_id) and room_id (or room_number) are required' });
     }
 
     await client.query('BEGIN');
@@ -417,6 +425,20 @@ router.put('/admin/contracts/:id', requireAuth, requireAdmin, async (req, res) =
       return res.status(400).json({ ok: false, message: 'no valid fields provided for update' });
     }
 
+    // Get current contract for date validation
+    let currentStart = null;
+    let currentEnd = null;
+    if (entries.some(([k]) => k === 'start_date' || k === 'end_date')) {
+      const currentResult = await pool.query(
+        `SELECT start_date, end_date FROM contracts WHERE contract_id = $1`,
+        [contractId]
+      );
+      if (currentResult.rowCount > 0) {
+        currentStart = currentResult.rows[0].start_date;
+        currentEnd = currentResult.rows[0].end_date;
+      }
+    }
+
     const values = [];
     const setClauses = entries.map(([key, value], idx) => {
       if (key === 'start_date' || key === 'end_date') {
@@ -431,6 +453,13 @@ router.put('/admin/contracts/:id', requireAuth, requireAdmin, async (req, res) =
       values.push(value);
       return `${key} = $${idx + 1}`;
     });
+
+    // Validate date range after applying updates
+    const newStart = entries.find(([k]) => k === 'start_date') ? normalizeDate(req.body.start_date) : currentStart;
+    const newEnd = entries.find(([k]) => k === 'end_date') ? normalizeDate(req.body.end_date) : currentEnd;
+    if ((newStart || newEnd) && newStart && newEnd && newEnd < newStart) {
+      return res.status(400).json({ ok: false, message: 'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.' });
+    }
 
     values.push(contractId);
 
