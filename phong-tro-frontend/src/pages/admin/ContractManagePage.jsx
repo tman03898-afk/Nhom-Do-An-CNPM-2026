@@ -191,6 +191,13 @@ export default function ContractManagePage() {
       addToast('Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.', 'error');
       return;
     }
+    
+    // Validate end_date is not in the past (must be >= today)
+    const today = new Date().toISOString().slice(0, 10);
+    if (createForm.end_date < today) {
+      addToast('Ngày kết thúc hợp đồng phải trong tương lai (không được quá hạn).', 'error');
+      return;
+    }
 
     const payload = {
       tenant_id: Number(createForm.tenant_id),
@@ -252,6 +259,13 @@ export default function ContractManagePage() {
     }
     if (editForm.end_date < editForm.start_date) {
       setEditError('Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.');
+      return;
+    }
+    
+    // Validate end_date is not in the past (must be >= today)
+    const today = new Date().toISOString().slice(0, 10);
+    if (editForm.end_date < today) {
+      setEditError('Ngày kết thúc hợp đồng phải trong tương lai (không được quá hạn).');
       return;
     }
 

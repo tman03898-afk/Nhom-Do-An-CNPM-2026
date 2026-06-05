@@ -266,6 +266,12 @@ router.post('/admin/contracts', requireAuth, requireAdmin, async (req, res) => {
     if (end < start) {
       return res.status(400).json({ ok: false, message: 'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.' });
     }
+    
+    // Validate end_date is not in the past (must be >= today)
+    const today = new Date().toISOString().slice(0, 10);
+    if (end < today) {
+      return res.status(400).json({ ok: false, message: 'Ngày kết thúc hợp đồng phải trong tương lai (không được quá hạn).' });
+    }
 
     // Accept either `tenant_id` (tenant PK) or `user_id` (users.user_id from frontend)
     if (!tenant_id && user_id) {
@@ -459,6 +465,14 @@ router.put('/admin/contracts/:id', requireAuth, requireAdmin, async (req, res) =
     const newEnd = entries.find(([k]) => k === 'end_date') ? normalizeDate(req.body.end_date) : currentEnd;
     if ((newStart || newEnd) && newStart && newEnd && newEnd < newStart) {
       return res.status(400).json({ ok: false, message: 'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.' });
+    }
+    
+    // Validate end_date is not in the past (must be >= today)
+    if (newEnd) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (newEnd < today) {
+        return res.status(400).json({ ok: false, message: 'Ngày kết thúc hợp đồng phải trong tương lai (không được quá hạn).' });
+      }
     }
 
     values.push(contractId);
