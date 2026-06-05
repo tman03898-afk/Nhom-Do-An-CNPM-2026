@@ -56,6 +56,7 @@ export default function ContractManagePage() {
     deposit: '',
     notes: '',
   });
+  const [tenantsList, setTenantsList] = useState([]);
 
   const refresh = async () => {
     if (!token) return;
@@ -73,6 +74,19 @@ export default function ContractManagePage() {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  useEffect(() => {
+    const fetchTenants = async () => {
+      if (!token) return;
+      try {
+        const data = await apiFetch('/admin/tenants', { token });
+        setTenantsList(data.tenants || []);
+      } catch (e) {
+        setTenantsList([]);
+      }
+    };
+    fetchTenants();
   }, [token]);
 
   useEffect(() => {
@@ -816,13 +830,18 @@ export default function ContractManagePage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
-                type="number"
+              <select
                 value={createForm.tenant_id}
                 onChange={(e) => setCreateForm((p) => ({ ...p, tenant_id: e.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
-                placeholder="tenant_id (ví dụ: 1)"
-              />
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6] font-bold text-[#0F3A40]"
+              >
+                <option value="">Chọn khách thuê (ID - Họ tên) hoặc nhập ID</option>
+                {tenantsList.map((t) => (
+                  <option key={t.tenant_id} value={String(t.tenant_id)}>
+                    {`#${t.tenant_id} - ${t.full_name || t.email || '(no name)'}`}
+                  </option>
+                ))}
+              </select>
               <input
                 type="text"
                 value={createForm.room_number}
