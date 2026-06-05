@@ -601,13 +601,21 @@ export default function AssetManagePage() {
                   </option>
                 ))}
               </select>
-              <input
-                type="text"
-                value={createForm.name}
-                onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
-                placeholder="Tên tài sản"
-              />
+              <div>
+                <input
+                  type="text"
+                  list="assetNameSuggestions"
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                  placeholder="Tên tài sản (hoặc chọn từ danh sách)"
+                />
+                <datalist id="assetNameSuggestions">
+                  {[...new Set(assets.map((a) => a.name).filter(Boolean))].map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              </div>
               <input
                 type="number"
                 min={1}
@@ -683,13 +691,21 @@ export default function AssetManagePage() {
                   </option>
                 ))}
               </select>
-              <input
-                type="text"
-                value={editForm.name}
-                onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
-                placeholder="Tên tài sản"
-              />
+              <div>
+                <input
+                  type="text"
+                  list="assetNameSuggestionsEdit"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
+                  placeholder="Tên tài sản (hoặc chọn từ danh sách)"
+                />
+                <datalist id="assetNameSuggestionsEdit">
+                  {[...new Set(assets.map((a) => a.name).filter(Boolean))].map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              </div>
               <input
                 type="number"
                 min={1}
