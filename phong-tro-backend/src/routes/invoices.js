@@ -68,6 +68,59 @@ function normalizeDate(value) {
   return formatCalendarDateString(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
+function parseOptionalNumber(raw) {
+  if (raw === undefined || raw === null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+async function cleanupUtilityReadingsForCanceledInvoice(invoiceId) {
+  const result = await pool.query(
+    `SELECT i.status,
+            i.utility_meter_snapshot,
+            c.room_id
+     FROM invoices i
+     LEFT JOIN contracts c ON c.contract_id = i.contract_id
+     WHERE i.invoice_id = $1
+     LIMIT 1`,
+    [invoiceId]
+  );
+
+  if (!result.rowCount) return;
+  const row = result.rows[0];
+  const currentStatus = String(row.status || '').toUpperCase();
+  if (currentStatus === 'CANCELLED') return;
+  const snapshot = row.utility_meter_snapshot;
+  const roomId = Number(row.room_id);
+  if (!Number.isInteger(roomId) || roomId <= 0 || typeof snapshot !== 'object' || snapshot == null) {
+    return;
+  }
+
+  const deleteReading = async (utilityType, prevKey, curKey) => {
+    const prev = parseOptionalNumber(snapshot[prevKey]);
+    const cur = parseOptionalNumber(snapshot[curKey]);
+    if (prev === null || cur === null) return;
+
+    await pool.query(
+      `DELETE FROM utility_readings
+       WHERE reading_id = (
+         SELECT reading_id
+         FROM utility_readings
+         WHERE room_id = $1
+           AND utility_type = $2::utility_type
+           AND previous_value = $3
+           AND current_value = $4
+         ORDER BY recorded_at DESC NULLS LAST, reading_id DESC
+         LIMIT 1
+       )`,
+      [roomId, utilityType, prev, cur]
+    );
+  };
+
+  await deleteReading('ELECTRIC', 'electricity_previous_kwh', 'electricity_current_kwh');
+  await deleteReading('WATER', 'water_previous_m3', 'water_current_m3');
+}
+
 router.get('/admin/invoices', requireAuth, requireAdmin, async (req, res) => {
   try {
     await Promise.all([
@@ -351,6 +404,12 @@ router.put('/admin/invoices/:id', requireAuth, requireAdmin, async (req, res) =>
     const entries = Object.entries(req.body || {}).filter(([k]) => allowed.includes(k));
     if (entries.length === 0) {
       return res.status(400).json({ ok: false, message: 'no valid fields provided for update' });
+    }
+
+    const rawStatus = String(req.body?.status || '').toUpperCase();
+    const willCancel = rawStatus === 'CANCELLED';
+    if (willCancel) {
+      await cleanupUtilityReadingsForCanceledInvoice(invoiceId);
     }
 
     const values = [];
