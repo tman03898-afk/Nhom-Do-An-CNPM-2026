@@ -4,6 +4,9 @@ const pool = require('../config/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { ensureRoomsTable, ensureUsersTable, ensureTenantsTable, formatCalendarDateString } = require('./_dbHelpers');
 const { ensureInvoicesTable } = require('./invoices');
+const paymentsRoute = require('./payments');
+const incidentsRoute = require('./incidents');
+const contractsRoute = require('./contracts');
 
 const router = express.Router();
 
@@ -188,6 +191,65 @@ router.get('/admin/analytics/monthly-series', requireAuth, requireAdmin, async (
     return res.json({ ok: true, year: yr, months });
   } catch (err) {
     console.error('monthly-series error:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  }
+});
+
+router.get('/admin/analytics/recent-activity', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await Promise.all([
+      ensureUsersTable(),
+      ensureRoomsTable(),
+      ensureTenantsTable(),
+      ensureInvoicesTable(),
+      paymentsRoute.ensurePaymentsTable(),
+      incidentsRoute.ensureIncidentsTable(),
+      contractsRoute.ensureContractsTable(),
+    ]);
+
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 8));
+
+    const query = `
+      SELECT * FROM (
+        SELECT
+          'payment' AS type,
+          COALESCE(p.paid_at, p.created_at) AS at,
+          CONCAT('Thanh toán hóa đơn ', COALESCE(r.room_number, '')) AS title,
+          CONCAT('Số tiền ', COALESCE(p.amount, p.amount_paid, 0)::text, ' đã được thanh toán') AS detail
+        FROM payments p
+        LEFT JOIN invoices i ON i.invoice_id = p.invoice_id
+        LEFT JOIN tenants t ON t.tenant_id = i.tenant_id
+        LEFT JOIN rooms r ON r.room_id = t.room_id
+        WHERE UPPER(TRIM(COALESCE(p.status::text, ''))) IN ('APPROVED', 'PAID')
+
+        UNION ALL
+
+        SELECT
+          'ticket' AS type,
+          COALESCE(i.updated_at, i.created_at) AS at,
+          CONCAT('Yêu cầu bảo trì ', COALESCE(r.room_number, '')) AS title,
+          COALESCE(i.title, 'Phiếu bảo trì mới') AS detail
+        FROM incidents i
+        LEFT JOIN rooms r ON r.room_id = i.room_id
+
+        UNION ALL
+
+        SELECT
+          'contract' AS type,
+          COALESCE(c.updated_at, c.created_at) AS at,
+          CONCAT('Hợp đồng phòng ', COALESCE(r.room_number, '')) AS title,
+          CONCAT('Từ ', TO_CHAR(c.start_date, 'DD/MM/YYYY'), ' đến ', TO_CHAR(c.end_date, 'DD/MM/YYYY')) AS detail
+        FROM contracts c
+        LEFT JOIN rooms r ON r.room_id = c.room_id
+      ) AS combined
+      WHERE at IS NOT NULL
+      ORDER BY at DESC
+      LIMIT $1`;
+
+    const result = await pool.query(query, [limit]);
+    return res.json({ ok: true, activities: result.rows });
+  } catch (err) {
+    console.error('recent-activity error:', err);
     return res.status(500).json({ ok: false, message: 'internal error' });
   }
 });
