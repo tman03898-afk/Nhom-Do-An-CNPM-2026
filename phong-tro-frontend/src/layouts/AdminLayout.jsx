@@ -7,7 +7,7 @@ import {
   Wallet, Zap, Hammer, Bell, Sun, ChevronLeft, ChevronRight, Package, ClipboardList, Menu, X, History, UserCircle
 } from 'lucide-react';
 import { resolveBackendAssetUrl } from '../lib/api';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 /** Khóa badge khớp GET /admin/nav-badges → badges */
 const BADGE_BY_PATH = {
@@ -39,6 +39,17 @@ export default function AdminLayout() {
   const { user, logout, token } = useAuth();
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const avatarFallbackSrc = useMemo(
+    () => `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || user?.email || 'Admin')}&background=14B8A6&color=fff`,
+    [user?.full_name, user?.email]
+  );
+  const avatarSrc = useMemo(
+    () =>
+      user?.avatar_url
+        ? resolveBackendAssetUrl(user.avatar_url)
+        : avatarFallbackSrc,
+    [user?.avatar_url, avatarFallbackSrc]
+  );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [badges, setBadges] = useState({});
   const [baseline, setBaseline] = useState(() => {
@@ -300,12 +311,12 @@ export default function AdminLayout() {
                 <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl p-[2px] lg:p-[3px] bg-gradient-to-tr from-nest-primary to-nest-bg shadow-md group-hover:shadow-nest-primary/30 transition-all group-hover:scale-105">
                   <div className="w-full h-full rounded-[9px] lg:rounded-[13px] overflow-hidden border-2 border-white">
                     <img
-                      src={
-                        user?.avatar_url
-                          ? resolveBackendAssetUrl(user.avatar_url)
-                          : `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || user?.email || 'Admin')}&background=14B8A6&color=fff`
-                      }
+                      src={avatarSrc}
                       alt="Admin"
+                      onError={({ currentTarget }) => {
+                        currentTarget.onerror = null;
+                        currentTarget.src = avatarFallbackSrc;
+                      }}
                       className="w-full h-full object-cover"
                     />
                   </div>
