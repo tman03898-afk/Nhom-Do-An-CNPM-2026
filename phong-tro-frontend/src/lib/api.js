@@ -42,6 +42,15 @@ export async function apiFetch(path, { token, method = 'GET', headers, body } = 
     ...(headers || {}),
   };
 
+  // Debug logging to help trace requests during development
+  try {
+    const safeHeaders = { ...finalHeaders };
+    if (safeHeaders.Authorization) safeHeaders.Authorization = '<present>';
+    console.debug('apiFetch ->', method, url, safeHeaders);
+  } catch (e) {
+    // ignore logging errors
+  }
+
   const response = await fetch(url, {
     method,
     headers: finalHeaders,

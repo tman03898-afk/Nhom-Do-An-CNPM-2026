@@ -76,7 +76,8 @@ export default function DashboardPage() {
    useEffect(() => {
       const fetchRooms = async () => {
          try {
-            const data = await apiFetch('/rooms', { token });
+               console.debug('Dashboard: fetching /rooms, token present?', !!token);
+               const data = await apiFetch('/rooms', { token });
             setRooms(data.rooms || []);
          } catch {
             setRooms([]);
@@ -89,6 +90,7 @@ export default function DashboardPage() {
       const run = async () => {
          if (!token) return;
          try {
+            console.debug('Dashboard: fetching overview + invoices/tickets/contracts/tenants');
             const [, inv, tk, con, tn] = await Promise.all([
                apiFetch('/admin/analytics/overview', { token }),
                apiFetch('/admin/invoices', { token }),
@@ -114,6 +116,7 @@ export default function DashboardPage() {
       const loadAnalytics = async () => {
          if (!token) return;
          try {
+            console.debug('Dashboard: fetching monthly-series, recent-activity, collection-summary');
             const [series, activity, collection] = await Promise.all([
                apiFetch(`/admin/analytics/monthly-series?year=${chartYear}`, { token }),
                apiFetch('/admin/analytics/recent-activity?limit=8', { token }),
