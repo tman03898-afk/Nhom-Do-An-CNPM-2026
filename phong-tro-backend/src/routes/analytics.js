@@ -215,7 +215,7 @@ router.get('/admin/analytics/recent-activity', requireAuth, requireAdmin, async 
           'payment' AS type,
           COALESCE(p.paid_at, p.created_at) AS at,
           CONCAT('Thanh toán hóa đơn ', COALESCE(r.room_number, '')) AS title,
-          CONCAT('Số tiền ', COALESCE(p.amount, p.amount_paid, 0)::text, ' đã được thanh toán') AS detail
+          CONCAT('Số tiền ', COALESCE(p.amount, 0)::text, ' đã được thanh toán') AS detail
         FROM payments p
         LEFT JOIN invoices i ON i.invoice_id = p.invoice_id
         LEFT JOIN tenants t ON t.tenant_id = i.tenant_id
