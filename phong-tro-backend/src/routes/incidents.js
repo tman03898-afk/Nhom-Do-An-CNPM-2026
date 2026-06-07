@@ -932,4 +932,5 @@ router.delete('/tenant/tickets/:id', requireAuth, requireTenant, async (req, res
 });
 
 module.exports = router;
+module.exports.ensureIncidentsTable = ensureIncidentsTable;
 
