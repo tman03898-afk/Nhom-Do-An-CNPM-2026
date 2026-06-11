@@ -103,6 +103,8 @@ export default function InvoiceManagePage() {
   const [cancelModalInvoice, setCancelModalInvoice] = useState(null);
   const [cancelError, setCancelError] = useState('');
   const [isCancelSubmitting, setIsCancelSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  const [showValidationModal, setShowValidationModal] = useState(false);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
     room_id: '',
@@ -464,14 +466,46 @@ export default function InvoiceManagePage() {
       return;
     }
 
+    // Xác định chỉ số cũ: ưu tiên override, sau đó dùng baseline
+    let previousElectric = null;
+    let previousWater = null;
+    
+    const oE = overrideElectricPrevious.trim();
+    const oW = overrideWaterPrevious.trim();
+    
+    if (oE !== '' && !Number.isNaN(Number(oE))) {
+      previousElectric = Number(oE);
+    } else if (utilityBaseline && utilityBaseline.previous_electric != null) {
+      previousElectric = Number(utilityBaseline.previous_electric);
+    }
+    
+    if (oW !== '' && !Number.isNaN(Number(oW))) {
+      previousWater = Number(oW);
+    } else if (utilityBaseline && utilityBaseline.previous_water != null) {
+      previousWater = Number(utilityBaseline.previous_water);
+    }
+
+    // Kiểm tra chỉ số mới >= chỉ số cũ
+    let validationMsg = '';
+    
+    if (previousElectric !== null && ele < previousElectric) {
+      validationMsg = `Chỉ số điện mới (${ele} kWh) phải >= chỉ số cũ (${previousElectric} kWh). Vui lòng nhập lại.`;
+    } else if (previousWater !== null && wat < previousWater) {
+      validationMsg = `Chỉ số nước mới (${wat} m³) phải >= chỉ số cũ (${previousWater} m³). Vui lòng nhập lại.`;
+    }
+
+    if (validationMsg) {
+      setValidationError(validationMsg);
+      setShowValidationModal(true);
+      return;
+    }
+
     try {
       const body = {
         room_id: roomId,
         electricity_current: ele,
         water_current: wat,
       };
-      const oE = overrideElectricPrevious.trim();
-      const oW = overrideWaterPrevious.trim();
       if (oE !== '' && !Number.isNaN(Number(oE))) body.electricity_previous = Number(oE);
       if (oW !== '' && !Number.isNaN(Number(oW))) body.water_previous = Number(oW);
 
@@ -1303,6 +1337,34 @@ export default function InvoiceManagePage() {
               </button>
               <button onClick={handleCreateInvoice} className="px-8 py-3 rounded-full bg-nest-primary hover:bg-[#0da090] text-white font-bold shadow-lg shadow-nest-primary/20">
                 Tạo hóa đơn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Modal - Chỉ số phải >= chỉ số cũ */}
+      {showValidationModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl border border-slate-200">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertTriangle className="w-8 h-8 text-red-600" />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-center text-nest-text-primary mb-4">Chỉ số không hợp lệ</h3>
+            <p className="text-center text-nest-text-secondary font-medium leading-relaxed mb-8">
+              {validationError}
+            </p>
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={() => {
+                  setShowValidationModal(false);
+                  setValidationError('');
+                }}
+                className="px-8 py-3 rounded-full bg-nest-primary hover:bg-[#0da090] text-white font-bold shadow-lg shadow-nest-primary/20 transition-colors"
+              >
+                Nhập lại
               </button>
             </div>
           </div>
