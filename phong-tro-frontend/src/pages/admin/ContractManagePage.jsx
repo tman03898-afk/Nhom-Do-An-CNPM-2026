@@ -125,7 +125,8 @@ export default function ContractManagePage() {
     if (!room) return;
     const rent = room.rent_price ?? room.price ?? room.monthly_rent ?? room.rent ?? 0;
     const deposit = room.deposit ?? room.security_deposit ?? room.deposit_amount ?? 0;
-    setCreateForm((p) => ({ ...p, rent_price: String(rent), deposit: String(deposit) }));
+    // Clamp to non-negative to avoid showing negative values in the create form
+    setCreateForm((p) => ({ ...p, rent_price: String(Math.max(0, Number(rent) || 0)), deposit: String(Math.max(0, Number(deposit) || 0)) }));
   }, [createForm.tenant_id, tenantsList, roomsList]);
 
   const stats = useMemo(() => {
@@ -208,6 +209,12 @@ export default function ContractManagePage() {
       deposit: Number(createForm.deposit || 0),
       notes: createForm.notes || null,
     };
+
+    // Ensure non-negative numeric values
+    if (payload.rent_price < 0 || payload.deposit < 0) {
+      addToast('Giá thuê và tiền cọc phải là số không âm.', 'error');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -913,15 +920,23 @@ export default function ContractManagePage() {
               />
               <input
                 type="number"
+                min="0"
                 value={createForm.rent_price}
-                onChange={(e) => setCreateForm((p) => ({ ...p, rent_price: e.target.value }))}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCreateForm((p) => ({ ...p, rent_price: v === '' ? '' : String(Math.max(0, Number(v))) }));
+                }}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
                 placeholder="Giá thuê (VNĐ)"
               />
               <input
                 type="number"
+                min="0"
                 value={createForm.deposit}
-                onChange={(e) => setCreateForm((p) => ({ ...p, deposit: e.target.value }))}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCreateForm((p) => ({ ...p, deposit: v === '' ? '' : String(Math.max(0, Number(v))) }));
+                }}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
                 placeholder="Tiền cọc (VNĐ)"
               />
