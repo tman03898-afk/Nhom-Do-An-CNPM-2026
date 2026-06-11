@@ -168,17 +168,22 @@ export default function InvoiceManagePage() {
     };
   }, [token, createForm.room_id]);
 
-    // Close invoice view modal on Escape key
+    // Close any open modal on Escape key (view, create, validation, cancel, edit)
     useEffect(() => {
-      if (!isViewOpen) return undefined;
+      const anyOpen = isViewOpen || isCreateOpen || showValidationModal || Boolean(cancelModalInvoice) || Boolean(editModalInvoice);
+      if (!anyOpen) return undefined;
       const onKey = (e) => {
         if (e?.key === 'Escape' || e?.key === 'Esc' || e?.keyCode === 27) {
-          setIsViewOpen(false);
+          if (isViewOpen) setIsViewOpen(false);
+          if (isCreateOpen) setIsCreateOpen(false);
+          if (showValidationModal) setShowValidationModal(false);
+          if (cancelModalInvoice) setCancelModalInvoice(null);
+          if (editModalInvoice) setEditModalInvoice(null);
         }
       };
       window.addEventListener('keydown', onKey);
       return () => window.removeEventListener('keydown', onKey);
-    }, [isViewOpen]);
+    }, [isViewOpen, isCreateOpen, showValidationModal, cancelModalInvoice, editModalInvoice]);
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter((i) => {
