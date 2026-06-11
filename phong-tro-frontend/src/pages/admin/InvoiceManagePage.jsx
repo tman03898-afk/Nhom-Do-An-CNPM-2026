@@ -168,6 +168,18 @@ export default function InvoiceManagePage() {
     };
   }, [token, createForm.room_id]);
 
+    // Close invoice view modal on Escape key
+    useEffect(() => {
+      if (!isViewOpen) return undefined;
+      const onKey = (e) => {
+        if (e?.key === 'Escape' || e?.key === 'Esc' || e?.keyCode === 27) {
+          setIsViewOpen(false);
+        }
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [isViewOpen]);
+
   const filteredInvoices = useMemo(() => {
     return invoices.filter((i) => {
       if (filterPayment === 'paid' && !isPaidStatus(i.status)) return false;
