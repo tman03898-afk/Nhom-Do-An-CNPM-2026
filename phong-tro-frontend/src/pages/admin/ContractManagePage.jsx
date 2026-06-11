@@ -670,7 +670,11 @@ export default function ContractManagePage() {
                   type="number"
                   min="0"
                   value={editForm.rent_price}
-                  onChange={(e) => setEditForm((p) => ({ ...p, rent_price: e.target.value }))}
+                  onChange={(e) => setEditForm((p) => ({ ...p, rent_price: String(Math.max(0, Number(e.target.value || 0))) }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown' && Number(e.target.value || 0) <= 0) e.preventDefault();
+                  }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
                   placeholder="Giá thuê"
                 />
@@ -683,7 +687,11 @@ export default function ContractManagePage() {
                   type="number"
                   min="0"
                   value={editForm.deposit}
-                  onChange={(e) => setEditForm((p) => ({ ...p, deposit: e.target.value }))}
+                  onChange={(e) => setEditForm((p) => ({ ...p, deposit: String(Math.max(0, Number(e.target.value || 0))) }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown' && Number(e.target.value || 0) <= 0) e.preventDefault();
+                  }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
                   placeholder="Tiền cọc"
                 />
@@ -926,6 +934,10 @@ export default function ContractManagePage() {
                   const v = e.target.value;
                   setCreateForm((p) => ({ ...p, rent_price: v === '' ? '' : String(Math.max(0, Number(v))) }));
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown' && Number(e.target.value || 0) <= 0) e.preventDefault();
+                }}
+                onWheel={(e) => e.currentTarget.blur()}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
                 placeholder="Giá thuê (VNĐ)"
               />
@@ -937,6 +949,10 @@ export default function ContractManagePage() {
                   const v = e.target.value;
                   setCreateForm((p) => ({ ...p, deposit: v === '' ? '' : String(Math.max(0, Number(v))) }));
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown' && Number(e.target.value || 0) <= 0) e.preventDefault();
+                }}
+                onWheel={(e) => e.currentTarget.blur()}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#14B8A6]"
                 placeholder="Tiền cọc (VNĐ)"
               />
