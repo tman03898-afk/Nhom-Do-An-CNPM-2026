@@ -180,6 +180,81 @@ router.delete('/admin/tenants/:tenantId', requireAuth, requireAdmin, async (req,
   }
 });
 
+/** Cập nhật thông tin khách thuê (Họ tên, SĐT, Email) */
+router.put('/admin/tenants/:tenantId', requireAuth, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const tenantId = Number(req.params.tenantId);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+      return res.status(400).json({ ok: false, message: 'invalid tenant id' });
+    }
+
+    const { full_name, phone, email } = req.body || {};
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedPhone = String(phone || '').trim();
+    const normalizedName = String(full_name || '').trim();
+
+    if (!normalizedName || !normalizedEmail || !normalizedPhone) {
+      return res.status(400).json({ ok: false, message: 'vui lòng nhập đủ thông tin' });
+    }
+
+    const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({ ok: false, message: 'Email không đúng định dạng' });
+    }
+
+    await ensureTenantsTable();
+    await ensureUsersTable();
+
+    const snap = await client.query(
+      `SELECT t.tenant_id, t.user_id, u.email
+       FROM tenants t
+       JOIN users u ON u.user_id = t.user_id
+       WHERE t.tenant_id = $1`,
+      [tenantId]
+    );
+
+    if (snap.rowCount === 0) {
+      return res.status(404).json({ ok: false, message: 'tenant not found' });
+    }
+
+    const trow = snap.rows[0];
+
+    await client.query('BEGIN');
+
+    // Cập nhật users table
+    await client.query(
+      `UPDATE users
+       SET full_name = $1, email = $2, updated_at = NOW()
+       WHERE user_id = $3`,
+      [normalizedName, normalizedEmail, trow.user_id]
+    );
+
+    // Cập nhật tenants table
+    await client.query(
+      `UPDATE tenants
+       SET phone = $1, updated_at = NOW()
+       WHERE tenant_id = $2`,
+      [normalizedPhone, tenantId]
+    );
+
+    await client.query('COMMIT');
+    return res.json({ ok: true, message: 'Cập nhật thành công' });
+
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (e) {}
+    console.error('Update tenant error:', err);
+    if (err.code === '23505') {
+      return res.status(409).json({ ok: false, message: 'email already exists' });
+    }
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = {
   router,
   ensureTenantsTable,
