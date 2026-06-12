@@ -76,7 +76,7 @@ function validateRoomInput(payload, { partial = false } = {}) {
   const errors = [];
   const data = {};
 
-  const requiredFields = ['room_number', 'area', 'price'];
+  const requiredFields = ['room_number', 'floor', 'area', 'price'];
   for (const field of requiredFields) {
     if (!partial && (payload[field] === undefined || payload[field] === null || payload[field] === '')) {
       errors.push(`${field} is required`);

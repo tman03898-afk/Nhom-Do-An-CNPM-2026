@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ImagePlus, Trash2, X } from 'lucide-react';
 import { apiFetch, apiUploadRoomImages, resolveBackendAssetUrl } from '../../lib/api';
 import { ROOM_TYPE_FILTER_OPTIONS } from '../../lib/guestRoomMedia';
+import { useToast } from '../../context/ToastContext';
 
 const EMPTY_FORM = {
   room_number: '',
@@ -18,12 +19,29 @@ const EMPTY_FORM = {
  * Modal thêm/sửa phòng — dùng chung guest (admin) và quản lý phòng.
  */
 export default function RoomFormModal({ open, onClose, room, token, onSaved }) {
+  const { addToast } = useToast();
   const [form, setForm] = useState(EMPTY_FORM);
   const [existingImages, setExistingImages] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingPreviews, setPendingPreviews] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
+
+  useEffect(() => {
+    if (form.floor && form.room_number) {
+      const digitsMatch = form.room_number.match(/\d+/);
+      if (digitsMatch) {
+        const firstDigitGroup = digitsMatch[0];
+        const floorStr = String(form.floor);
+        if (!firstDigitGroup.startsWith(floorStr)) {
+          setWarning(`⚠️ Số phòng và số tầng có vẻ không khớp nhau (Tầng ${floorStr} thường bắt đầu bằng số ${floorStr}).`);
+          return;
+        }
+      }
+    }
+    setWarning('');
+  }, [form.floor, form.room_number]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,7 +109,7 @@ export default function RoomFormModal({ open, onClose, room, token, onSaved }) {
 
       const payload = {
         room_number: String(form.room_number || '').trim(),
-        floor: form.floor === '' ? null : Number(form.floor),
+        floor: form.floor === '' ? '' : Number(form.floor),
         area: form.area === '' ? '' : Number(form.area),
         max_tenants: form.max_tenants === '' ? '' : Number(form.max_tenants),
         price: form.price === '' ? '' : Number(form.price),
@@ -103,8 +121,10 @@ export default function RoomFormModal({ open, onClose, room, token, onSaved }) {
 
       if (room?.room_id) {
         await apiFetch(`/rooms/${room.room_id}`, { token, method: 'PUT', body: payload });
+        addToast(`Cập nhật phòng ${payload.room_number} thành công!`, 'success');
       } else {
         await apiFetch('/rooms', { token, method: 'POST', body: payload });
+        addToast(`Thêm phòng ${payload.room_number} thành công!`, 'success');
       }
 
       onSaved?.();
@@ -112,11 +132,11 @@ export default function RoomFormModal({ open, onClose, room, token, onSaved }) {
     } catch (err) {
       const translateError = (e) => {
         if (e?.data?.errors?.length) {
+          const hasMissingFields = e.data.errors.some(x => x.includes('is required') || x.includes('non-empty string'));
+          if (hasMissingFields) {
+            return 'Vui lòng nhập đầy đủ thông tin các trường bắt buộc (Số phòng, Tầng, Diện tích, Giá thuê).';
+          }
           const dict = {
-            'room_number is required': 'Vui lòng nhập số phòng',
-            'area is required': 'Vui lòng nhập diện tích',
-            'price is required': 'Vui lòng nhập giá thuê',
-            'room_number must be a non-empty string': 'Số phòng không được để trống',
             'floor must be an integer': 'Tầng phải là số nguyên',
             'area must be a number greater than 0': 'Diện tích phải lớn hơn 0',
             'max_tenants must be an integer greater than 0': 'Số người tối đa phải lớn hơn 0',
@@ -157,6 +177,12 @@ export default function RoomFormModal({ open, onClose, room, token, onSaved }) {
         {error ? (
           <p className="mb-4 text-sm font-medium text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
             {error}
+          </p>
+        ) : null}
+        
+        {warning && !error ? (
+          <p className="mb-4 text-sm font-medium text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+            {warning}
           </p>
         ) : null}
 
