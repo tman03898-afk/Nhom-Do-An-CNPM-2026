@@ -5,6 +5,7 @@ import { HOLD_REQUEST_STATUSES, formatHoldUntil } from '../../lib/roomHolds';
 import { useToast } from '../../context/ToastContext';
 import AppDialog from '../common/AppDialog';
 import ContractFromHoldModal from './ContractFromHoldModal';
+import { Trash2 } from 'lucide-react';
 
 /**
  * Bảng quản lý yêu cầu giữ chỗ — nhúng trong Quản lý phòng.
@@ -99,6 +100,16 @@ export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
     });
   };
 
+  const deleteHold = (id) => {
+    setConfirmAction({
+      type: 'delete',
+      id,
+      title: 'Xóa yêu cầu?',
+      description: 'Thao tác này sẽ xóa vĩnh viễn yêu cầu giữ chỗ khỏi hệ thống. Bạn có chắc chắn không?',
+      confirmText: 'Xóa vĩnh viễn',
+    });
+  };
+
   const closeConfirmAction = () => {
     if (confirmAction && busyId === confirmAction.id) return;
     setConfirmAction(null);
@@ -115,6 +126,9 @@ export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
       } else if (type === 'reject-deposit') {
         await apiFetch(`/room-holds/admin/${id}/reject-deposit`, { token, method: 'POST' });
         addToast('Đã từ chối minh chứng cọc.', 'success');
+      } else if (type === 'delete') {
+        await apiFetch(`/room-holds/admin/${id}`, { token, method: 'DELETE' });
+        addToast('Đã xóa vĩnh viễn yêu cầu giữ chỗ.', 'success');
       }
       setConfirmAction(null);
       await load();
@@ -319,6 +333,15 @@ export default function RoomHoldManagePanel({ token, onRoomsChanged }) {
                             Tạo HĐ
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => deleteHold(row.hold_request_id)}
+                          className="p-1 rounded-lg hover:bg-rose-100 text-[#82ABB0] hover:text-rose-600 transition-colors"
+                          title="Xóa yêu cầu"
+                        >
+                          <Trash2 className="w-[18px] h-[18px]" />
+                        </button>
                       </div>
                     </td>
                   </tr>

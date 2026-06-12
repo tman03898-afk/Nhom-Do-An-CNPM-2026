@@ -1277,6 +1277,41 @@ router.post('/admin/:id/mark-rented', requireAuth, requireAdmin, async (req, res
   }
 });
 
+/** Admin: xóa vĩnh viễn yêu cầu giữ chỗ */
+router.delete('/admin/:id', requireAuth, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'invalid id' });
+    }
+    await client.query('BEGIN');
+    const row = await client.query(
+      `SELECT h.*, r.room_id, r.active_hold_request_id FROM room_hold_requests h JOIN rooms r ON r.room_id = h.room_id WHERE h.hold_request_id = $1`,
+      [id]
+    );
+    if (!row.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ ok: false, message: 'not found' });
+    }
+    const hold = row.rows[0];
+    if (hold.active_hold_request_id === id) {
+      await releaseRoomHold(client, id, hold.room_id);
+    }
+    await client.query(`DELETE FROM room_hold_requests WHERE hold_request_id = $1`, [id]);
+    await client.query('COMMIT');
+    return res.json({ ok: true, message: 'Đã xóa yêu cầu giữ chỗ' });
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (e) {}
+    console.error('room hold delete:', err);
+    return res.status(500).json({ ok: false, message: 'internal error' });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
 module.exports.ensureRoomHoldRequestsTable = ensureRoomHoldRequestsTable;
 module.exports.expireStaleRoomHolds = expireStaleRoomHolds;
