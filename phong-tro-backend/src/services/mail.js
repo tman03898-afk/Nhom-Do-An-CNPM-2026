@@ -1,34 +1,44 @@
 /**
- * Gửi email qua Resend API (https://resend.com) — không bị Render chặn.
+ * Gửi email qua SMTP (nodemailer) - Hỗ trợ Brevo / Gmail.
  *
  * Biến môi trường cần thiết:
- *   RESEND_API_KEY  — API key từ resend.com
- *   MAIL_FROM       — Địa chỉ người gửi (mặc định: onboarding@resend.dev nếu chưa có domain riêng)
- *
- * Chế độ dev (fallback):
- *   MAIL_FALLBACK_LOG=1  — In email ra console thay vì gửi thật
+ *   SMTP_HOST
+ *   SMTP_PORT
+ *   SMTP_USER
+ *   SMTP_PASS
+ *   MAIL_FROM       — Địa chỉ người gửi (VD: The Sun <noreply@thesun.com>)
  */
 
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-let _resend = null;
-
-function getResend() {
-  if (!process.env.RESEND_API_KEY) return null;
-  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
-  return _resend;
-}
+let cachedTransport = null;
 
 function smtpConfigured() {
-  return Boolean(process.env.RESEND_API_KEY);
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
 
 function allowMailFallbackLog() {
   return process.env.MAIL_FALLBACK_LOG === '1' || process.env.NODE_ENV === 'development';
 }
 
-function getMailFrom() {
-  return process.env.MAIL_FROM || 'onboarding@resend.dev';
+function getTransport() {
+  if (!smtpConfigured()) return null;
+  if (cachedTransport) return cachedTransport;
+
+  const port = Number(process.env.SMTP_PORT || 587);
+  const secure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465;
+
+  cachedTransport = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  return cachedTransport;
 }
 
 function maskEmail(email) {
@@ -38,26 +48,19 @@ function maskEmail(email) {
   return `${s.slice(0, 2)}***${s.slice(at)}`;
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 async function sendMail({ to, subject, text, html }) {
-  const resend = getResend();
-  if (resend) {
-    const { error } = await resend.emails.send({
-      from: `The Sun <${getMailFrom()}>`,
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER;
+  const transport = getTransport();
+  
+  if (transport) {
+    await transport.sendMail({
+      from: `"The Sun" <${from}>`,
       to,
       subject,
       text,
       html,
     });
-    if (error) throw new Error(error.message || 'Resend error');
-    return { ok: true, provider: 'resend', to: maskEmail(to) };
+    return { ok: true, provider: 'smtp', to: maskEmail(to) };
   }
 
   if (allowMailFallbackLog()) {
@@ -66,8 +69,16 @@ async function sendMail({ to, subject, text, html }) {
   }
 
   throw new Error(
-    'MAIL_NOT_CONFIGURED — Thiết lập RESEND_API_KEY trong .env hoặc bật MAIL_FALLBACK_LOG=1'
+    'MAIL_NOT_CONFIGURED — Thiết lập SMTP_HOST, SMTP_USER, SMTP_PASS trong .env'
   );
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 async function sendTenantEmailVerificationCode(toEmail, code, displayName) {
