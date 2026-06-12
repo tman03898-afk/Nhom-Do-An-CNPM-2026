@@ -115,11 +115,11 @@ export default function TenantManagePage() {
       await fetchTenants();
     } catch (error) {
       const msg = error?.message || '';
-      if (msg.includes('email already exists')) {
-        setEditError('Email này đã được dùng bởi tài khoản khác.');
-      } else {
-        setEditError(msg || 'Không cập nhật được thông tin khách thuê.');
-      }
+      let vnMsg = msg;
+      if (msg.includes('email already exists') || msg === 'User already exists') vnMsg = 'Email này đã được dùng bởi tài khoản khác.';
+      else if (msg === 'internal error') vnMsg = 'Lỗi hệ thống máy chủ (Vui lòng thử lại sau).';
+      else if (msg === 'validation error') vnMsg = 'Dữ liệu nhập không hợp lệ.';
+      setEditError(vnMsg || 'Không cập nhật được thông tin khách thuê.');
     } finally {
       setIsEditSubmitting(false);
     }
@@ -168,7 +168,13 @@ export default function TenantManagePage() {
       setDeleteModalError('');
       await fetchTenants();
     } catch (error) {
-      setDeleteModalError(error?.message || 'Không xóa được khách thuê.');
+      let msg = error?.message || '';
+      if (msg.includes('referenced by other records')) {
+        msg = 'Không thể xóa vì tài khoản này đang có hợp đồng/hóa đơn liên quan.';
+      } else if (msg === 'internal error') {
+        msg = 'Lỗi hệ thống máy chủ (Vui lòng thử lại sau).';
+      }
+      setDeleteModalError(msg || 'Không xóa được khách thuê.');
     } finally {
       setDeleteModalDeleting(false);
     }
@@ -209,7 +215,11 @@ export default function TenantManagePage() {
       setCreateForm({ full_name: '', phone: '', room_number: '', email: '', password: '' });
       await fetchTenants();
     } catch (error) {
-      setFormError(error.message || 'Có lỗi xảy ra khi tạo tài khoản tenant');
+      let msg = error?.message || '';
+      if (msg.includes('email already exists') || msg === 'User already exists') msg = 'Email này đã được dùng bởi tài khoản khác.';
+      else if (msg === 'internal error') msg = 'Lỗi hệ thống máy chủ (Vui lòng thử lại sau).';
+      else if (msg === 'validation error') msg = 'Dữ liệu nhập không hợp lệ.';
+      setFormError(msg || 'Có lỗi xảy ra khi tạo tài khoản khách thuê');
     } finally {
       setIsSubmitting(false);
     }
