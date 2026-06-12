@@ -141,6 +141,7 @@ export default function RoomFormModal({ open, onClose, room, token, onSaved }) {
             'area must be a number greater than 0': 'Diện tích phải lớn hơn 0',
             'max_tenants must be an integer greater than 0': 'Số người tối đa phải lớn hơn 0',
             'price must be a number greater than or equal to 0': 'Giá thuê không được âm',
+            'room_number must contain at least one number': 'Số phòng phải chứa ít nhất 1 chữ số (Ví dụ: P.101)',
           };
           return e.data.errors.map((x) => dict[x] || x).join(', ');
         }
