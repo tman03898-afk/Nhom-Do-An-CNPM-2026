@@ -92,9 +92,9 @@ export default function RoomFormModal({ open, onClose, room, token, onSaved }) {
       const payload = {
         room_number: String(form.room_number || '').trim(),
         floor: form.floor === '' ? null : Number(form.floor),
-        area: Number(form.area),
-        max_tenants: Number(form.max_tenants || 1),
-        price: Number(form.price),
+        area: form.area === '' ? '' : Number(form.area),
+        max_tenants: form.max_tenants === '' ? '' : Number(form.max_tenants),
+        price: form.price === '' ? '' : Number(form.price),
         status: form.status,
         room_type: form.room_type || null,
         description: form.description ? String(form.description) : null,
