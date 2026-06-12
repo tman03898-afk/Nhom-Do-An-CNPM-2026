@@ -1148,8 +1148,8 @@ export default function InvoiceManagePage() {
       )}
 
       {isViewOpen && viewInvoice && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-3xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200 my-6">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-3xl bg-white rounded-3xl p-7 shadow-2xl border border-slate-200 my-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-nest-text-primary">Chi tiết hóa đơn</h3>
               <button
