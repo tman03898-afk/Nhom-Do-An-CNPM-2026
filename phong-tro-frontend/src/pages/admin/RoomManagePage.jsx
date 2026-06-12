@@ -115,7 +115,13 @@ export default function RoomManagePage() {
       const data = await apiFetch('/rooms', { token });
       setRooms(data.rooms || []);
     } catch (e) {
-      addToast(e?.message || 'Không xóa được phòng.', 'error');
+      let errorMsg = e?.message;
+      if (errorMsg === 'cannot delete room because it is referenced by other records') {
+        errorMsg = 'Không thể xóa phòng này vì đang có khách thuê, hợp đồng hoặc hóa đơn liên quan.';
+      } else if (errorMsg === 'internal error') {
+        errorMsg = 'Lỗi hệ thống máy chủ (Vui lòng thử lại sau)';
+      }
+      addToast(errorMsg || 'Không xóa được phòng.', 'error');
     } finally {
       setDeleteBusy(false);
     }

@@ -110,7 +110,29 @@ export default function RoomFormModal({ open, onClose, room, token, onSaved }) {
       onSaved?.();
       onClose();
     } catch (err) {
-      setError(err?.message || 'Không lưu được phòng');
+      const translateError = (e) => {
+        if (e?.data?.errors?.length) {
+          const dict = {
+            'room_number is required': 'Vui lòng nhập số phòng',
+            'area is required': 'Vui lòng nhập diện tích',
+            'price is required': 'Vui lòng nhập giá thuê',
+            'room_number must be a non-empty string': 'Số phòng không được để trống',
+            'floor must be an integer': 'Tầng phải là số nguyên',
+            'area must be a number greater than 0': 'Diện tích phải lớn hơn 0',
+            'max_tenants must be an integer greater than 0': 'Số người tối đa phải lớn hơn 0',
+            'price must be a number greater than or equal to 0': 'Giá thuê không được âm',
+          };
+          return e.data.errors.map((x) => dict[x] || x).join(', ');
+        }
+        const msg = e?.message;
+        if (msg === 'room_number already exists') return 'Số phòng này đã tồn tại, vui lòng đổi tên khác';
+        if (msg === 'invalid room id') return 'Mã phòng không hợp lệ';
+        if (msg === 'room not found') return 'Không tìm thấy phòng';
+        if (msg === 'only image files allowed') return 'Chỉ được phép tải lên file ảnh';
+        if (msg === 'internal error') return 'Lỗi hệ thống máy chủ (Vui lòng thử lại sau)';
+        return msg === 'validation error' ? 'Dữ liệu nhập không hợp lệ' : (msg || 'Không lưu được phòng');
+      };
+      setError(translateError(err));
     } finally {
       setSaving(false);
     }
