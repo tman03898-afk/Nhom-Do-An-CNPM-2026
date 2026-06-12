@@ -59,7 +59,25 @@ export async function apiFetch(path, { token, method = 'GET', headers, body } = 
 
   const data = await parseJsonSafe(response);
   if (!response.ok || (data && data.ok === false)) {
-    const message = data?.message || `Request failed (${response.status})`;
+    let message = data?.message || `Request failed (${response.status})`;
+
+    // Tự động dịch các lỗi phổ biến từ Backend sang Tiếng Việt
+    const globalErrorDict = {
+      'internal error': 'Lỗi hệ thống máy chủ (Vui lòng thử lại sau)',
+      'validation error': 'Dữ liệu nhập không hợp lệ',
+      'jwt expired': 'Phiên đăng nhập đã hết hạn, vui lòng tải lại trang',
+      'jwt malformed': 'Phiên đăng nhập không hợp lệ',
+      'invalid token': 'Token không hợp lệ',
+      'unauthorized': 'Bạn không có quyền thực hiện thao tác này',
+      'forbidden': 'Truy cập bị từ chối',
+      'upload failed': 'Tải file lên thất bại',
+      'only image files allowed': 'Chỉ được phép tải lên file ảnh',
+    };
+
+    if (globalErrorDict[message]) {
+      message = globalErrorDict[message];
+    }
+
     const err = new Error(message);
     err.status = response.status;
     err.data = data;
